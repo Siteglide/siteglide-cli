@@ -1,0 +1,46 @@
+{
+  "name": "@siteglide/siteglide-cli",
+  "version": "1.0.0",
+  "description": "A CLI for Making Website Management a Breeze",
+  "scripts": {
+    "test": "jest --silent",
+    "postinstall": "node ./scripts/check-node-version.js"
+  },
+  "main": "./siteglide.js",
+  "license": "MIT",
+  "private": true,
+  "bugs": {
+    "url": "https://github.com/siteglide/siteglide-cli/issues"
+  },
+  "homepage": "https://docs.siteglide.com/cli",
+  "engines": {
+    "node": ">=8"
+  },
+  "dependencies": {
+    "async": "^2.6.2",
+    "axios": "^0.18.0",
+    "commander": "^2.20.0",
+    "email-validator": "^2.0.4",
+    "js-yaml": "^3.13.1",
+    "mustache": "^3.0.1",
+    "node-watch": "^0.6.2",
+    "path": "^0.12.7",
+    "request": "^2.88.0",
+    "request-promise": "^4.2.4",
+    "update-notifier": "^2.5.0",
+    "valid-url": "^1.0.9"
+  },
+  "bin": {
+    "siteglide": "./siteglide.js",
+    "siteglide-add": "./siteglide-add.js",
+    "siteglide-sync": "./siteglide-sync.js",
+    "siteglide-pull": "./siteglide-pull.js",
+    "siteglide-watch": "./siteglide-watch.js"
+  },
+  "devDependencies": {
+    "jest": "^24.8.0",
+    "shelljs": "^0.8.3"
+  },
+  "preferGlobal": true,
+  "repository": "siteglide/siteglide-cli"
+}

@@ -1,0 +1,5 @@
+.siteglide-config
+/node_modules
+/marketplace_builder
+.env
+.DS_Store
