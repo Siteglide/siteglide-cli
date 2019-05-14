@@ -31,7 +31,7 @@
     "valid-url": "^1.0.9"
   },
   "bin": {
-    "siteglide": "./siteglide.js",
+    "siteglide-cli": "./siteglide.js",
     "siteglide-add": "./siteglide-add.js",
     "siteglide-sync": "./siteglide-sync.js",
     "siteglide-pull": "./siteglide-pull.js",
