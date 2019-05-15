@@ -31,11 +31,11 @@
     "valid-url": "^1.0.9"
   },
   "bin": {
-    "siteglide-cli": "./siteglide.js",
-    "siteglide-add": "./siteglide-add.js",
-    "siteglide-sync": "./siteglide-sync.js",
-    "siteglide-pull": "./siteglide-pull.js",
-    "siteglide-watch": "./siteglide-watch.js"
+    "siteglide-cli": "./siteglide-cli.js",
+    "siteglide-cli-add": "./siteglide-cli-add.js",
+    "siteglide-cli-sync": "./siteglide-cli-sync.js",
+    "siteglide-cli-pull": "./siteglide-cli-pull.js",
+    "siteglide-cli-watch": "./siteglide-cli-watch.js"
   },
   "devDependencies": {
     "jest": "^24.8.0",
