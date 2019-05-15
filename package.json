@@ -27,6 +27,7 @@
     "path": "^0.12.7",
     "request": "^2.88.0",
     "request-promise": "^4.2.4",
+    "shelljs": "^0.8.3",
     "update-notifier": "^2.5.0",
     "valid-url": "^1.0.9"
   },
@@ -38,8 +39,7 @@
     "siteglide-cli-watch": "./siteglide-cli-watch.js"
   },
   "devDependencies": {
-    "jest": "^24.8.0",
-    "shelljs": "^0.8.3"
+    "jest": "^24.8.0"
   },
   "preferGlobal": true,
   "repository": "siteglide/siteglide-cli"
