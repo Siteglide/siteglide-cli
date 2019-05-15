@@ -80,7 +80,7 @@ class Liquid {
 
 	get output() {
 		if(
-			(this.source.physical_file_path.indexOf('/partials/')>-1)||
+			(this.source.physical_file_path.indexOf('/partials/layouts')>-1)||
 			(this.source.physical_file_path.indexOf('assets/')===0)
 		){
 			return LIQUID_TEMPLATE.replace('---\nMETADATA---\n', '').replace('CONTENT', this.content)
