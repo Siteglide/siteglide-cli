@@ -23,6 +23,7 @@
     "email-validator": "^2.0.4",
     "js-yaml": "^3.13.1",
     "mustache": "^3.0.1",
+    "node-notifier": "^5.4.0",
     "node-watch": "^0.6.2",
     "path": "^0.12.7",
     "request": "^2.88.0",
