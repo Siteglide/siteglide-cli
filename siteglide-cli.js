@@ -15,7 +15,7 @@ updateNotifier({
 
 program
 	.version(version)
-	.command('add', 'Add a site or environment')
+	.command('add [environment] --email [email] --url [url]', 'Add a site or environment')
 	.command('sync [environment]', 'update site on local file change')
 	.command('pull [environment]', 'get all files from site')
 	.parse(process.argv);

@@ -13,7 +13,6 @@ const program = require('commander'),
 program
 	.version(version)
 	.arguments('[environment]', 'Name of environment. Example: staging')
-	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);

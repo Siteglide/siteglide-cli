@@ -82,8 +82,6 @@ program
   .arguments('[environment]', 'name of environment. Example: staging')
   .option('--email <email>', 'Admin account email. Example: admin@example.com')
   .option('--url <url>', 'Site URL. Example: https://example.com')
-  .option('--token <token>', 'if you have a token you can add it directly to siteglide-config without connecting to portal')
-  .option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
   .action((environment, params) => {
     process.env.CONFIG_FILE_PATH = params.configFile;
     checkParams(params);
@@ -116,7 +114,7 @@ program
         })
         .catch(() => logger.Error('Response from server invalid, token is missing.'));
     });
-  });
+	});
 
 program.parse(process.argv);
 

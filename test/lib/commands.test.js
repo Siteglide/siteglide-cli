@@ -10,7 +10,7 @@ test('should return error for missing command on stdout', ()  => {
 
 test('should run help on env add', ()  => {
   sh.config.silent = true;
-  let command = sh.exec('./siteglide-cli-add.js env add');
+  let command = sh.exec('./siteglide-cli.js env add');
   expect(command.code).toEqual(0);
   expect(command.stdout).toEqual(expect.stringContaining('Usage: siteglide-cli add [options] [command]'));
   sh.config.silent = silentState;
