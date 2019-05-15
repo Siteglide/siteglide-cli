@@ -20,7 +20,7 @@ program
 			MARKETPLACE_TOKEN: authData.token,
 			MARKETPLACE_URL: authData.url
 		});
-		const p = spawn(command('siteglide-watch'), [], {
+		const p = spawn(command('siteglide-cli-watch'), [], {
 			stdio: 'inherit',
 			env: env
 		});
