@@ -6,13 +6,13 @@
     "test": "jest --silent",
     "postinstall": "node ./scripts/check-node-version.js"
   },
-  "main": "./siteglide.js",
+  "main": "./siteglide-cli.js",
   "license": "MIT",
   "private": true,
   "bugs": {
     "url": "https://github.com/siteglide/siteglide-cli/issues"
   },
-  "homepage": "https://docs.siteglide.com/cli",
+  "homepage": "https://docs.siteglide.com/cli/introduction",
   "engines": {
     "node": ">=8"
   },
