@@ -82,6 +82,7 @@ program
   .arguments('[environment]', 'name of environment. Example: staging')
   .option('--email <email>', 'Admin account email. Example: admin@example.com')
   .option('--url <url>', 'Site URL. Example: https://example.com')
+  .option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
   .action((environment, params) => {
     process.env.CONFIG_FILE_PATH = params.configFile;
     checkParams(params);
@@ -94,25 +95,25 @@ program
       storeEnvironment(Object.assign(settings, {
         token: params.token
       }));
-      logger.Success(`Environment ${params.url} as ${environment} has been added successfuly.`);
+      logger.Success(`Environment ${params.url} as ${environment} has been added successfully.`);
       process.exit(0);
     }
 
     getPassword().then(password => {
       logger.Info(`Asking ${PARTNER_PORTAL_HOST} for access token...`);
 
-      Portal.login(params.email, password)
+      Portal.login(params.email, password, params.url)
         .then(response => {
-          const token = response[0].token;
+          const token = response;
 
           if (token) {
             storeEnvironment(Object.assign(settings, {
               token
             }));
-            logger.Success(`Environment ${params.url} as ${environment} has been added successfuly.`);
+            logger.Success(`Environment ${params.url} as ${environment} has been added successfully.`);
           }
         })
-        .catch(() => logger.Error('Response from server invalid, token is missing.'));
+        .catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error(`Authentication Failed: Please check that you have the correct permissions for ${params.url}`));
     });
 	});
 
