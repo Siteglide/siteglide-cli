@@ -18,6 +18,7 @@ program
 	.command('add [environment] --email [email] --url [url]', 'Add a site or environment')
 	.command('sync [environment]', 'update site on local file change')
 	.command('pull [environment]', 'get all files from site')
+	.command('init', 'create default folder structure for Siteglide Admin')
 	.parse(process.argv);
 
 const commandList = Object.keys(program._execs);
