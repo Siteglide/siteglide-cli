@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const APP_DIR = 'app';
+const APP_DIR = 'marketplace_builder';
 
 const program = require('commander');
 const request = require('request');
@@ -41,7 +41,7 @@ const extractZip = ({ branch }) => {
 
 		moveStructureToDestination(branch);
 
-		logger.Info('Siteglide Admin directory structure (marketplace-builder) created in your current folder.');
+		logger.Info('Siteglide Admin directory structure (marketplace_builder) created in your current folder.');
 
 		removeTemp();
 	});
@@ -53,7 +53,7 @@ const init = () => {
 	emptyTemp();
 
 	if (dirExists(APP_DIR)) {
-		logger.Error('Diretory structure already exists. Init cancelled, your files have been left untouched.');
+		logger.Error('Diretory structure already exists. Command cancelled, your files have been left untouched.');
 	}
 
 	downloadZip(program).on('close', () => extractZip(program));
