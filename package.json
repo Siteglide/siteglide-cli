@@ -1,47 +1,51 @@
 {
-  "name": "@siteglide/siteglide-cli",
-  "version": "1.0.1",
-  "description": "A CLI for Making Website Management a Breeze",
-  "scripts": {
-    "test": "jest --silent",
-    "postinstall": "node ./scripts/check-node-version.js"
-  },
-  "main": "./siteglide-cli.js",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/siteglide/siteglide-cli/issues"
-  },
-  "homepage": "https://docs.siteglide.com/cli/introduction",
-  "engines": {
-    "node": ">=8"
-  },
-  "dependencies": {
-    "async": "^2.6.2",
-    "axios": "^0.18.1",
-    "commander": "^2.20.0",
+	"name": "@siteglide/siteglide-cli",
+	"version": "1.1.0",
+	"description": "A CLI for Making Website Management a Breeze",
+	"scripts": {
+		"test": "jest --silent",
+		"postinstall": "node ./scripts/check-node-version.js"
+	},
+	"main": "./siteglide-cli.js",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/siteglide/siteglide-cli/issues"
+	},
+	"homepage": "https://docs.siteglide.com/cli/introduction",
+	"engines": {
+		"node": ">=8"
+	},
+	"keywords": [
+		"Siteglide"
+	],
+	"dependencies": {
+		"async": "^2.6.2",
+		"axios": "^0.18.1",
+		"commander": "^2.20.0",
 		"email-validator": "^2.0.4",
 		"extract-zip": "1.6.7",
-    "js-yaml": "^3.13.1",
-    "mustache": "^3.0.1",
-    "node-notifier": "^5.4.0",
-    "node-watch": "^0.6.2",
-    "path": "^0.12.7",
-    "request": "^2.88.0",
-    "request-promise": "^4.2.4",
-    "shelljs": "^0.8.3",
-    "update-notifier": "^2.5.0",
-    "valid-url": "^1.0.9"
-  },
-  "bin": {
-    "siteglide-cli": "./siteglide-cli.js",
-    "siteglide-cli-add": "./siteglide-cli-add.js",
-    "siteglide-cli-sync": "./siteglide-cli-sync.js",
-    "siteglide-cli-pull": "./siteglide-cli-pull.js",
-    "siteglide-cli-watch": "./siteglide-cli-watch.js"
-  },
-  "devDependencies": {
-    "jest": "^24.8.0"
-  },
-  "preferGlobal": true,
-  "repository": "siteglide/siteglide-cli"
+		"js-yaml": "^3.13.1",
+		"mustache": "^3.0.1",
+		"node-notifier": "^5.4.0",
+		"node-watch": "^0.6.2",
+		"path": "^0.12.7",
+		"request": "^2.88.0",
+		"request-promise": "^4.2.4",
+		"shelljs": "^0.8.3",
+		"update-notifier": "^2.5.0",
+		"valid-url": "^1.0.9"
+	},
+	"bin": {
+		"siteglide-cli": "./siteglide-cli.js",
+		"siteglide-cli-add": "./siteglide-cli-add.js",
+		"siteglide-cli-sync": "./siteglide-cli-sync.js",
+		"siteglide-cli-pull": "./siteglide-cli-pull.js",
+		"siteglide-cli-watch": "./siteglide-cli-watch.js",
+		"siteglide-cli-init": "./siteglide-cli-init.js"
+	},
+	"devDependencies": {
+		"jest": "^24.8.0"
+	},
+	"preferGlobal": true,
+	"repository": "siteglide/siteglide-cli"
 }
