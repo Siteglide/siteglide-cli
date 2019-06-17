@@ -53,7 +53,7 @@ const init = () => {
 	emptyTemp();
 
 	if (dirExists(APP_DIR)) {
-		logger.Error('Diretory structure already exists. Command cancelled, your files have been left untouched.');
+		logger.Error('Directory structure already exists. Command cancelled, your files have been left untouched.');
 	}
 
 	downloadZip(program).on('close', () => extractZip(program));
