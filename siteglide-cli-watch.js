@@ -95,9 +95,17 @@ const pushFile = syncedFilePath => {
 	return gateway.sync(formData).then(body => {
 		if (body && body.refresh_index) {
 			logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
+			logger.Success(`[Sync] ${filePath} - done`);
 		}
 
-		logger.Success(`[Sync] ${filePath} - done`);
+		if (body && body.error){
+			logger.Error(`[Sync Error] ${body.error}`, {
+				exit: false
+			});
+		} else {
+			logger.Success(`[Sync] ${filePath} - done`);
+		}
+
 	});
 };
 
