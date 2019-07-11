@@ -91,26 +91,21 @@ program
       endpoint: environment,
       email: params.email
     };
-    if (params.token) {
-      storeEnvironment(Object.assign(settings, {
-        token: params.token
-      }));
-      logger.Success(`Environment ${params.url} as ${environment} has been added successfully.`);
-      process.exit(0);
-    }
 
     getPassword().then(password => {
       logger.Info(`Asking ${PARTNER_PORTAL_HOST} for access token...`);
 
       Portal.login(params.email, password, params.url)
         .then(response => {
-          const token = response;
+					const token = response;
+
+					console.log(response);
 
           if (token) {
             storeEnvironment(Object.assign(settings, {
               token
             }));
-            logger.Success(`Environment ${params.url} as ${environment} has been added successfully.`);
+            logger.Success(`Environment ${environment} has been added successfully for the site ${params.url}`);
           }
         })
         .catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error(`Authentication Failed: Please check that you have the correct permissions for ${params.url}`));
