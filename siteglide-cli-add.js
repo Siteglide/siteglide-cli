@@ -99,8 +99,6 @@ program
         .then(response => {
 					const token = response;
 
-					console.log(response);
-
           if (token) {
             storeEnvironment(Object.assign(settings, {
               token
