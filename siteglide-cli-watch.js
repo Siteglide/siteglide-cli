@@ -116,9 +116,9 @@ const checkParams = params => {
 
 program
 	.version(version)
-	.option('--email <email>', 'authentication token', process.env.MARKETPLACE_EMAIL)
-	.option('--token <token>', 'authentication token', process.env.MARKETPLACE_TOKEN)
-	.option('--url <url>', 'site url', process.env.MARKETPLACE_URL)
+	.option('--email <email>', 'authentication token', process.env.SITEGLIDE_EMAIL)
+	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
+	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
 	// .option('--files <files>', 'watch files', process.env.FILES || watchFilesExtensions)
 	.parse(process.argv);
 
