@@ -19,6 +19,7 @@ program
 	.command('sync [environment]', 'update site on local file change')
 	.command('pull [environment]', 'get all files from site')
 	.command('graphql', 'gui for graphql')
+	.command('logs', 'stream debugging logs from your site')
 	.command('init', 'create default folder structure for Siteglide Admin')
 	.parse(process.argv);
 
