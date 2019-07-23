@@ -99,12 +99,14 @@ program
         .then(response => {
 					const token = response;
 
-          if (token) {
+          if (token!==undefined) {
             storeEnvironment(Object.assign(settings, {
               token
             }));
             logger.Success(`Environment ${environment} has been added successfully for the site ${params.url}`);
-          }
+          }else{
+						logger.Error(`Credentials correct but API Key has not been generated within Siteglide Admin.  Please visit your site in within portal to generate an API key`);
+					}
         })
         .catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error(`Authentication Failed: Please check that you have the correct permissions for ${params.url}`));
     });
