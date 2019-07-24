@@ -26,13 +26,13 @@ program
 
 					const assets = response.asset;
 					await Promise.all(assets.map(async function(file){
-						return new Promise(async function(resolve, reject) {
+						return new Promise(async function(resolve) {
 							if(
 								(file.data.remote_url.indexOf('.css')>-1)||
 								(file.data.remote_url.indexOf('.js')>-1)
 							){
 								await getAsset(file.data.remote_url).then(response => {
-									if(response!=="error_missing_file"){
+									if(response!=='error_missing_file'){
 										file.data.body = response.data;
 										marketplace_builder_files.push(file);
 										resolve();
@@ -48,7 +48,7 @@ program
 						logger.Info(`File: ${file.data.physical_file_path}`);
 						const source = new Liquid(file.data);
 						var folderPath = source.path.split('/');
-						folderPath = folderPath.slice(0, folderPath.length-1).join("/");
+						folderPath = folderPath.slice(0, folderPath.length-1).join('/');
 						fs.mkdirSync(folderPath, { recursive: true });
 						fs.writeFileSync(source.path, source.output, logger.Error);
 					});
@@ -83,7 +83,7 @@ class Liquid {
 			(this.source.physical_file_path.indexOf('/partials/layouts')>-1)||
 			(this.source.physical_file_path.indexOf('assets/')===0)
 		){
-			return LIQUID_TEMPLATE.replace('---\nMETADATA---\n', '').replace('CONTENT', this.content)
+			return LIQUID_TEMPLATE.replace('---\nMETADATA---\n', '').replace('CONTENT', this.content);
 		}else{
 			return LIQUID_TEMPLATE.replace('METADATA', this.serialize(this.metadata)).replace('CONTENT', this.content);
 		}

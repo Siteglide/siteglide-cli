@@ -28,7 +28,7 @@ const moveStructureToDestination = branch => {
 };
 
 const downloadZip = ({ url, branch }) => {
-	logger.Info(`Downloading folder structure...`);
+	logger.Info('Downloading folder structure...');
 	const zipfileUrl = `${url}/archive/${branch}.zip`;
 	return request(zipfileUrl).pipe(fs.createWriteStream(TMP_PATH));
 };
