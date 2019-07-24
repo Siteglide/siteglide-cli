@@ -78,12 +78,12 @@ const existingSettings = configFilePath => {
 PARTNER_PORTAL_HOST = process.env.PARTNER_PORTAL_HOST || 'https://api.siteglide.co.uk';
 
 program
-  .version(version)
-  .arguments('[environment]', 'name of environment. Example: staging')
-  .option('--email <email>', 'Admin account email. Example: admin@example.com')
-  .option('--url <url>', 'Site URL. Example: https://example.com')
-  .option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-  .action((environment, params) => {
+	.version(version, '-v, --version')
+	.arguments('[environment]', 'name of environment. Example: staging')
+	.option('--email <email>', 'Admin account email. Example: admin@example.com')
+	.option('--url <url>', 'Site URL. Example: https://example.com')
+	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
+	.action((environment, params) => {
     process.env.CONFIG_FILE_PATH = params.configFile;
     checkParams(params);
     const settings = {

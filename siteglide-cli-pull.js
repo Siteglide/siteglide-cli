@@ -11,7 +11,7 @@ const program = require('commander'),
 	Confirm = require('./lib/confirm');
 
 program
-	.version(version)
+	.version(version, '-v, --version')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.action((environment, params) => {

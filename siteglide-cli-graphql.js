@@ -8,7 +8,7 @@ const program = require('commander'),
   version = require('./package.json').version;
 
 program
-  .version(version)
+	.version(version, '-v, --version')
   .arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
   .option('-p --port <port>', 'use PORT', '3333')

@@ -60,7 +60,7 @@ const init = () => {
 };
 
 program
-	.version(version)
+	.version(version, '-v, --version')
 	.option('--url <url>', 'theme github repository url', DEFAULT_REPO)
 	.option('--branch <branch>', 'branch where the theme is located', DEFAULT_BRANCH);
 
