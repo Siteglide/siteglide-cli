@@ -46,7 +46,6 @@
 		"siteglide-cli-watch": "./siteglide-cli-watch.js",
 		"siteglide-cli-init": "./siteglide-cli-init.js",
 		"siteglide-cli-gui": "./siteglide-cli-gui.js",
-		"siteglide-cli-gui-serve": "./siteglide-cli-gui-serve.js",
 		"siteglide-cli-logs": "./siteglide-cli-logs.js",
 		"siteglide-cli-server": "./siteglide-cli-server.js"
 	},
