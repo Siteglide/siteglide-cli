@@ -8,16 +8,16 @@ const program = require('commander'),
 	version = require('./package.json').version;
 
 program
-	.version(version)
+	.version(version, '-v, --version')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
 		const env = Object.assign(process.env, {
-			MARKETPLACE_EMAIL: authData.email,
-			MARKETPLACE_TOKEN: authData.token,
-			MARKETPLACE_URL: authData.url
+			SITEGLIDE_EMAIL: authData.email,
+			SITEGLIDE_TOKEN: authData.token,
+			SITEGLIDE_URL: authData.url
 		});
 		const p = spawn(command('siteglide-cli-watch'), [], {
 			stdio: 'inherit',
