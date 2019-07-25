@@ -70,7 +70,9 @@ const existingSettings = configFilePath => {
 
 	try {
 		settings = JSON.parse(fs.readFileSync(configFilePath));
-	} catch (e) {//nothing}
+	} catch (e) {
+		//nothing
+	}
 
 	return settings;
 };
