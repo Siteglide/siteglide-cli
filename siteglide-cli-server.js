@@ -15,35 +15,40 @@ const gateway = new Gateway({
 	email: process.env.SITEGLIDE_EMAIL
 });
 
-app.use(bodyParser.json());
-app.use(compression());
-app.use('/gui/graphql', express.static(__dirname + '/gui/graphql/public'));
+gateway.ping().then((res) => {
+	if(res.includes('Error: ')){
+		logger.Error('[403] - Error: Site locked due to billing issue');
+	} else {
+		app.use(bodyParser.json());
+		app.use(compression());
+		app.use('/gui/graphql', express.static(__dirname + '/gui/graphql/public'));
 
-// INFO
-const info = (req, res) => {
-	return res.send(JSON.stringify({ SG_URL: process.env.SITEGLIDE_URL }));
-};
+		// INFO
+		const info = (req, res) => {
+			return res.send(JSON.stringify({ SG_URL: process.env.SITEGLIDE_URL }));
+		};
 
-app.get('/info', info);
+		app.get('/info', info);
 
+		// GRAPHQL
+		const graphqlRouting = (req, res) => {
+			gateway
+				.graph(req.body)
+				.then(body => res.send(body))
+				.catch(error => res.send(error));
+		};
 
-// GRAPHQL
-const graphqlRouting = (req, res) => {
-	gateway
-		.graph(req.body)
-		.then(body => res.send(body))
-		.catch(error => res.send(error));
-};
+		app.post('/graphql', graphqlRouting);
+		app.post('/api/graph', graphqlRouting);
 
-app.post('/graphql', graphqlRouting);
-app.post('/api/graph', graphqlRouting);
+		app.listen(port, err => {
+			if (err) {
+				logger.Error(`Something wrong happened when trying to run Express server: ${err}`);
+			}
 
-app.listen(port, err => {
-	if (err) {
-		logger.Error(`Something wrong happened when trying to run Express server: ${err}`);
+			logger.Debug(`Server is listening on ${port}`);
+			logger.Success(`Connected to ${process.env.SITEGLIDE_URL}`);
+			logger.Success(`GraphQL Browser: http://localhost:${port}/gui/graphql`);
+		});
 	}
-
-	logger.Debug(`Server is listening on ${port}`);
-	logger.Success(`Connected to ${process.env.SITEGLIDE_URL}`);
-	logger.Success(`GraphQL Browser: http://localhost:${port}/gui/graphql`);
 });

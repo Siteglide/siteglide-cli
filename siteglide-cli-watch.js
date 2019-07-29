@@ -126,7 +126,10 @@ checkParams(program);
 
 const gateway = new Gateway(program);
 
-gateway.ping().then(() => {
+gateway.ping().then((res) => {
+	if(res.includes('Error: ')){
+		logger.Error('[403] - Error: Site locked due to billing issue');
+	}
 	const directories = getWatchDirectories();
 
 	if (directories.length === 0) {

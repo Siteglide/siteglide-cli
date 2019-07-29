@@ -77,7 +77,7 @@ const existingSettings = configFilePath => {
 	return settings;
 };
 
-PARTNER_PORTAL_HOST = process.env.PARTNER_PORTAL_HOST || 'https://api.siteglide.co.uk';
+PARTNER_PORTAL_HOST = process.env.PARTNER_PORTAL_HOST || 'http://localhost:3000';
 
 program
 	.version(version, '-v, --version')

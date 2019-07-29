@@ -24,6 +24,10 @@ program
 				gateway.pull().then(async(response) => {
 					const marketplace_builder_files = response.marketplace_builder_files;
 
+					if(response.includes('Error:')){
+						logger.Error('[403] - Error: Site locked due to billing issue');
+					}
+
 					const assets = response.asset;
 					await Promise.all(assets.map(async function(file){
 						return new Promise(async function(resolve) {

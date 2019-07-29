@@ -15,9 +15,16 @@ class LogStream extends EventEmitter {
 	}
 
 	start() {
-		const t = this;
-		setInterval(() => t.fetchData(), process.env.INTERVAL);
-		logger.Info('Live logging is starting. \n');
+
+		this.gateway.ping().then((res) => {
+			if(res.includes('Error: ')){
+				logger.Error('[403] - Error: Site locked due to billing issue');
+			} else {
+				const t = this;
+				setInterval(() => t.fetchData(), process.env.INTERVAL);
+				logger.Info('Live logging is starting. \n');
+			}
+		});
 	}
 
 	fetchData() {
