@@ -4,7 +4,7 @@ const program = require('commander'),
 	Gateway = require('./lib/proxy'),
 	fs = require('fs'),
 	path = require('path'),
-	watch = require('node-watch'),
+	chokidar = require('chokidar'),
 	Queue = require('async/queue'),
 	logger = require('./lib/logger'),
 	validate = require('./lib/validators'),
@@ -19,11 +19,9 @@ const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/').replace('marketplace_builder/', '');
 const isEmpty = filePath => fs.readFileSync(filePath).toString().trim().length === 0;
-const shouldBeSynced = (filePath, event) => {
-	return fileUpdated(event) && extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath) && isModuleFile(filePath);
+const shouldBeSynced = (filePath) => {
+	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath) && isModuleFile(filePath);
 };
-
-const fileUpdated = event => event === 'update';
 
 const extensionAllowed = filePath => {
 	const allowed = watchFilesExtensions.includes(ext(filePath));
@@ -135,7 +133,10 @@ gateway.ping().then(() => {
 
 	logger.Info(`Enabling sync mode to: ${program.url}`);
 
-	watch(directories, { recursive: true }, (event, filePath) => {
-		shouldBeSynced(filePath, event) && enqueue(filePath);
-	});
+	chokidar.watch(directories, {
+		ignoreInitial: true
+	})
+	.on('change', filePath => shouldBeSynced(filePath) && enqueue(filePath))
+	.on('add', fp => shouldBeSynced(fp) && enqueue(fp));
+
 });
