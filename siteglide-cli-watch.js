@@ -69,6 +69,14 @@ const enqueue = filePath => {
 };
 
 const getBody = (filePath, processTemplate) => {
+
+	var stats = fs.statSync(filePath);
+	var fileSizeInByte = stats['size'];
+	var fileSizeMb = fileSizeInByte / 1000000
+	if(fileSizeMb>=10){
+		logger.Info('Large File: This may take a while to sync, please be patient...\n')
+	};
+
 	if (processTemplate) {
 		const templatePath = `modules/${filePath.split(path.sep)[1]}/template-values.json`;
 		const moduleTemplateData = templateData(templatePath);
