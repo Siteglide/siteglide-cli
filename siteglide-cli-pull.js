@@ -2,13 +2,17 @@
 
 const program = require('commander'),
 	fs = require('fs'),
+	ora = require('ora'),
 	logger = require('./lib/logger'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	yaml = require('js-yaml'),
 	version = require('./package.json').version,
 	Gateway = require('./lib/proxy'),
-	axios = require('axios'),
-	Confirm = require('./lib/confirm');
+	Confirm = require('./lib/confirm'),
+	dir = require('./lib/directories'),
+	getAsset = require('./lib/assets/getAsset');
+
+const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout, spinner: 'clock' });
 
 program
 	.version(version, '-v, --version')
@@ -19,8 +23,9 @@ program
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
 
-		Confirm('Are you sure you would like to pull? This will overwrite ALL local files immediately! (Y/n)\n').then(function (response) {
+		Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(function (response) {
 			if (response === 'Y') {
+				pullSpinner.start();
 				gateway.pull().then(async(response) => {
 					const marketplace_builder_files = response.marketplace_builder_files;
 
@@ -29,7 +34,10 @@ program
 						return new Promise(async function(resolve) {
 							if(
 								(file.data.remote_url.indexOf('.css')>-1)||
-								(file.data.remote_url.indexOf('.js')>-1)
+								(file.data.remote_url.indexOf('.js')>-1)||
+								(file.data.remote_url.indexOf('.scss')>-1)||
+								(file.data.remote_url.indexOf('.sass')>-1)||
+								(file.data.remote_url.indexOf('.less')>-1)
 							){
 								await getAsset(file.data.remote_url).then(response => {
 									if(response!=='error_missing_file'){
@@ -44,14 +52,27 @@ program
 						});
 					}));
 
+					pullSpinner.succeed('Downloading files');
+
 					marketplace_builder_files.forEach(file => {
-						logger.Info(`File: ${file.data.physical_file_path}`);
-						const source = new Liquid(file.data);
-						var folderPath = source.path.split('/');
-						folderPath = folderPath.slice(0, folderPath.length-1).join('/');
-						fs.mkdirSync(folderPath, { recursive: true });
-						fs.writeFileSync(source.path, source.output, logger.Error);
+						if(
+							(file.data.physical_file_path.indexOf('.yml')>-1)||
+							(file.data.physical_file_path.indexOf('.liquid')>-1)
+						){
+							const source = new Liquid(file.data);
+							var folderPath = source.path.split('/');
+							folderPath = folderPath.slice(0, folderPath.length-1).join('/');
+							fs.mkdirSync(folderPath, { recursive: true });
+							fs.writeFileSync(source.path, source.output, logger.Error);
+						}else{
+							var folderPath = file.data.physical_file_path.split('/');
+							folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
+							fs.mkdirSync(folderPath, { recursive: true });
+							file.data.body.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path));
+						}
 					});
+
+					pullSpinner.stopAndPersist().succeed(`Done. All files downloaded`);
 				}, logger.Error);
 			} else {
 				logger.Error('[Cancelled] Pull command not excecuted, your files have been left untouched.');
@@ -92,19 +113,6 @@ class Liquid {
 	serialize(obj) {
 		return yaml.safeDump(obj);
 	}
-}
-
-function getAsset(path){
-	return new Promise(function (resolve) {
-		axios({
-			method: 'GET',
-			url: path+'?v='+new Date().getTime(),
-		}).then(function (data) {
-			resolve(data);
-		}).catch(function () {
-			resolve('error_missing_file');
-		});
-	});
 }
 
 program.parse(process.argv);

@@ -21,6 +21,8 @@ program
 	.command('graphql [environment]', 'gui for graphql')
 	.command('logs [environment]', 'stream debugging logs from your site')
 	.command('init', 'create default folder structure for Siteglide Admin')
+	.command('deploy', 'upload all code to your site')
+	.command('export', 'export the code, assets and data from your site')
 	.parse(process.argv);
 
 if (program._execs instanceof Set){

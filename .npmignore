@@ -4,3 +4,7 @@
 .env
 .DS_Store
 /modules
+.tmp
+.pos
+data.json
+exported.json

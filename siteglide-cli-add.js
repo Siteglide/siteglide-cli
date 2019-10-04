@@ -28,7 +28,6 @@ const checkParams = params => {
 	validate.url(params.url);
 };
 
-// turn to promise
 const getPassword = () => {
 	return new Promise((resolve) => {
 		const reader = rl.createInterface({
@@ -38,7 +37,6 @@ const getPassword = () => {
 		reader.stdoutMuted = true;
 		reader.question('Password: ', password => {
 			reader.close();
-			logger.Info('');
 			resolve(password);
 		});
 
@@ -95,7 +93,7 @@ program
 		};
 
 		getPassword().then(password => {
-			logger.Info(`Asking ${PARTNER_PORTAL_HOST} for access token...`);
+			logger.Info(`\nAsking ${PARTNER_PORTAL_HOST} for access token...`);
 
 			Portal.login(params.email, password, params.url)
 				.then(response => {
