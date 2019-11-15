@@ -29,7 +29,10 @@ program
 						return new Promise(async function(resolve) {
 							if(
 								(file.data.remote_url.indexOf('.css')>-1)||
-								(file.data.remote_url.indexOf('.js')>-1)
+								(file.data.remote_url.indexOf('.js')>-1)||
+								(file.data.remote_url.indexOf('.scss')>-1)||
+								(file.data.remote_url.indexOf('.sass')>-1)||
+								(file.data.remote_url.indexOf('.less')>-1)
 							){
 								await getAsset(file.data.remote_url).then(response => {
 									if(response!=='error_missing_file'){
