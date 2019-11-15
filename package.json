@@ -1,6 +1,6 @@
 {
 	"name": "@siteglide/siteglide-cli",
-	"version": "1.2.1",
+	"version": "1.2.2",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"test": "jest --silent",
