@@ -52,7 +52,7 @@ program
 						});
 					}));
 
-					pullSpinner.succeed('Downloading files');
+					pullSpinner.succeed();
 
 					marketplace_builder_files.forEach(file => {
 						if(
@@ -72,7 +72,7 @@ program
 						}
 					});
 
-					pullSpinner.stopAndPersist().succeed(`Done. All files downloaded`);
+					pullSpinner.stopAndPersist().succeed(`Done. Files downloaded successfully`);
 				}, logger.Error);
 			} else {
 				logger.Error('[Cancelled] Pull command not excecuted, your files have been left untouched.');
