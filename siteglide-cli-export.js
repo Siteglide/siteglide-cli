@@ -15,8 +15,8 @@ const program = require('commander'),
 	version = require('./package.json').version;
 
 let gateway;
-const spinner = ora({ text: 'Exporting', stream: process.stdout, spinner: 'clock' });
-const pullSpinner = ora({ text: 'Pulling all files', stream: process.stdout, spinner: 'clock' });
+const spinner = ora({ text: 'Exporting data', stream: process.stdout, spinner: 'clock' });
+const pullSpinner = ora({ text: 'Downloading files', stream: process.stdout, spinner: 'clock' });
 
 const transform = ({ users = { results: [] }, transactables = { results: [] }, models = { results: [] } }) => {
 	return {
@@ -44,21 +44,22 @@ program
 	.option('-e --export-internal-ids <export-internal-ids>', 'use normal object `id` instead of `external_id` in exported json data',
 		'false')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-	.action((environment, params) => {
+  .option('--with-images', 'With images, also pulls the assets/images folder', false)
+	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
+		process.env.WITH_IMAGES = params.withImages;
 		const filename = params.path;
 		const exportInternalIds = params.exportInternalIds;
 		const authData = fetchAuthData(environment, program, program);
 		gateway = new Gateway(authData);
-		spinner.start();
-		gateway
+		await gateway
 			.export(exportInternalIds)
 			.then(exportTask => {
+				spinner.start();
 				waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
 					shell.mkdir('-p', '.tmp');
 					fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
 					let data = transform(exportTask.data);
-					spinner.succeed('Downloading data');
 					fetchFilesForData(data).then(data => {
 						fs.writeFileSync(filename, JSON.stringify(data));
 						spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
@@ -82,25 +83,41 @@ program
 				spinner.fail('Export failed');
 				logger.Error(e.message);
 			});
-		gateway
+		await gateway
 			.pull().then(async(response) => {
 				pullSpinner.start();
+				if(params.withImages){
+					pullSpinner.text = 'Downloading all images and videos as well, this may take a while...';
+				}
 				const marketplace_builder_files = response.marketplace_builder_files;
 				const assets = response.asset;
-
 				await Promise.all(assets.map(async function(file){
 					return new Promise(async function(resolve) {
-						await getAsset(file.data.remote_url).then(response => {
-							if(response!=='error_missing_file'){
-								file.data.body = response.data;
-								marketplace_builder_files.push(file);
-								resolve();
-							}
-						});
+						if(
+							(!params.withImages)&&
+							(file.data.physical_file_path.indexOf('assets/images/')=='-1')
+						){
+							await getAsset(file.data.remote_url).then(response => {
+								if(response!=='error_missing_file'){
+									file.data.body = response.data;
+									marketplace_builder_files.push(file);
+									resolve();
+								}
+							});
+						}else if(params.withImages){
+							await getAsset(file.data.remote_url).then(response => {
+								if(response!=='error_missing_file'){
+									file.data.body = response.data;
+									marketplace_builder_files.push(file);
+									resolve();
+								}
+							});
+						}else {
+							resolve();
+						}
 					});
 				}));
 
-				pullSpinner.succeed('Downloading files');
 				marketplace_builder_files.forEach(file => {
 					if(
 						(file.data.physical_file_path.indexOf('.yml')>-1)||
@@ -119,7 +136,7 @@ program
 					}
 				});
 
-				pullSpinner.stopAndPersist().succeed(`Done. All files downloaded`);
+				pullSpinner.stopAndPersist().succeed(`Files downloaded into ${dir.LEGACY_APP} folder`);
 			}, logger.Error);
 	});
 
