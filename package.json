@@ -58,9 +58,9 @@
 		"siteglide-cli-watch": "./siteglide-cli-watch.js"
 	},
 	"devDependencies": {
-		"eslint": "4.12.1",
 		"babel-eslint": "^10.0.2",
-		"jest": "^24.8.0"
+		"eslint": "4.12.1",
+		"jest": "^24.9.0"
 	},
 	"preferGlobal": true,
 	"repository": "siteglide/siteglide-cli"
