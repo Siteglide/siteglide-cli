@@ -102,20 +102,16 @@ program
 								if(response!=='error_missing_file'){
 									file.data.body = response.data;
 									marketplace_builder_files.push(file);
-									resolve();
-								}else{
-									resolve();
 								}
+								resolve();
 							});
 						}else if(params.withImages){
 							getAsset(file.data.remote_url).then(response => {
 								if(response!=='error_missing_file'){
 									file.data.body = response.data;
 									marketplace_builder_files.push(file);
-									resolve();
-								}else{
-									resolve();
 								}
+								resolve();
 							});
 						}else{
 							resolve();
