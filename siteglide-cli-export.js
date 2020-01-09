@@ -92,27 +92,32 @@ program
 				const marketplace_builder_files = response.marketplace_builder_files;
 				const assets = response.asset;
 				await Promise.all(assets.map(async function(file){
-					return new Promise(async function(resolve) {
+					return new Promise(function(resolve) {
 						if(
 							(!params.withImages)&&
-							(file.data.physical_file_path.indexOf('assets/images/')=='-1')
+							(file.data.physical_file_path.indexOf('assets/images/')===-1)&&
+							(!file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg)$/i))
 						){
-							await getAsset(file.data.remote_url).then(response => {
+							getAsset(file.data.remote_url).then(response => {
 								if(response!=='error_missing_file'){
 									file.data.body = response.data;
 									marketplace_builder_files.push(file);
+									resolve();
+								}else{
 									resolve();
 								}
 							});
 						}else if(params.withImages){
-							await getAsset(file.data.remote_url).then(response => {
+							getAsset(file.data.remote_url).then(response => {
 								if(response!=='error_missing_file'){
 									file.data.body = response.data;
 									marketplace_builder_files.push(file);
 									resolve();
+								}else{
+									resolve();
 								}
 							});
-						}else {
+						}else{
 							resolve();
 						}
 					});
