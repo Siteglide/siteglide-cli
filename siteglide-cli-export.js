@@ -90,32 +90,19 @@ program
 					pullSpinner.text = 'Downloading all images and videos as well, this may take a while...';
 				}
 				const marketplace_builder_files = response.marketplace_builder_files;
-				const assets = response.asset;
-				await Promise.all(assets.map(async function(file){
-					return new Promise(function(resolve) {
-						if(
-							(!params.withImages)&&
-							(file.data.physical_file_path.indexOf('assets/images/')===-1)&&
-							(!file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg)$/i))
-						){
-							getAsset(file.data.remote_url).then(response => {
-								if(response!=='error_missing_file'){
-									file.data.body = response.data;
-									marketplace_builder_files.push(file);
-								}
-								resolve();
-							});
-						}else if(params.withImages){
-							getAsset(file.data.remote_url).then(response => {
-								if(response!=='error_missing_file'){
-									file.data.body = response.data;
-									marketplace_builder_files.push(file);
-								}
-								resolve();
-							});
-						}else{
+				var assets = response.asset;
+				if(!params.withImages){
+					assets = assets.filter(file => file.data.physical_file_path.indexOf('assets/images/')===-1).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg)$/i));
+				}
+				await Promise.all(assets.map(function(file){
+					return new Promise(async function(resolve) {
+						getAsset(file.data.remote_url).then(response => {
+							if(response!=='error_missing_file'){
+								file.data.body = response.data;
+								marketplace_builder_files.push(file);
+							}
 							resolve();
-						}
+						});
 					});
 				}));
 
