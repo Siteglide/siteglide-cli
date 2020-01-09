@@ -120,7 +120,13 @@ program
 						var folderPath = file.data.physical_file_path.split('/');
 						folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
 						fs.mkdirSync(folderPath, { recursive: true });
-						fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, file.data.body, logger.Error);
+						var body;
+						if(file.data.physical_file_path.indexOf('.graphql')>-1){
+							body = file.data.content;
+						}else{
+							body = file.data.body;
+						}
+						fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, body, logger.Error);
 					}
 				});
 
