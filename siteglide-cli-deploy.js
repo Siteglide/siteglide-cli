@@ -52,7 +52,7 @@ program
 
 		const authData = fetchAuthData(environment, program);
 
-			Confirm(`Are you sure you would like to deploy to ${authData.url}? This will overwrite ALL files on your website! (Y/n)\n`).then(function (response) {
+			Confirm(`Are you sure you would like to deploy to ${authData.url}? (Y/n)\n`).then(function (response) {
 				if (response === 'Y') {
 
 					const env = Object.assign(process.env, {
@@ -68,7 +68,7 @@ program
 						.then(() => process.exit(0))
 						.catch(() => process.exit(1));
 			} else {
-				logger.Error('[Cancelled] Deploy command not excecuted, your website has been left untouched.');
+				logger.Error('[Cancelled] Deploy command not excecuted, no files have been updated.');
 			}
 		});
 	});
