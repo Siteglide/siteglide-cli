@@ -44,7 +44,7 @@ program
 	.option('-e --export-internal-ids <export-internal-ids>', 'use normal object `id` instead of `external_id` in exported json data',
 		'false')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-  .option('--with-images', 'With images, also pulls the assets/images folder', false)
+  // .option('--with-images', 'With images, also pulls the assets/images folder', false)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withImages;

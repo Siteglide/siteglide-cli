@@ -10,7 +10,8 @@ const program = require('commander'),
 
 const uploadArchive = (env, withImages) => {
 	return new Promise((resolve, reject) => {
-		const options = withImages ? ['--with-images'] : [];
+		// const options = withImages ? ['--with-images'] : [];
+		const options = [];
 		const archive = spawn(command('siteglide-cli-archive'), options, {
 			stdio: 'inherit'
 		});
@@ -45,7 +46,7 @@ program
 	.version(version)
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-  .option('--with-images', 'With images, also deploys the assets/images folder', false)
+  // .option('--with-images', 'With images, also deploys the assets/images folder', false)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withImages;

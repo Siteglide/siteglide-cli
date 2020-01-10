@@ -24,7 +24,7 @@ const makeArchive = (path, directory, withImages) => {
 
 program
 	.version(version)
-	.option('--with-images', 'With images, also deploys the assets/images folder')
+	// .option('--with-images', 'With images, also deploys the assets/images folder')
 	.option('--target <target>', 'path to archive', process.env.TARGET || '.tmp/marketplace-release.zip')
 	.parse(process.argv);
 
