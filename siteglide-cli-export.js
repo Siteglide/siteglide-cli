@@ -11,6 +11,7 @@ const program = require('commander'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	getAsset = require('./lib/assets/getAsset'),
 	dir = require('./lib/directories'),
+	Confirm = require('./lib/confirm'),
 	yaml = require('js-yaml'),
 	version = require('./package.json').version;
 
@@ -52,86 +53,93 @@ program
 		const exportInternalIds = params.exportInternalIds;
 		const authData = fetchAuthData(environment, program, program);
 		gateway = new Gateway(authData);
-		await gateway
-			.export(exportInternalIds)
-			.then(exportTask => {
-				spinner.start();
-				waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
-					shell.mkdir('-p', '.tmp');
-					fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
-					let data = transform(exportTask.data);
-					fetchFilesForData(data).then(data => {
-						fs.writeFileSync(filename, JSON.stringify(data));
-						spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
-					}).catch(e => {
-						logger.Warn('export error');
-						logger.Warn(e.message);
-					});
-				}).catch(error => {
-					logger.Debug(error);
-					spinner.fail('Export failed');
-				});
-			})
-			.catch(
-				{ statusCode: 404 },
-				() => {
-					spinner.fail('Export failed');
-					logger.Error('[404] Data export is not supported by the server');
-				}
-			)
-			.catch(e => {
-				spinner.fail('Export failed');
-				logger.Error(e.message);
-			});
-		await gateway
-			.pull().then(async(response) => {
-				pullSpinner.start();
-				if(params.withImages){
-					pullSpinner.text = 'Downloading all images and videos as well, this may take a while...';
-				}
-				const marketplace_builder_files = response.marketplace_builder_files;
-				var assets = response.asset;
-				if(!params.withImages){
-					assets = assets.filter(file => file.data.physical_file_path.indexOf('assets/images/')===-1).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg)$/i));
-				}
-				await Promise.all(assets.map(function(file){
-					return new Promise(async function(resolve) {
-						getAsset(file.data.remote_url).then(response => {
-							if(response!=='error_missing_file'){
-								file.data.body = response.data;
-								marketplace_builder_files.push(file);
-							}
-							resolve();
+
+		Confirm('Are you sure you would like to export? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
+			if (response === 'Y') {
+				await gateway
+					.export(exportInternalIds)
+					.then(exportTask => {
+						spinner.start();
+						waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
+							shell.mkdir('-p', '.tmp');
+							fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
+							let data = transform(exportTask.data);
+							fetchFilesForData(data).then(data => {
+								fs.writeFileSync(filename, JSON.stringify(data));
+								spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
+							}).catch(e => {
+								logger.Warn('export error');
+								logger.Warn(e.message);
+							});
+						}).catch(error => {
+							logger.Debug(error);
+							spinner.fail('Export failed');
 						});
-					});
-				}));
-
-				marketplace_builder_files.forEach(file => {
-					if(
-						(file.data.physical_file_path.indexOf('.yml')>-1)||
-						(file.data.physical_file_path.indexOf('.liquid')>-1)
-					){
-						const source = new Liquid(file.data);
-						var folderPath = source.path.split('/');
-						folderPath = folderPath.slice(0, folderPath.length-1).join('/');
-						fs.mkdirSync(folderPath, { recursive: true });
-						fs.writeFileSync(source.path, source.output, logger.Error);
-					}else{
-						var folderPath = file.data.physical_file_path.split('/');
-						folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
-						fs.mkdirSync(folderPath, { recursive: true });
-						var body;
-						if(file.data.physical_file_path.indexOf('.graphql')>-1){
-							body = file.data.content;
-						}else{
-							body = file.data.body;
+					})
+					.catch(
+						{ statusCode: 404 },
+						() => {
+							spinner.fail('Export failed');
+							logger.Error('[404] Data export is not supported by the server');
 						}
-						fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, body, logger.Error);
-					}
-				});
+					)
+					.catch(e => {
+						spinner.fail('Export failed');
+						logger.Error(e.message);
+					});
+				await gateway
+					.pull().then(async(response) => {
+						pullSpinner.start();
+						if(params.withImages){
+							pullSpinner.text = 'Downloading all images and videos as well, this may take a while...';
+						}
+						const marketplace_builder_files = response.marketplace_builder_files;
+						var assets = response.asset;
+						if(!params.withImages){
+							assets = assets.filter(file => file.data.physical_file_path.indexOf('assets/images/')===-1).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg)$/i));
+						}
+						await Promise.all(assets.map(function(file){
+							return new Promise(async function(resolve) {
+								getAsset(file.data.remote_url).then(response => {
+									if(response!=='error_missing_file'){
+										file.data.body = response.data;
+										marketplace_builder_files.push(file);
+									}
+									resolve();
+								});
+							});
+						}));
 
-				pullSpinner.stopAndPersist().succeed(`Files downloaded into ${dir.LEGACY_APP} folder`);
-			}, logger.Error);
+						marketplace_builder_files.forEach(file => {
+							if(
+								(file.data.physical_file_path.indexOf('.yml')>-1)||
+								(file.data.physical_file_path.indexOf('.liquid')>-1)
+							){
+								const source = new Liquid(file.data);
+								var folderPath = source.path.split('/');
+								folderPath = folderPath.slice(0, folderPath.length-1).join('/');
+								fs.mkdirSync(folderPath, { recursive: true });
+								fs.writeFileSync(source.path, source.output, logger.Error);
+							}else{
+								var folderPath = file.data.physical_file_path.split('/');
+								folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
+								fs.mkdirSync(folderPath, { recursive: true });
+								var body;
+								if(file.data.physical_file_path.indexOf('.graphql')>-1){
+									body = file.data.content;
+								}else{
+									body = file.data.body;
+								}
+								fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, body, logger.Error);
+							}
+						});
+
+						pullSpinner.stopAndPersist().succeed(`Files downloaded into ${dir.LEGACY_APP} folder`);
+					}, logger.Error);
+				} else {
+					logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
+				};
+		});
 	});
 
 const LIQUID_TEMPLATE = '---\nMETADATA---\nCONTENT';
