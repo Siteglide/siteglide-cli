@@ -28,7 +28,8 @@ const uploadArchive = (env, withImages) => {
 			});
 
 			push.on('close', exitCode => {
-				if (exitCode === 1) {
+				if (exitCode === 1)  {
+					logger.Error('Deploy failed. Please check that you have the correct permissions or that your site is not locked.');
 					reject(false);
 				} else if (exitCode === 0) {
 					resolve(true);

@@ -82,11 +82,7 @@ program
 							spinner.fail('Export failed');
 							logger.Error('[404] Data export is not supported by the server');
 						}
-					)
-					.catch(e => {
-						spinner.fail('Export failed');
-						logger.Error(e.message);
-					});
+					);
 				await gateway
 					.pull().then(async(response) => {
 						pullSpinner.start();
@@ -95,18 +91,28 @@ program
 						}
 						const marketplace_builder_files = response.marketplace_builder_files;
 						var assets = response.asset;
-						if(!params.withImages){
-							assets = assets.filter(file => file.data.physical_file_path.indexOf('assets/images/')===-1).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg)$/i));
-						}
+						// if(!params.withImages){
+							// assets = assets.filter(file => file.data.physical_file_path.indexOf('assets/images/')===-1).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg)$/i));
+						// }
 						await Promise.all(assets.map(function(file){
 							return new Promise(async function(resolve) {
-								getAsset(file.data.remote_url).then(response => {
-									if(response!=='error_missing_file'){
-										file.data.body = response.data;
-										marketplace_builder_files.push(file);
-									}
+								if(
+									(file.data.remote_url.indexOf('.css')>-1)||
+									(file.data.remote_url.indexOf('.js')>-1)||
+									(file.data.remote_url.indexOf('.scss')>-1)||
+									(file.data.remote_url.indexOf('.sass')>-1)||
+									(file.data.remote_url.indexOf('.less')>-1)
+								){
+									getAsset(file.data.remote_url).then(response => {
+										if(response!=='error_missing_file'){
+											file.data.body = response.data;
+											marketplace_builder_files.push(file);
+										}
+										resolve();
+									});
+								}else{
 									resolve();
-								});
+								}
 							});
 						}));
 
