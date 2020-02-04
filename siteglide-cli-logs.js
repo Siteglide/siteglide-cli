@@ -65,17 +65,12 @@ program
 			const options = { exit: false, hideTimestamp: true };
 			const text = `[${msg.created_at.replace('T', ' ')}] - ${msg.error_type}: ${msg.message.replace(/\n$/, '')}`;
 
-			isError(msg) ? logger.Error(text, options) : logger.Info(text, options);
-		});
-
-		stream.on('message', msg => {
-			if (!msg.message) {
-				return false;
-			}
-
-			if (isError(msg)) {
+			if(isError(msg)) {
+				logger.Error(text, options)
 				notifier.notify({ title: msg.error_type, message: msg.message });
-			}
+			}else{
+				logger.Info(text, options);
+			};
 		});
 
 		stream.start();

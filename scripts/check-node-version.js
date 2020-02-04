@@ -7,4 +7,6 @@ const version = engines.node;
 
 if (!semver.satisfies(process.version, version)) {
 	logger.Error(`Required node version ${version} not satisfied with current version ${process.version}.`);
+}else{
+	logger.Success(`Successfully installed! Please see https://docs.siteglide.com/cli/introduction for more information on Siteglide CLI`)
 }

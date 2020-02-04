@@ -26,10 +26,12 @@ program
 		const server = spawn(command('siteglide-cli-server'), [], { stdio: 'inherit' });
 
 		server.on('close', code => {
-			if (code === 1) {
-				logger.Error('✖ Failed.');
-			}
+			if (code === 1) logger.Error('GraphQL failed. Please check that you have the correct permissions or that your site is not locked.', {
+				exit: false
+			});
 		});
+
+		server.on('error', logger.Error);
 	});
 
 program.parse(process.argv);

@@ -28,7 +28,6 @@ const checkParams = params => {
 	validate.url(params.url);
 };
 
-// turn to promise
 const getPassword = () => {
 	return new Promise((resolve) => {
 		const reader = rl.createInterface({
@@ -38,7 +37,6 @@ const getPassword = () => {
 		reader.stdoutMuted = true;
 		reader.question('Password: ', password => {
 			reader.close();
-			logger.Info('');
 			resolve(password);
 		});
 
@@ -95,7 +93,7 @@ program
 		};
 
 		getPassword().then(password => {
-			logger.Info(`Asking ${PARTNER_PORTAL_HOST} for access token...`);
+			logger.Info(`\nAsking ${PARTNER_PORTAL_HOST} for access token...`);
 
 			Portal.login(params.email, password, params.url)
 				.then(response => {
@@ -110,7 +108,7 @@ program
 						logger.Error('Credentials correct but API Key has not been generated within Siteglide Admin.  Please visit your site in within portal to generate an API key');
 					}
 				})
-				.catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error(`Authentication Failed: Please check that you have the correct permissions for ${params.url}`));
+				.catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error(`Authentication Failed: Please check that you have the correct permissions or that your site is not locked.`));
 		});
 	});
 
