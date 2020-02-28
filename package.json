@@ -3,7 +3,6 @@
 	"version": "1.3.0",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
-		"test": "jest --silent",
 		"postinstall": "node ./scripts/check-node-version.js"
 	},
 	"main": "./siteglide-cli.js",
@@ -22,7 +21,7 @@
 		"archiver": "^3.1.1",
 		"archiver-promise": "1.0.0",
 		"async": "^2.6.2",
-		"axios": "^0.18.1",
+		"axios": "^0.19.2",
 		"body-parser": "1.19.0",
 		"chokidar": "^3.0.2",
 		"commander": "^3.0.2",
@@ -49,6 +48,7 @@
 		"siteglide-cli-deploy": "./siteglide-cli-deploy.js",
 		"siteglide-cli-export": "./siteglide-cli-export.js",
 		"siteglide-cli-gui": "./siteglide-cli-gui.js",
+		"siteglide-cli-import": "./siteglide-cli-import.js",
 		"siteglide-cli-init": "./siteglide-cli-init.js",
 		"siteglide-cli-logs": "./siteglide-cli-logs.js",
 		"siteglide-cli-pull": "./siteglide-cli-pull.js",
@@ -56,11 +56,6 @@
 		"siteglide-cli-server": "./siteglide-cli-server.js",
 		"siteglide-cli-sync": "./siteglide-cli-sync.js",
 		"siteglide-cli-watch": "./siteglide-cli-watch.js"
-	},
-	"devDependencies": {
-		"babel-eslint": "^10.0.2",
-		"eslint": "4.18.2",
-		"jest": "^24.9.0"
 	},
 	"preferGlobal": true,
 	"repository": "siteglide/siteglide-cli"
