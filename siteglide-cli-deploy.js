@@ -47,7 +47,6 @@ program
 	.version(version)
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-  // .option('--with-images', 'With images, also deploys the assets/images folder', false)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withImages;
