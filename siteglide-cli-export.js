@@ -10,7 +10,6 @@ const program = require('commander'),
 	fetchFiles = require('./lib/data/fetchFiles'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	getAsset = require('./lib/assets/getAsset'),
-	getBinary = require('./lib/assets/getBinary'),
 	dir = require('./lib/directories'),
 	Confirm = require('./lib/confirm'),
 	yaml = require('js-yaml'),
@@ -57,36 +56,35 @@ program
 
 		Confirm('Are you sure you would like to export? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
-				// await gateway
-				// 	.export(exportInternalIds)
-				// 	.then(exportTask => {
-				// 		spinner.start();
-				// 		waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
-				// 			shell.mkdir('-p', '.tmp');
-				// 			fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
-				// 			let data = transform(exportTask.data);
-				// 			fetchFilesForData(data).then(data => {
-				// 				fs.writeFileSync(filename, JSON.stringify(data));
-				// 				spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
-				// 			}).catch(e => {
-				// 				logger.Warn('export error');
-				// 				logger.Warn(e.message);
-				// 			});
-				// 		}).catch(error => {
-				// 			logger.Debug(error);
-				// 			spinner.fail('Export failed');
-				// 		});
-				// 	})
-				// 	.catch(
-				// 		{ statusCode: 404 },
-				// 		() => {
-				// 			spinner.fail('Export failed');
-				// 			logger.Error('[404] Data export is not supported by the server');
-				// 		}
-				// 	);
+				await gateway
+					.export(exportInternalIds)
+					.then(exportTask => {
+						spinner.start();
+						waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
+							shell.mkdir('-p', '.tmp');
+							fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
+							let data = transform(exportTask.data);
+							fetchFilesForData(data).then(data => {
+								fs.writeFileSync(filename, JSON.stringify(data));
+								spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
+							}).catch(e => {
+								logger.Warn('export error');
+								logger.Warn(e.message);
+							});
+						}).catch(error => {
+							logger.Debug(error);
+							spinner.fail('Export failed');
+						});
+					})
+					.catch(
+						{ statusCode: 404 },
+						() => {
+							spinner.fail('Export failed');
+							logger.Error('[404] Data export is not supported by the server');
+						}
+					);
 				await gateway
 					.pull().then(async(response) => {
-						console.log('starting!');
 						pullSpinner.start();
 						if(params.withAssets){
 							pullSpinner.text = 'Downloading all images and videos as well, this may take a while...';
@@ -94,7 +92,7 @@ program
 						const marketplace_builder_files = response.marketplace_builder_files;
 						var assets = response.asset;
 						if(!params.withAssets){
-							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg|pdf|mp4|mov|otf|ttf|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|csv)$/i));
+							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg|pdf|mp3|mp4|mov|ogg|otf|ttf|webm|webp|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|zip|csv)$/i));
 						}
 						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep'));
 						var count = 0;
@@ -113,23 +111,19 @@ program
 									(file.data.remote_url.indexOf('.json')>-1)
 								){
 									getAsset(file.data.remote_url).then(async response => {
-										if(!response){
-											console.log(response);
-										}
 										if(response!=='error_missing_file'){
 											if(
 												(file.data.physical_file_path.indexOf('.json')>-1)||
 												(file.data.physical_file_path.indexOf('.map')>-1)
 											){
-												file.body = JSON.stringify(response.data)
+												file.body = JSON.stringify(response.body)
 											}else{
-												file.body = response.data;
+												file.body = response.body;
 											}
-											marketplace_builder_files.push(file);
-										}
-										count++;
-										if(params.withAssets){
-											pullSpinner.text = `Downloading asset number ${count} of ${assets.length}, this may take a while...`;
+											marketplace_builder_files.push(file);count++;
+											if(params.withAssets){
+												pullSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
+											}
 										}
 										resolve();
 									}).catch(e => {
@@ -142,10 +136,14 @@ program
 									(file.data.remote_url.indexOf('.png')>-1)||
 									(file.data.remote_url.indexOf('.gif')>-1)||
 									(file.data.remote_url.indexOf('.pdf')>-1)||
+									(file.data.remote_url.indexOf('.mp3')>-1)||
 									(file.data.remote_url.indexOf('.mp4')>-1)||
 									(file.data.remote_url.indexOf('.mov')>-1)||
+									(file.data.remote_url.indexOf('.ogg')>-1)||
 									(file.data.remote_url.indexOf('.otf')>-1)||
 									(file.data.remote_url.indexOf('.ttf')>-1)||
+									(file.data.remote_url.indexOf('.webm')>-1)||
+									(file.data.remote_url.indexOf('.webp')>-1)||
 									(file.data.remote_url.indexOf('.woff')>-1)||
 									(file.data.remote_url.indexOf('.woff2')>-1)||
 									(file.data.remote_url.indexOf('.ico')>-1)||
@@ -158,21 +156,19 @@ program
 									(file.data.remote_url.indexOf('.pages')>-1)||
 									(file.data.remote_url.indexOf('.numbers')>-1)||
 									(file.data.remote_url.indexOf('.key')>-1)||
+									(file.data.remote_url.indexOf('.zip')>-1)||
 									(file.data.remote_url.indexOf('.csv')>-1)
 								){
 									var folderPath = file.data.physical_file_path.split('/');
 									folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
 									fs.mkdirSync(folderPath, { recursive: true });
-									getBinary(file.data.remote_url).then(async response => {
-										if(!response){
-											console.log(response);
-										}
+									getAsset(file.data.remote_url).then(async response => {
 										if(response!=='error_missing_file'){
-											response.data.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path))
-										}
-										count++;
-										if(params.withAssets){
-											pullSpinner.text = `Downloading asset number ${count} of ${assets.length}, this may take a while...`;
+											response.body.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path))
+											count++;
+											if(params.withAssets){
+												pullSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
+											}
 										}
 										resolve();
 									}).catch(e => {
@@ -180,12 +176,14 @@ program
 										logger.Error(e);
 									});
 								}else{
+									logger.Error(`Cannot download asset ${file.data.remote_url}`)
 									resolve();
 								}
 							});
 						}));
 
 						marketplace_builder_files.filter(file => file.data.physical_file_path!==undefined).forEach(file => {
+							console.log(file.data.physical_file_path);
 							if(
 								(file.data.physical_file_path.indexOf('.yml')>-1)||
 								(file.data.physical_file_path.indexOf('.liquid')>-1)
