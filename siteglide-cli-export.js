@@ -97,18 +97,19 @@ program
 						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep'));
 						var count = 0;
 						await Promise.all(assets.map(function(file){
+							var urlToTest = file.data.remote_url.toLowerCase();
 							return new Promise(async function(resolve) {
 								if(
-									(file.data.remote_url.indexOf('.css')>-1)||
-									(file.data.remote_url.indexOf('.js')>-1)||
-									(file.data.remote_url.indexOf('.scss')>-1)||
-									(file.data.remote_url.indexOf('.sass')>-1)||
-									(file.data.remote_url.indexOf('.less')>-1)||
-									(file.data.remote_url.indexOf('.txt')>-1)||
-									(file.data.remote_url.indexOf('.html')>-1)||
-									(file.data.remote_url.indexOf('.svg')>-1)||
-									(file.data.remote_url.indexOf('.map')>-1)||
-									(file.data.remote_url.indexOf('.json')>-1)
+									(urlToTest.indexOf('.css')>-1)||
+									(urlToTest.indexOf('.js')>-1)||
+									(urlToTest.indexOf('.scss')>-1)||
+									(urlToTest.indexOf('.sass')>-1)||
+									(urlToTest.indexOf('.less')>-1)||
+									(urlToTest.indexOf('.txt')>-1)||
+									(urlToTest.indexOf('.html')>-1)||
+									(urlToTest.indexOf('.svg')>-1)||
+									(urlToTest.indexOf('.map')>-1)||
+									(urlToTest.indexOf('.json')>-1)
 								){
 									getAsset(file.data.remote_url).then(async response => {
 										if(response!=='error_missing_file'){
@@ -131,33 +132,33 @@ program
 										logger.Error(e);
 									});
 								}else if(
-									(file.data.remote_url.indexOf('.jpg')>-1)||
-									(file.data.remote_url.indexOf('.jpeg')>-1)||
-									(file.data.remote_url.indexOf('.png')>-1)||
-									(file.data.remote_url.indexOf('.gif')>-1)||
-									(file.data.remote_url.indexOf('.pdf')>-1)||
-									(file.data.remote_url.indexOf('.mp3')>-1)||
-									(file.data.remote_url.indexOf('.mp4')>-1)||
-									(file.data.remote_url.indexOf('.mov')>-1)||
-									(file.data.remote_url.indexOf('.ogg')>-1)||
-									(file.data.remote_url.indexOf('.otf')>-1)||
-									(file.data.remote_url.indexOf('.ttf')>-1)||
-									(file.data.remote_url.indexOf('.webm')>-1)||
-									(file.data.remote_url.indexOf('.webp')>-1)||
-									(file.data.remote_url.indexOf('.woff')>-1)||
-									(file.data.remote_url.indexOf('.woff2')>-1)||
-									(file.data.remote_url.indexOf('.ico')>-1)||
-									(file.data.remote_url.indexOf('.ppt')>-1)||
-									(file.data.remote_url.indexOf('.pptx')>-1)||
-									(file.data.remote_url.indexOf('.doc')>-1)||
-									(file.data.remote_url.indexOf('.docx')>-1)||
-									(file.data.remote_url.indexOf('.xls')>-1)||
-									(file.data.remote_url.indexOf('.xlsx')>-1)||
-									(file.data.remote_url.indexOf('.pages')>-1)||
-									(file.data.remote_url.indexOf('.numbers')>-1)||
-									(file.data.remote_url.indexOf('.key')>-1)||
-									(file.data.remote_url.indexOf('.zip')>-1)||
-									(file.data.remote_url.indexOf('.csv')>-1)
+									(urlToTest.indexOf('.jpg')>-1)||
+									(urlToTest.indexOf('.jpeg')>-1)||
+									(urlToTest.indexOf('.png')>-1)||
+									(urlToTest.indexOf('.gif')>-1)||
+									(urlToTest.indexOf('.pdf')>-1)||
+									(urlToTest.indexOf('.mp3')>-1)||
+									(urlToTest.indexOf('.mp4')>-1)||
+									(urlToTest.indexOf('.mov')>-1)||
+									(urlToTest.indexOf('.ogg')>-1)||
+									(urlToTest.indexOf('.otf')>-1)||
+									(urlToTest.indexOf('.ttf')>-1)||
+									(urlToTest.indexOf('.webm')>-1)||
+									(urlToTest.indexOf('.webp')>-1)||
+									(urlToTest.indexOf('.woff')>-1)||
+									(urlToTest.indexOf('.woff2')>-1)||
+									(urlToTest.indexOf('.ico')>-1)||
+									(urlToTest.indexOf('.ppt')>-1)||
+									(urlToTest.indexOf('.pptx')>-1)||
+									(urlToTest.indexOf('.doc')>-1)||
+									(urlToTest.indexOf('.docx')>-1)||
+									(urlToTest.indexOf('.xls')>-1)||
+									(urlToTest.indexOf('.xlsx')>-1)||
+									(urlToTest.indexOf('.pages')>-1)||
+									(urlToTest.indexOf('.numbers')>-1)||
+									(urlToTest.indexOf('.key')>-1)||
+									(urlToTest.indexOf('.zip')>-1)||
+									(urlToTest.indexOf('.csv')>-1)
 								){
 									var folderPath = file.data.physical_file_path.split('/');
 									folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
@@ -183,7 +184,6 @@ program
 						}));
 
 						marketplace_builder_files.filter(file => file.data.physical_file_path!==undefined).forEach(file => {
-							console.log(file.data.physical_file_path);
 							if(
 								(file.data.physical_file_path.indexOf('.yml')>-1)||
 								(file.data.physical_file_path.indexOf('.liquid')>-1)
