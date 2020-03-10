@@ -174,10 +174,9 @@ program
 										resolve();
 									}).catch(e => {
 										pullSpinner.fail('Asset download failed');
-										logger.Error(e);
 									});
 								}else{
-									logger.Error(`Cannot download asset ${file.data.remote_url}`)
+									logger.Error(`Cannot download asset ${file.data.remote_url}`, {exit: false})
 									resolve();
 								}
 							});
