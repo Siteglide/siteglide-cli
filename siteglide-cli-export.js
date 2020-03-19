@@ -96,6 +96,7 @@ program
 						}
 						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep'));
 						var count = 0;
+						var time = '?updated='+new Date().getTime();
 						await Promise.all(assets.map(function(file){
 							var urlToTest = file.data.remote_url.toLowerCase();
 							return new Promise(async function(resolve) {
@@ -111,7 +112,7 @@ program
 									(urlToTest.indexOf('.map')>-1)||
 									(urlToTest.indexOf('.json')>-1)
 								){
-									getAsset(file.data.remote_url).then(async response => {
+									getAsset(file.data.remote_url,time).then(async response => {
 										if(response!=='error_missing_file'){
 											if(
 												(file.data.physical_file_path.indexOf('.json')>-1)||
@@ -129,7 +130,6 @@ program
 										resolve();
 									}).catch(e => {
 										pullSpinner.fail('Asset download failed');
-										logger.Error(e);
 									});
 								}else if(
 									(urlToTest.indexOf('.jpg')>-1)||
@@ -163,7 +163,7 @@ program
 									var folderPath = file.data.physical_file_path.split('/');
 									folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
 									fs.mkdirSync(folderPath, { recursive: true });
-									getAsset(file.data.remote_url).then(async response => {
+									getAsset(file.data.remote_url,time).then(async response => {
 										if(response!=='error_missing_file'){
 											response.body.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path))
 											count++;
