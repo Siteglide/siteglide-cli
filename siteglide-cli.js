@@ -23,7 +23,7 @@ program
 	.command('init', 'create default folder structure for Siteglide Admin')
 	.command('deploy [environment]', 'upload all code to your site')
 	.command('export [environment]', 'export the code, assets and data from your site')
-	.command('import [environment]', 'import your data.json to bulk upload all data')
+	// .command('import [environment]', 'import your data.json to bulk upload all data')
 	.parse(process.argv);
 
 if (program._execs instanceof Set){
