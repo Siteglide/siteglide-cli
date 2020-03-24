@@ -10,7 +10,7 @@
 	"bugs": {
 		"url": "https://github.com/siteglide/siteglide-cli/issues"
 	},
-	"homepage": "https://docs.siteglide.com/cli/introduction",
+	"homepage": "https://help.siteglide.com/en/articles/3499853-introducing-siteglide-cli",
 	"engines": {
 		"node": ">=10"
 	},
