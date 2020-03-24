@@ -68,12 +68,18 @@ CONCURRENCY = 3;
 
 const queue = Queue((task, callback) => {
 	let push = program.directAssetsUpload ? pushFileDirectAssets : pushFile;
-	push(gateway, task.path).then(callback);
+	switch (task.op) {
+		case "push":
+			push(gateway, task.path).then(callback);
+			break;
+		case "delete":
+			deleteFile(gateway, task.path).then(callback);
+			break;
+	}
 }, CONCURRENCY);
 
-const enqueue = filePath => {
-	queue.push({ path: filePath }, () => {});
-};
+const enqueue = filePath => queue.push({ path: filePath }, () => { });
+const enqueueDelete = (filePath) => queue.push({ path: filePath, op: "delete" }, () => { });
 
 const getBody = (filePath, processTemplate) => {
 	if (processTemplate) {
@@ -95,6 +101,20 @@ const fetchDirectUploadData = async (gateway) => {
 	const data = await presignDirectory(remoteAssetsDir);
 	directUploadData = data;
 }
+
+const deleteFile = (gateway, syncedFilePath) => {
+	let filePath = filePathUnixified(syncedFilePath); // need path with / separators
+	const formData = {
+		path: filePath,
+		primary_key: filePath,
+	};
+
+	return gateway.delete(formData).then(body => {
+		if (body) {
+			logger.Info(`[Sync] Deleted: ${filePath}`);
+		}
+	});
+};
 
 const pushFile = syncedFilePath => {
 	let filePath = filePathUnixified(syncedFilePath); // need path with / separators
@@ -193,6 +213,7 @@ gateway.ping().then(async () => {
 		ignoreInitial: true
 	})
 	.on('change', filePath => shouldBeSynced(filePath) && enqueue(filePath))
-	.on('add', fp => shouldBeSynced(fp) && enqueue(fp));
+	.on('add', fp => shouldBeSynced(fp) && enqueue(fp))
+	.on('unlink', fp => shouldBeSynced(fp) && enqueueDelete(fp));
 
 });
