@@ -11,6 +11,7 @@ program
 	.version(version, '-v, --version')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
+  .option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [experimental]')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
@@ -19,9 +20,11 @@ program
 			SITEGLIDE_TOKEN: authData.token,
 			SITEGLIDE_URL: authData.url
 		});
-		const p = spawn(command('siteglide-cli-watch'), [], {
+		const options = params.directAssetsUpload ? ['-d'] : [];
+		const p = spawn(command('siteglide-cli-watch'), options, {
 			stdio: 'inherit',
-			env: env
+			env: env,
+			directAssetsUpload: params.directAssetsUpload
 		});
 
 		p.on('close', code => {

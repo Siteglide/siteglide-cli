@@ -11,7 +11,11 @@ const program = require('commander'),
 	watchFilesExtensions = require('./lib/watch-files-extensions'),
 	templates = require('./lib/templates'),
 	settings = require('./lib/settings'),
-	version = require('./package.json').version;
+	presignDirectory = require('./lib/presignUrl').presignDirectory,
+	manifestGenerateForAssets = require('./lib/assets/generateManifest').manifestGenerateForAssets,
+	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
+	version = require('./package.json').version,
+	{ cloneDeep, debounce } = require('lodash');
 
 const WATCH_DIRECTORIES = ['marketplace_builder'];
 const getWatchDirectories = () => WATCH_DIRECTORIES.filter(fs.existsSync);
@@ -22,6 +26,8 @@ const isEmpty = filePath => fs.readFileSync(filePath).toString().trim().length =
 const shouldBeSynced = (filePath) => {
 	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath) && isModuleFile(filePath);
 };
+const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets') || moduleAssetRegex.test(path);
+let manifestFilesToAdd = [];
 
 const extensionAllowed = filePath => {
 	const allowed = watchFilesExtensions.includes(ext(filePath));
@@ -49,7 +55,7 @@ const isNotEmptyYML = filePath => {
 	return true;
 };
 
-// Mdule files outside public or private folders are not synced
+// Module files outside public or private folders are not synced
 const isModuleFile = f => {
 	let pathArray = f.split(path.sep);
 	if ('modules' != pathArray[0]) {
@@ -61,7 +67,8 @@ const isModuleFile = f => {
 CONCURRENCY = 3;
 
 const queue = Queue((task, callback) => {
-	pushFile(task.path).then(callback);
+	let push = program.directAssetsUpload ? pushFileDirectAssets : pushFile;
+	push(gateway, task.path).then(callback);
 }, CONCURRENCY);
 
 const enqueue = filePath => {
@@ -69,14 +76,6 @@ const enqueue = filePath => {
 };
 
 const getBody = (filePath, processTemplate) => {
-
-	// var stats = fs.statSync(filePath);
-	// var fileSizeInByte = stats['size'];
-	// var fileSizeMb = fileSizeInByte / 1000000;
-	// if(fileSizeMb>=10){
-	// 	logger.Info('Large File: This may take a while to sync, please be patient...\n');
-	// };
-
 	if (processTemplate) {
 		const templatePath = `modules/${filePath.split(path.sep)[1]}/template-values.json`;
 		const moduleTemplateData = templateData(templatePath);
@@ -89,6 +88,13 @@ const getBody = (filePath, processTemplate) => {
 const templateData = (path) => {
 	return settings.loadSettingsFile(path);
 };
+
+const fetchDirectUploadData = async (gateway) => {
+	const instanceId = (await gateway.getInstance());
+	const remoteAssetsDir = `instances/${instanceId}/assets`;
+	const data = await presignDirectory(remoteAssetsDir);
+	directUploadData = data;
+}
 
 const pushFile = syncedFilePath => {
 	let filePath = filePathUnixified(syncedFilePath); // need path with / separators
@@ -115,6 +121,46 @@ const pushFile = syncedFilePath => {
 	});
 };
 
+const pushFileDirectAssets = (gateway, syncedFilePath) => {
+	if (isAssetsPath(syncedFilePath)){
+		sendAsset(gateway, syncedFilePath)
+		return Promise.resolve(true);
+	} else {
+		return pushFile(gateway, syncedFilePath);
+	}
+};
+
+const manifestSend = debounce(
+	(gateway) => {
+		const manifest = manifestGenerateForAssets(manifestFilesToAdd.slice());
+		logger.Debug(manifest);
+		gateway.sendManifest(manifest);
+		manifestFilesToAdd = [];
+	},
+	1000,
+	{ maxWait: 1000 * 10 }
+);
+
+const manifestAddAsset = (path) => manifestFilesToAdd.push(path);
+
+const sendAsset = async (gateway, filePath) => {
+	try {
+		const data = cloneDeep(directUploadData);
+		const fileSubdir = filePath.startsWith('marketplace_builder/assets') ? path.dirname(filePath).replace('marketplace_builder/assets','') : '/' + path.dirname(filePath).replace('/public/assets', '');
+		const key = data.fields.key.replace('assets/${filename}', `assets${fileSubdir}/\${filename}`)
+		data.fields.key = key;
+		logger.Debug(data);
+		await uploadFileFormData(filePath, data);
+		manifestAddAsset(filePath);
+		manifestSend(gateway);
+		logger.Success(`[Sync] Synced asset: ${filePath}`);
+	} catch (e) {
+		logger.Debug(e.message);
+		logger.Debug(e.stack);
+		logger.Error(`[Sync] Failed to sync: ${filePath}`);
+	}
+}
+
 const checkParams = params => {
 	validate.existence({ argumentValue: params.token, argumentName: 'token', fail: program.help.bind(program) });
 	validate.existence({ argumentValue: params.url, argumentName: 'URL', fail: program.help.bind(program) });
@@ -125,6 +171,7 @@ program
 	.option('--email <email>', 'authentication token', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
+  .option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [experimental]', process.env.DIRECT_ASSETS_UPLOAD)
 	// .option('--files <files>', 'watch files', process.env.FILES || watchFilesExtensions)
 	.parse(process.argv);
 
@@ -132,7 +179,8 @@ checkParams(program);
 
 const gateway = new Gateway(program);
 
-gateway.ping().then(() => {
+gateway.ping().then(async () => {
+	if (program.directAssetsUpload) await fetchDirectUploadData(gateway);
 	const directories = getWatchDirectories();
 
 	if (directories.length === 0) {
@@ -144,7 +192,7 @@ gateway.ping().then(() => {
 	chokidar.watch(directories, {
 		ignoreInitial: true
 	})
-		.on('change', filePath => shouldBeSynced(filePath) && enqueue(filePath))
-		.on('add', fp => shouldBeSynced(fp) && enqueue(fp));
+	.on('change', filePath => shouldBeSynced(filePath) && enqueue(filePath))
+	.on('add', fp => shouldBeSynced(fp) && enqueue(fp));
 
 });
