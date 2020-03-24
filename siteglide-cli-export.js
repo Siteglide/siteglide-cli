@@ -69,7 +69,6 @@ program
 								spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
 							}).catch(e => {
 								logger.Warn('export error');
-								logger.Warn(e.message);
 							});
 						}).catch(error => {
 							logger.Debug(error);
