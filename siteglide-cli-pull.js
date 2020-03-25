@@ -10,7 +10,7 @@ const program = require('commander'),
 	Gateway = require('./lib/proxy'),
 	Confirm = require('./lib/confirm'),
 	dir = require('./lib/directories'),
-	getAsset = require('./lib/assets/getAsset');
+	getBinary = require('./lib/assets/getBinary');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout, spinner: 'clock' });
 
@@ -30,6 +30,7 @@ program
 					const marketplace_builder_files = response.marketplace_builder_files;
 
 					const assets = response.asset;
+					var time = '?updated='+new Date().getTime();
 					await Promise.all(assets.map(async function(file){
 						return new Promise(async function(resolve) {
 							if(
@@ -39,9 +40,9 @@ program
 								(file.data.remote_url.indexOf('.sass')>-1)||
 								(file.data.remote_url.indexOf('.less')>-1)
 							){
-								await getAsset(file.data.remote_url).then(response => {
+								await getBinary(file.data.remote_url,time).then(response => {
 									if(response!=='error_missing_file'){
-										file.data.body = response.data;
+										file.data.body = response;
 										marketplace_builder_files.push(file);
 										resolve();
 									}
