@@ -78,7 +78,7 @@ const queue = Queue((task, callback) => {
 	}
 }, CONCURRENCY);
 
-const enqueue = filePath => queue.push({ path: filePath }, () => { });
+const enqueue = filePath => queue.push({ path: filePath, op: "push" }, () => { });
 const enqueueDelete = (filePath) => queue.push({ path: filePath, op: "delete" }, () => { });
 
 const getBody = (filePath, processTemplate) => {
@@ -212,7 +212,7 @@ gateway.ping().then(async () => {
 	chokidar.watch(directories, {
 		ignoreInitial: true
 	})
-	.on('change', filePath => shouldBeSynced(filePath) && enqueue(filePath))
+	.on('change', fp => shouldBeSynced(fp) && enqueue(fp))
 	.on('add', fp => shouldBeSynced(fp) && enqueue(fp))
 	.on('unlink', fp => shouldBeSynced(fp) && enqueueDelete(fp));
 
