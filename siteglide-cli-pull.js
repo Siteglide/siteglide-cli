@@ -40,15 +40,11 @@ program
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.catch(error => {
 							logger.Debug(error);
-							pullSpinner.fail('Export failed');
+							pullSpinner.fail('Pull failed');
 						});
 				})
-				.catch({ statusCode: 404 }, (e) => {
-					pullSpinner.fail('Export failed');
-					logger.Error('[404] Data export is not supported by the server');
-				})
 				.catch(e => {
-					pullSpinner.fail('Export failed');
+					pullSpinner.fail('Pull failed');
 					logger.Error(e.message);
 				});
 
