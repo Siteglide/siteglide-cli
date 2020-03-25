@@ -125,7 +125,8 @@ program
 											}else{
 												file.body = response.body;
 											}
-											marketplace_builder_files.push(file);count++;
+											marketplace_builder_files.push(file);
+											count++;
 											if(params.withAssets){
 												pullSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
 											}
@@ -166,7 +167,7 @@ program
 									var folderPath = file.data.physical_file_path.split('/');
 									folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
 									fs.mkdirSync(folderPath, { recursive: true });
-									getAsset(file.data.remote_url,time).then(async response => {
+									await getAsset(file.data.remote_url,time).then(async response => {
 										if(response!=='error_missing_file'){
 											response.body.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path))
 											count++;

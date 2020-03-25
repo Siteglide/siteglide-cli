@@ -31,44 +31,42 @@ program
 			if (response === 'Y') {
 				pullSpinner.start();
 
-				// await gateway.pullZip().then(pullTask => {
-					await waitForStatus(() => gateway.pullZipStatus('13535'))
+				await gateway.pullZip().then(pullTask => {
+					waitForStatus(() => gateway.pullZipStatus(pullTask.id))
 						.then(pullTask => downloadFile(pullTask.zip_file.url, filename))
 						.then(() => unzip(filename, dir.LEGACY_APP))
-						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/marketplace_builder`))
-						.then(() => fs.rename(`./${dir.LEGACY_APP}/app`, `./${dir.LEGACY_APP}/marketplace_builder`, function(err) {
-							if ( err ) console.log('ERROR: ' + err);
-						}))
+						.then(() => shell.mv(`./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${filename}`))
-						.then(() => pullSpinner.succeed('Downloading files'))
+						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.catch(error => {
 							logger.Debug(error);
 							pullSpinner.fail('Export failed');
 						});
-				// })
-				// .catch({ statusCode: 404 }, (e) => {
-				// 	console.log(e);
-				// 	pullSpinner.fail('Export failed');
-				// 	logger.Error('[404] Data export is not supported by the server');
-				// })
-				// .catch(e => {
-				// 	pullSpinner.fail('Export failed');
-				// 	logger.Error(e.message);
-				// });
+				})
+				.catch({ statusCode: 404 }, (e) => {
+					pullSpinner.fail('Export failed');
+					logger.Error('[404] Data export is not supported by the server');
+				})
+				.catch(e => {
+					pullSpinner.fail('Export failed');
+					logger.Error(e.message);
+				});
 
 				await gateway.pull().then(async(response) => {
 					var asset_files = [];
 					const assets = response.asset;
+					var time = '?updated='+new Date().getTime();
 					await Promise.all(assets.map(async function(file){
+						var urlToTest = file.data.remote_url.toLowerCase()
 						return new Promise(async function(resolve) {
 							if(
-								(file.data.remote_url.indexOf('.css')>-1)||
-								(file.data.remote_url.indexOf('.js')>-1)||
-								(file.data.remote_url.indexOf('.scss')>-1)||
-								(file.data.remote_url.indexOf('.sass')>-1)||
-								(file.data.remote_url.indexOf('.less')>-1)
+								(urlToTest.indexOf('.css')>-1)||
+								(urlToTest.indexOf('.js')>-1)||
+								(urlToTest.indexOf('.scss')>-1)||
+								(urlToTest.indexOf('.sass')>-1)||
+								(urlToTest.indexOf('.less')>-1)
 							){
-								await getAsset(file.data.remote_url).then(response => {
+								await getAsset(file.data.remote_url,time).then(response => {
 									if(response!=='error_missing_file'){
 										file.data.body = response.data;
 										asset_files.push(file);
@@ -87,6 +85,7 @@ program
 						var body = file.body;
 						fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, body, logger.Error);
 					});
+					pullSpinner.succeed('Downloading files');
 				});
 
 			} else {
