@@ -10,7 +10,7 @@ const program = require('commander'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	Gateway = require('./lib/proxy'),
 	Confirm = require('./lib/confirm'),
-	getAsset = require('./lib/assets/getAsset'),
+	getBinary = require('./lib/assets/getBinary'),
 	unzip = require('./lib/unzip'),
 	shell = require('shelljs'),
 	dir = require('./lib/directories');
@@ -66,9 +66,9 @@ program
 								(urlToTest.indexOf('.sass')>-1)||
 								(urlToTest.indexOf('.less')>-1)
 							){
-								await getAsset(file.data.remote_url,time).then(response => {
+								await getBinary(file.data.remote_url,time).then(response => {
 									if(response!=='error_missing_file'){
-										file.data.body = response.data;
+										file.data.body = response;
 										asset_files.push(file);
 										resolve();
 									}
@@ -82,8 +82,7 @@ program
 						var folderPath = file.data.physical_file_path.split('/');
 						folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
 						fs.mkdirSync(folderPath, { recursive: true });
-						var body = file.body;
-						fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, body, logger.Error);
+						fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, file.data.body, logger.Error);
 					});
 					pullSpinner.succeed('Downloading files');
 				});

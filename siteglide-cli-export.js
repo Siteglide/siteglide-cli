@@ -10,6 +10,7 @@ const program = require('commander'),
 	fetchFiles = require('./lib/data/fetchFiles'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	getAsset = require('./lib/assets/getAsset'),
+	getBinary = require('./lib/assets/getBinary'),
 	dir = require('./lib/directories'),
 	Confirm = require('./lib/confirm'),
 	yaml = require('js-yaml'),
@@ -115,7 +116,7 @@ program
 									(urlToTest.indexOf('.map')>-1)||
 									(urlToTest.indexOf('.json')>-1)
 								){
-									getAsset(file.data.remote_url,time).then(async response => {
+									getBinary(file.data.remote_url,time).then(async response => {
 										if(response!=='error_missing_file'){
 											if(
 												(file.data.physical_file_path.indexOf('.json')>-1)||
@@ -132,9 +133,7 @@ program
 											}
 										}
 										resolve();
-									}).catch(e => {
-										pullSpinner.fail('Asset download failed');
-									});
+									}).catch(() => pullSpinner.fail('Asset download failed'));
 								}else if(
 									(urlToTest.indexOf('.jpg')>-1)||
 									(urlToTest.indexOf('.jpeg')>-1)||
@@ -176,9 +175,7 @@ program
 											}
 										}
 										resolve();
-									}).catch(e => {
-										pullSpinner.fail('Asset download failed');
-									});
+									}).catch(() => pullSpinner.fail('Asset download failed'));
 								}else{
 									logger.Error(`Cannot download asset ${file.data.remote_url}`, {exit: false})
 									resolve();
