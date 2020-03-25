@@ -22,7 +22,24 @@ const getWatchDirectories = () => WATCH_DIRECTORIES.filter(fs.existsSync);
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/').replace('marketplace_builder/', '');
-const isEmpty = filePath => fs.readFileSync(filePath).toString().trim().length === 0;
+const isEmpty = filePath => {
+	let isEmpty;
+	try {
+		isEmpty = fs
+			.readFileSync(filePath)
+			.toString()
+			.trim().length === 0;
+	} catch (err) {
+		// Ignore missing files, no need to check if they are empty.
+		// This can happen on sync if the file got deleted.
+		if (err.code === 'ENOENT') {
+			return false;
+		}
+		logger.Error(err);
+	}
+
+	return isEmpty;
+};
 const shouldBeSynced = (filePath) => {
 	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath) && isModuleFile(filePath);
 };
