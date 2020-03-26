@@ -90,17 +90,13 @@ program
 						if(!params.withAssets){
 							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg|pdf|mp3|mp4|mov|ogg|otf|ttf|webm|webp|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|zip|csv)$/i));
 						}
-						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep'));
-						if(assets.length>999){
-							exportSpinner.fail('Error: More than 1,000 assets.  Currently export is limited to 1,000 assets per site. For this site please use `siteglide-cli pull`');
-							logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
-						}
+						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep')).filter(file => !file.data.physical_file_path.includes('_sgthumb'));
 						var count = 0;
 						var asset_files = [];
 						var time = '?updated='+new Date().getTime();
-						await Promise.all(assets.map(function(file){
+						for(let i = 0; i < assets.length; i++) {
+							var file = assets[i];
 							var urlToTest = file.data.remote_url.toLowerCase();
-							return new Promise(async function(resolve) {
 								if(
 									(urlToTest.indexOf('.css')>-1)||
 									(urlToTest.indexOf('.js')>-1)||
@@ -111,9 +107,10 @@ program
 									(urlToTest.indexOf('.html')>-1)||
 									(urlToTest.indexOf('.svg')>-1)||
 									(urlToTest.indexOf('.map')>-1)||
-									(urlToTest.indexOf('.json')>-1)
+									(urlToTest.indexOf('.json')>-1)||
+									(urlToTest.indexOf('.htm')>-1)
 								){
-									getBinary(file.data.remote_url,time).then(async response => {
+									await getBinary(file.data.remote_url,time).then(async response => {
 										if(response!=='error_missing_file'){
 											if(
 												(file.data.physical_file_path.indexOf('.json')>-1)||
@@ -129,7 +126,6 @@ program
 												exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
 											}
 										}
-										resolve();
 									}).catch(() => exportSpinner.fail('Asset download failed'));
 								}else if(
 									(urlToTest.indexOf('.jpg')>-1)||
@@ -171,14 +167,11 @@ program
 												exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
 											}
 										}
-										resolve();
 									}).catch(() => exportSpinner.fail('Asset download failed'));
 								}else{
 									logger.Error(`Cannot download asset ${file.data.remote_url}`, {exit: false})
-									resolve();
 								}
-							});
-						}));
+						};
 
 						asset_files.forEach(file => {
 							var folderPath = file.data.physical_file_path.split('/');
@@ -192,7 +185,6 @@ program
 				} else {
 					logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
 				};
-
 				await gateway
 				.export(exportInternalIds)
 				.then(exportTask => {
