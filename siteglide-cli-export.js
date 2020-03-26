@@ -94,7 +94,7 @@ program
 						if(!params.withAssets){
 							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg|pdf|mp3|mp4|mov|ogg|otf|ttf|webm|webp|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|zip|csv)$/i));
 						}
-						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep'));
+						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep')).filter(file => !file.data.physical_file_path.includes('_sgthumb'));
 						if(assets.length>999){
 							pullSpinner.fail('Error: More than 1,000 assets.  Currently export is limited to 1,000 assets per site. For this site please use `siteglide-cli pull`');
 							logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
