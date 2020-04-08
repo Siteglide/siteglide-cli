@@ -68,7 +68,7 @@ program
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.catch(error => {
 							console.log(error)
-							exportSpinner.fail('Export failed123');
+							exportSpinner.fail('Export fail');
 						});
 				})
 				.catch({ statusCode: 404 }, (e) => {
