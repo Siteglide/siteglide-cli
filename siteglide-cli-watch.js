@@ -183,7 +183,9 @@ const manifestAddAsset = (path) => manifestFilesToAdd.push(path);
 const sendAsset = async (gateway, filePath) => {
 	try {
 		const data = cloneDeep(directUploadData);
-		const fileSubdir = filePath.startsWith('marketplace_builder/assets') ? path.dirname(filePath).replace('marketplace_builder/assets','') : '/' + path.dirname(filePath).replace('/public/assets', '');
+		const fileSubdir = filePath.startsWith('marketplace_builder/assets')
+		? path.dirname(filePath).replace('marketplace_builder/assets','')
+		: '/' + path.dirname(filePath).replace('/public/assets', '');
 		const key = data.fields.key.replace('assets/${filename}', `assets${fileSubdir}/\${filename}`)
 		data.fields.key = key;
 		logger.Debug(data);
