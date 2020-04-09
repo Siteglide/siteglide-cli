@@ -151,9 +151,7 @@ const pushFile = (gateway, syncedFilePath) => {
 
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
 	if (isAssetsPath(syncedFilePath)){
-		console.log('before', syncedFilePath);
 		syncedFilePath = syncedFilePath.replace(/\\/g, '/');
-		console.log('after', syncedFilePath);
 		sendAsset(gateway, syncedFilePath)
 		return Promise.resolve(true);
 	} else {
