@@ -43,7 +43,7 @@ const isEmpty = filePath => {
 const shouldBeSynced = (filePath) => {
 	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath) && isModuleFile(filePath);
 };
-const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets') || moduleAssetRegex.test(path);
+const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets');
 let manifestFilesToAdd = [];
 
 const extensionAllowed = filePath => {
