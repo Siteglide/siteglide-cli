@@ -43,10 +43,7 @@ const isEmpty = filePath => {
 const shouldBeSynced = (filePath) => {
 	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath);
 };
-const isAssetsPath = (path) => {
-	console.log(path);
-	return path.startsWith('marketplace_builder/assets') || path.startsWith('marketplace_builder\\assets');
-};
+const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets') || path.startsWith('marketplace_builder\\assets');
 let manifestFilesToAdd = [];
 
 const extensionAllowed = filePath => {
@@ -154,6 +151,9 @@ const pushFile = (gateway, syncedFilePath) => {
 
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
 	if (isAssetsPath(syncedFilePath)){
+		console.log('before', syncedFilePath);
+		syncedFilePath = syncedFilePath.replace(/\\/g, '/');
+		console.log('after', syncedFilePath);
 		sendAsset(gateway, syncedFilePath)
 		return Promise.resolve(true);
 	} else {
