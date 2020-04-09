@@ -133,7 +133,7 @@ const deleteFile = (gateway, syncedFilePath) => {
 	});
 };
 
-const pushFile = syncedFilePath => {
+const pushFile = (gateway, syncedFilePath) => {
 	let filePath = filePathUnixified(syncedFilePath); // need path with / separators
 
 	const formData = {
