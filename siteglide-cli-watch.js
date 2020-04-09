@@ -41,9 +41,12 @@ const isEmpty = filePath => {
 	return isEmpty;
 };
 const shouldBeSynced = (filePath) => {
-	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath) && isModuleFile(filePath);
+	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath);
 };
-const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets');
+const isAssetsPath = (path) => {
+	console.log(path);
+	return path.startsWith('marketplace_builder/assets')
+};
 let manifestFilesToAdd = [];
 
 const extensionAllowed = filePath => {
@@ -70,15 +73,6 @@ const isNotEmptyYML = filePath => {
 	}
 
 	return true;
-};
-
-// Module files outside public or private folders are not synced
-const isModuleFile = f => {
-	let pathArray = f.split(path.sep);
-	if ('modules' != pathArray[0]) {
-		return true;
-	}
-	return ['private', 'public'].includes(pathArray[2]);
 };
 
 CONCURRENCY = 3;
@@ -210,7 +204,7 @@ program
 	.option('--email <email>', 'authentication token', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
-  .option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [experimental]', process.env.DIRECT_ASSETS_UPLOAD)
+  .option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]', process.env.DIRECT_ASSETS_UPLOAD)
 	// .option('--files <files>', 'watch files', process.env.FILES || watchFilesExtensions)
 	.parse(process.argv);
 
