@@ -67,7 +67,6 @@ program
 						.then(() => shell.rm(`./${zipFileName}`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.catch(error => {
-							console.log(error)
 							exportSpinner.fail('Export fail');
 						});
 				})
