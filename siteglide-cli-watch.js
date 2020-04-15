@@ -221,7 +221,10 @@ gateway.ping().then(async () => {
 	logger.Info(`Enabling sync mode to: ${program.url}`);
 
 	chokidar.watch(directories, {
-		awaitWriteFinish: true,
+		awaitWriteFinish: {
+			stabilityThreshold: 100,
+			pollInterval: 25
+		},
 		ignoreInitial: true
 	})
 	.on('change', fp => shouldBeSynced(fp) && enqueue(fp))
