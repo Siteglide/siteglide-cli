@@ -3,7 +3,8 @@
 	"version": "1.4.2",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
-		"postinstall": "node ./scripts/check-node-version.js"
+		"postinstall": "node ./scripts/check-node-version.js",
+		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production"
 	},
 	"main": "./siteglide-cli.js",
 	"license": "MIT",
@@ -25,8 +26,8 @@
 		"chokidar": "^3.3.1",
 		"commander": "^3.0.2",
 		"compression": "1.7.4",
+		"degit": "2.8.0",
 		"email-validator": "^2.0.4",
-		"extract-zip": "1.6.7",
 		"express": "4.17.1",
 		"js-yaml": "^3.13.1",
 		"mime": "^2.4.4",
@@ -39,7 +40,7 @@
 		"request": "^2.88.0",
 		"request-promise": "^4.2.4",
 		"shelljs": "^0.8.3",
-		"update-notifier": "^2.5.0",
+		"update-notifier": "^4.1.0",
 		"valid-url": "^1.0.9"
 	},
 	"bin": {
