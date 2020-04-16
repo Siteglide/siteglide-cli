@@ -13,6 +13,7 @@ const program = require('commander'),
 	getBinary = require('./lib/assets/getBinary'),
 	unzip = require('./lib/unzip'),
 	shell = require('shelljs'),
+	path = require('path'),
 	dir = require('./lib/directories');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout, spinner: 'clock' });
@@ -38,7 +39,19 @@ program
 						.then(() => shell.mv(`./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${filename}`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
-						.then(() => shell.exec('find ./marketplace_builder -type d -empty -maxdepth 1 -delete'))
+						.then(() => {
+							var list = fs.readdirSync(`./${dir.LEGACY_APP}`);
+							for(var i = 0; i < list.length; i++) {
+								var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
+								try {
+									fs.rmdirSync(folder);
+								} catch(e) {
+									if(e.code!=="ENOTEMPTY"){
+										logger.Error(e);
+									}
+								}
+							}
+						})
 						.catch(error => {
 							logger.Debug(error);
 							pullSpinner.fail('Pull failed');

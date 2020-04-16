@@ -66,7 +66,19 @@ program
 						.then(() => shell.mv(`./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${zipFileName}`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
-						.then(() => shell.exec('find ./marketplace_builder -type d -empty -maxdepth 1 -delete'))
+						.then(() => {
+							var list = fs.readdirSync(`./${dir.LEGACY_APP}`);
+							for(var i = 0; i < list.length; i++) {
+								var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
+								try {
+									fs.rmdirSync(folder);
+								} catch(e) {
+									if(e.code!=="ENOTEMPTY"){
+										logger.Error(e);
+									}
+								}
+							}
+						})
 						.catch(error => {
 							exportSpinner.fail('Export fail');
 						});
