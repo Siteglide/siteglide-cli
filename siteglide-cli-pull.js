@@ -38,6 +38,7 @@ program
 						.then(() => shell.mv(`./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${filename}`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
+						.then(() => shell.exec('find ./marketplace_builder -type d -empty -maxdepth 1 -delete'))
 						.catch(error => {
 							logger.Debug(error);
 							pullSpinner.fail('Pull failed');

@@ -203,7 +203,6 @@ program
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
   .option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]', process.env.DIRECT_ASSETS_UPLOAD)
-	// .option('--files <files>', 'watch files', process.env.FILES || watchFilesExtensions)
 	.parse(process.argv);
 
 checkParams(program);

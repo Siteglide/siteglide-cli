@@ -66,6 +66,7 @@ program
 						.then(() => shell.mv(`./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${zipFileName}`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
+						.then(() => shell.exec('find ./marketplace_builder -type d -empty -maxdepth 1 -delete'))
 						.catch(error => {
 							exportSpinner.fail('Export fail');
 						});
