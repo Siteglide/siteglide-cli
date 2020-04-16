@@ -1,5 +1,5 @@
 .siteglide-config
-/node_modules
+node_modules
 /marketplace_builder
 .env
 .DS_Store
@@ -11,3 +11,4 @@ exported.json
 /tmp
 data-imported.json
 /test_zip
+.vscode
