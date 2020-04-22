@@ -153,6 +153,7 @@ program
 									(urlToTest.indexOf('.ttf')>-1)||
 									(urlToTest.indexOf('.webm')>-1)||
 									(urlToTest.indexOf('.webp')>-1)||
+									(urlToTest.indexOf('.eot')>-1)||
 									(urlToTest.indexOf('.woff')>-1)||
 									(urlToTest.indexOf('.woff2')>-1)||
 									(urlToTest.indexOf('.ico')>-1)||
