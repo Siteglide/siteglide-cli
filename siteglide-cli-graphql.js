@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 const program = require('commander'),
-	spawn = require('child_process').spawn,
 	fetchAuthData = require('./lib/settings').fetchSettings,
-	command = require('./lib/command'),
 	logger = require('./lib/logger'),
+	open = require('open'),
+	server = require('./siteglide-cli-server'),
 	version = require('./package.json').version;
 
 program
@@ -12,7 +12,8 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-p --port <port>', 'use PORT', '3333')
-	.action((environment, params) => {
+	.option('-o, --open', 'when ready, open default browser')
+	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
 
@@ -23,15 +24,14 @@ program
 			PORT: params.port
 		});
 
-		const server = spawn(command('siteglide-cli-server'), [], { stdio: 'inherit' });
-
-		server.on('close', code => {
-			if (code === 1) logger.Error('GraphQL failed. Please check that you have the correct permissions or that your site is not locked.', {
-				exit: false
-			});
-		});
-
-		server.on('error', logger.Error);
+		try {
+			await server.start(process.env);
+			if(params.open){
+				await open(`http://localhost:${params.port}/gui/graphql`);
+			}
+		} catch (e) {
+			logger.Error('GraphQL failed. Please check that you have the correct permissions or that your site is not locked.');
+		}
 	});
 
 program.parse(process.argv);

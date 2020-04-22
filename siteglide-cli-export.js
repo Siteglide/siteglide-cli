@@ -11,14 +11,15 @@ const program = require('commander'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	getAsset = require('./lib/assets/getAsset'),
 	getBinary = require('./lib/assets/getBinary'),
+	downloadFile = require('./lib/downloadFile'),
 	dir = require('./lib/directories'),
 	Confirm = require('./lib/confirm'),
-	yaml = require('js-yaml'),
+	unzip = require('./lib/unzip'),
 	version = require('./package.json').version;
 
 let gateway;
 const spinner = ora({ text: 'Exporting data', stream: process.stdout, spinner: 'clock' });
-const pullSpinner = ora({ text: 'Downloading files', stream: process.stdout, spinner: 'clock' });
+const exportSpinner = ora({ text: 'Downloading files', stream: process.stdout, spinner: 'clock' });
 
 const transform = ({ users = { results: [] }, transactables = { results: [] }, models = { results: [] } }) => {
 	return {
@@ -46,64 +47,68 @@ program
 	.option('-e --export-internal-ids <export-internal-ids>', 'use normal object `id` instead of `external_id` in exported json data',
 		'false')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-  .option('--with-assets', 'With assets, also pulls the assets/images and PDFs in assets/documents folder', false)
+  .option('-w --with-assets', 'With assets, also pulls the assets/images and PDFs in assets/documents folder', false)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_ASSETS = params.withAssets;
 		const filename = params.path;
 		const exportInternalIds = params.exportInternalIds;
 		const authData = fetchAuthData(environment, program, program);
+		const zipFileName = `${dir.LEGACY_APP}.zip`;
 		gateway = new Gateway(authData);
 
 		Confirm('Are you sure you would like to export? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
-				await gateway
-					.export(exportInternalIds)
-					.then(exportTask => {
-						spinner.start();
-						waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
-							shell.mkdir('-p', '.tmp');
-							fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
-							let data = transform(exportTask.data);
-							fetchFilesForData(data).then(data => {
-								fs.writeFileSync(filename, JSON.stringify(data));
-								spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
-							}).catch(e => {
-								logger.Warn('export error');
-							});
-						}).catch(error => {
+				await gateway.pullZip().then(pullTask => {
+					waitForStatus(() => gateway.pullZipStatus(pullTask.id))
+						.then(pullTask => downloadFile(pullTask.zip_file.url, zipFileName))
+						.then(() => unzip(zipFileName, dir.LEGACY_APP))
+						.then(() => shell.mv(`./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
+						.then(() => shell.rm(`./${zipFileName}`))
+						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
+						.then(() => {
+							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
+							for(var i = 0; i < list.length; i++) {
+								var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
+								try {
+									fs.rmdirSync(folder);
+								} catch(e) {
+									if(e.code!=="ENOTEMPTY"){
+										logger.Error(e);
+									}
+								}
+							}
+						})
+						.catch(error => {
 							logger.Debug(error);
-							spinner.fail('Export failed');
+							exportSpinner.fail('Export fail');
 						});
-					})
-					.catch(
-						{ statusCode: 404 },
-						() => {
-							spinner.fail('Export failed');
-							logger.Error('[404] Data export is not supported by the server');
-						}
-					);
+				})
+				.catch({ statusCode: 404 }, (e) => {
+					exportSpinner.fail('Export failed');
+				})
+				.catch(e => {
+					logger.Error(e.message);
+					exportSpinner.fail('Export failed');
+				});
+
 				await gateway
 					.pull().then(async(response) => {
-						pullSpinner.start();
+						exportSpinner.start();
 						if(params.withAssets){
-							pullSpinner.text = 'Downloading all images and videos as well, this may take a while...';
+							exportSpinner.text = 'Downloading all images and videos as well, this may take a while...';
 						}
-						const marketplace_builder_files = response.marketplace_builder_files;
 						var assets = response.asset;
 						if(!params.withAssets){
 							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg|pdf|mp3|mp4|mov|ogg|otf|ttf|webm|webp|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|zip|csv)$/i));
 						}
 						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep')).filter(file => !file.data.physical_file_path.includes('_sgthumb'));
-						if(assets.length>999){
-							pullSpinner.fail('Error: More than 1,000 assets.  Currently export is limited to 1,000 assets per site. For this site please use `siteglide-cli pull`');
-							logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
-						}
 						var count = 0;
+						var asset_files = [];
 						var time = '?updated='+new Date().getTime();
-						await Promise.all(assets.map(function(file){
+						for(let i = 0; i < assets.length; i++) {
+							var file = assets[i];
 							var urlToTest = file.data.remote_url.toLowerCase();
-							return new Promise(async function(resolve) {
 								if(
 									(urlToTest.indexOf('.css')>-1)||
 									(urlToTest.indexOf('.js')>-1)||
@@ -114,26 +119,26 @@ program
 									(urlToTest.indexOf('.html')>-1)||
 									(urlToTest.indexOf('.svg')>-1)||
 									(urlToTest.indexOf('.map')>-1)||
-									(urlToTest.indexOf('.json')>-1)
+									(urlToTest.indexOf('.json')>-1)||
+									(urlToTest.indexOf('.htm')>-1)
 								){
-									getBinary(file.data.remote_url,time).then(async response => {
+									await getBinary(file.data.remote_url,time).then(async response => {
 										if(response!=='error_missing_file'){
 											if(
 												(file.data.physical_file_path.indexOf('.json')>-1)||
 												(file.data.physical_file_path.indexOf('.map')>-1)
 											){
-												file.body = JSON.stringify(response)
+												file.data.body = JSON.stringify(response)
 											}else{
-												file.body = response;
+												file.data.body = response;
 											}
-											marketplace_builder_files.push(file);count++;
+											asset_files.push(file);
+											count++;
 											if(params.withAssets){
-												pullSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
+												exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
 											}
 										}
-										resolve();
-									})
-									.catch(() => pullSpinner.fail('Asset download failed'));
+									}).catch(() => exportSpinner.fail('Asset download failed'));
 								}else if(
 									(urlToTest.indexOf('.jpg')>-1)||
 									(urlToTest.indexOf('.jpeg')>-1)||
@@ -148,6 +153,7 @@ program
 									(urlToTest.indexOf('.ttf')>-1)||
 									(urlToTest.indexOf('.webm')>-1)||
 									(urlToTest.indexOf('.webp')>-1)||
+									(urlToTest.indexOf('.eot')>-1)||
 									(urlToTest.indexOf('.woff')>-1)||
 									(urlToTest.indexOf('.woff2')>-1)||
 									(urlToTest.indexOf('.ico')>-1)||
@@ -166,89 +172,59 @@ program
 									var folderPath = file.data.physical_file_path.split('/');
 									folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
 									fs.mkdirSync(folderPath, { recursive: true });
-									getAsset(file.data.remote_url,time).then(async response => {
+									await getAsset(file.data.remote_url,time).then(async response => {
 										if(response!=='error_missing_file'){
 											response.body.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path))
 											count++;
 											if(params.withAssets){
-												pullSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
+												exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
 											}
 										}
-										resolve();
-									})
-									.catch(() => pullSpinner.fail('Asset download failed'))
+									}).catch(() => exportSpinner.fail('Asset download failed'));
 								}else{
 									logger.Error(`Cannot download asset ${file.data.remote_url}`, {exit: false})
-									resolve();
 								}
-							});
-						}));
+						};
 
-						marketplace_builder_files.filter(file => file.data.physical_file_path!==undefined).forEach(file => {
-							if(
-								(file.data.physical_file_path.indexOf('.yml')>-1)||
-								(file.data.physical_file_path.indexOf('.liquid')>-1)
-							){
-								const source = new Liquid(file.data);
-								var folderPath = source.path.split('/');
-								folderPath = folderPath.slice(0, folderPath.length-1).join('/');
-								fs.mkdirSync(folderPath, { recursive: true });
-								fs.writeFileSync(source.path, source.output, logger.Error);
-							}else{
-								var folderPath = file.data.physical_file_path.split('/');
-								folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
-								fs.mkdirSync(folderPath, { recursive: true });
-								var body;
-								if(file.data.physical_file_path.indexOf('.graphql')>-1){
-									body = file.content;
-								}else{
-									body = file.body;
-								}
-								fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, body, logger.Error);
-							}
+						asset_files.forEach(file => {
+							var folderPath = file.data.physical_file_path.split('/');
+							folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
+							fs.mkdirSync(folderPath, { recursive: true });
+							fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, file.data.body, logger.Error);
 						});
 
-						pullSpinner.stopAndPersist().succeed(`Files downloaded into ${dir.LEGACY_APP} folder`);
+						exportSpinner.stopAndPersist().succeed(`Files downloaded into ${dir.LEGACY_APP} folder`);
 					}, logger.Error);
 				} else {
 					logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
 				};
+				await gateway
+				.export(exportInternalIds)
+				.then(exportTask => {
+					spinner.start();
+					waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
+						shell.mkdir('-p', '.tmp');
+						fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
+						let data = transform(exportTask.data);
+						fetchFilesForData(data).then(data => {
+							fs.writeFileSync(filename, JSON.stringify(data));
+							spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
+						}).catch(e => {
+							logger.Warn('export error');
+						});
+					}).catch(error => {
+						logger.Debug(error);
+						spinner.fail('Export failed');
+					});
+				})
+				.catch(
+					{ statusCode: 404 },
+					() => {
+						spinner.fail('Export failed');
+						logger.Error('[404] Data export is not supported by the server');
+					}
+				);
 		});
 	});
-
-const LIQUID_TEMPLATE = '---\nMETADATA---\nCONTENT';
-
-class Liquid {
-	constructor(source) {
-		this.source = source;
-		this.content = source.content || source.body || '';
-	}
-
-	get path() {
-		return `marketplace_builder/${this.source.physical_file_path}`;
-	}
-
-	get metadata() {
-		const metadata = Object.assign(this.source);
-		delete metadata.content;
-		delete metadata.body;
-		return metadata;
-	}
-
-	get output() {
-		if(
-			(this.source.physical_file_path.indexOf('/partials/layouts')>-1)||
-			(this.source.physical_file_path.indexOf('assets/')===0)
-		){
-			return LIQUID_TEMPLATE.replace('---\nMETADATA---\n', '').replace('CONTENT', this.content);
-		}else{
-			return LIQUID_TEMPLATE.replace('METADATA', this.serialize(this.metadata)).replace('CONTENT', this.content);
-		}
-	}
-
-	serialize(obj) {
-		return yaml.safeDump(obj);
-	}
-}
 
 program.parse(process.argv);

@@ -26,11 +26,8 @@ program
 	// .command('import [environment]', 'import your data.json to bulk upload all data')
 	.parse(process.argv);
 
-if (program._execs instanceof Set){
-	var commandList = Array.from(program._execs);
-}else{
-	var commandList = Object.keys(program._execs);
-}
+var commandList = [];
+program.commands.map(command => commandList.push(command._name));
 
 if (!commandList.includes(program.args[0])) {
 	logger.Error(`unknown command: ${program.args[0]}`, {
