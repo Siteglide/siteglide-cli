@@ -40,7 +40,7 @@ program
 						.then(() => shell.rm(`./${filename}`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.then(() => {
-							var list = fs.readdirSync(`./${dir.LEGACY_APP}`);
+							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
 							for(var i = 0; i < list.length; i++) {
 								var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
 								try {

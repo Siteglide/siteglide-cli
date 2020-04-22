@@ -67,7 +67,7 @@ program
 						.then(() => shell.rm(`./${zipFileName}`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.then(() => {
-							var list = fs.readdirSync(`./${dir.LEGACY_APP}`);
+							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
 							for(var i = 0; i < list.length; i++) {
 								var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
 								try {
@@ -80,16 +80,16 @@ program
 							}
 						})
 						.catch(error => {
+							logger.Debug(error);
 							exportSpinner.fail('Export fail');
 						});
 				})
 				.catch({ statusCode: 404 }, (e) => {
 					exportSpinner.fail('Export failed');
-					logger.Error('[404] Data export is not supported by the server');
 				})
 				.catch(e => {
-					exportSpinner.fail('Export failed');
 					logger.Error(e.message);
+					exportSpinner.fail('Export failed');
 				});
 
 				await gateway
