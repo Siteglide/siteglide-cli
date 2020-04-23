@@ -16,6 +16,7 @@ updateNotifier({
 program
 	.version(version, '-v, --version')
 	.command('add [environment] --email [email] --url [url]', 'Add a site or environment')
+	.command('env', 'See a list of environments')
 	.command('sync [environment]', 'update site on local file change')
 	.command('pull [environment]', 'get all files from site')
 	.command('graphql [environment]', 'gui for graphql')
