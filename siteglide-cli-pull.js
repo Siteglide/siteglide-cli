@@ -36,8 +36,9 @@ program
 					waitForStatus(() => gateway.pullZipStatus(pullTask.id))
 						.then(pullTask => downloadFile(pullTask.zip_file.url, filename))
 						.then(() => unzip(filename, dir.LEGACY_APP))
-						.then(() => shell.mv(`./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
+						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${filename}`))
+						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/modules`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.then(() => {
 							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
@@ -94,7 +95,7 @@ program
 						fs.mkdirSync(folderPath, { recursive: true });
 						fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, file.data.body, logger.Error);
 					});
-					pullSpinner.succeed('Downloading files');
+					pullSpinner.succeed('Pulled files');
 				});
 
 			} else {
