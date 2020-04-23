@@ -15,6 +15,7 @@ const program = require('commander'),
 	dir = require('./lib/directories'),
 	Confirm = require('./lib/confirm'),
 	unzip = require('./lib/unzip'),
+	path = require('path'),
 	version = require('./package.json').version;
 
 let gateway;
@@ -63,9 +64,10 @@ program
 					waitForStatus(() => gateway.pullZipStatus(pullTask.id))
 						.then(pullTask => downloadFile(pullTask.zip_file.url, zipFileName))
 						.then(() => unzip(zipFileName, dir.LEGACY_APP))
-						.then(() => shell.mv(`./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
+						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${zipFileName}`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
+						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/modules`))
 						.then(() => {
 							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
 							for(var i = 0; i < list.length; i++) {
@@ -81,15 +83,12 @@ program
 						})
 						.catch(error => {
 							logger.Debug(error);
-							exportSpinner.fail('Export fail');
+							exportSpinner.fail('Code export failed');
 						});
-				})
-				.catch({ statusCode: 404 }, (e) => {
-					exportSpinner.fail('Export failed');
 				})
 				.catch(e => {
 					logger.Error(e.message);
-					exportSpinner.fail('Export failed');
+					exportSpinner.fail('Code export failed');
 				});
 
 				await gateway
@@ -195,35 +194,33 @@ program
 
 						exportSpinner.stopAndPersist().succeed(`Files downloaded into ${dir.LEGACY_APP} folder`);
 					}, logger.Error);
-				} else {
-					logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
-				};
+
 				await gateway
-				.export(exportInternalIds)
-				.then(exportTask => {
-					spinner.start();
-					waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
-						shell.mkdir('-p', '.tmp');
-						fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
-						let data = transform(exportTask.data);
-						fetchFilesForData(data).then(data => {
-							fs.writeFileSync(filename, JSON.stringify(data));
-							spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
-						}).catch(e => {
-							logger.Warn('export error');
+					.export(exportInternalIds)
+					.then(exportTask => {
+						spinner.start();
+						waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
+							shell.mkdir('-p', '.tmp');
+							fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
+							let data = transform(exportTask.data);
+							fetchFilesForData(data).then(data => {
+								fs.writeFileSync(filename, JSON.stringify(data));
+								spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
+							}).catch(e => {
+								logger.Error('Data Export error');
+							});
+						}).catch(error => {
+							logger.Debug(error);
+							spinner.fail('Data Export failed');
 						});
-					}).catch(error => {
+					})
+					.catch(error => {
 						logger.Debug(error);
-						spinner.fail('Export failed');
+						spinner.fail('Data Export failed');
 					});
-				})
-				.catch(
-					{ statusCode: 404 },
-					() => {
-						spinner.fail('Export failed');
-						logger.Error('[404] Data export is not supported by the server');
-					}
-				);
+			} else {
+				logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
+			};
 		});
 	});
 
