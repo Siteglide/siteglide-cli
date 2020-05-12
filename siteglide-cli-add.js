@@ -75,8 +75,6 @@ const existingSettings = configFilePath => {
 	return settings;
 };
 
-PARTNER_PORTAL_HOST = process.env.PARTNER_PORTAL_HOST || 'https://api.siteglide.co.uk';
-
 program
 	.version(version, '-v, --version')
 	.arguments('[environment]', 'name of environment. Example: staging')
@@ -93,7 +91,7 @@ program
 		};
 
 		getPassword().then(password => {
-			logger.Info(`\nAsking ${PARTNER_PORTAL_HOST} for access token...`);
+			logger.Info(`\nAsking https://api.siteglide.co.uk for access token...`);
 
 			Portal.login(params.email, password, params.url)
 				.then(response => {
@@ -108,7 +106,7 @@ program
 						logger.Error('Credentials correct but API Key has not been generated within Siteglide Admin.  Please visit your site in within portal to generate an API key');
 					}
 				})
-				.catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error(`Authentication Failed: Please check that you have the correct permissions or that your site is not locked.`));
+				.catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error(`Authentication Failed: Please check that you have the correct credentials and permissions or that your site is not locked.`));
 		});
 	});
 
