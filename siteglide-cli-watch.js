@@ -47,9 +47,22 @@ const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets') || 
 let manifestFilesToAdd = [];
 
 const extensionAllowed = filePath => {
-	const allowed = watchFilesExtensions.includes(ext(filePath));
+	var allowed = watchFilesExtensions.includes(ext(filePath));
 	if (!allowed) {
-		logger.Debug(`[Sync] Not syncing, not allowed file extension: ${filePath}`);
+		logger.Error(`[Sync] Not syncing, file extension if now allowed: ${filePath}`, {
+			exit: false
+		});
+	}
+	if(
+			(ext(filePath)==='mp4'||
+			ext(filePath)==='ogg'||
+			ext(filePath)==='webm')&&
+			!program.directAssetsUpload
+	){
+		allowed = false;
+		logger.Error(`[Sync] Please use the -d flag to sync video files`, {
+			exit: false
+		});
 	}
 	return allowed;
 };
