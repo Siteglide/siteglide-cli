@@ -18,7 +18,7 @@ class LogStream extends EventEmitter {
 
 	start() {
 		const t = this;
-		setInterval(() => t.fetchData(), process.env.INTERVAL);
+		setInterval(() => t.fetchData(), 7500);
 		logger.Info('Live logging is starting. \n');
 	}
 
@@ -58,12 +58,10 @@ const storage = {
 program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-	.option('--interval <interval>', 'time to wait between updates in ms', 3000)
 	.option('-f --filter <log type>', 'display only logs of given type, example: error')
   .option('-q --quiet', 'show only log message, without context')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
-		process.env.INTERVAL = program.interval;
 
 		const authData = fetchAuthData(environment, program);
 		const stream = new LogStream(authData);
