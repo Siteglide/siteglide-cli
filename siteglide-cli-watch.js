@@ -230,7 +230,7 @@ gateway.ping().then(async () => {
 		logger.Error('marketplace_builder has to exist! Please make sure you have the correct folder structure.');
 	}
 
-	logger.Info(`Enabling sync mode to: ${program.url}`);
+	logger.Info(`Enabled sync to: ${program.url}`);
 
 	chokidar.watch(directories, {
 		awaitWriteFinish: {
