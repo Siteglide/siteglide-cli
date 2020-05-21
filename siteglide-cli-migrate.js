@@ -54,7 +54,7 @@ const uploadArchive = (env,) => {
 	});
 };
 
-const deploy = async (env, authData, params) => {
+const deploy = async (env) => {
 	await uploadArchive(env);
 };
 

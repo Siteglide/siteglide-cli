@@ -7,7 +7,6 @@ const program = require('commander'),
 	validate = require('./lib/validators'),
 	Gateway = require('./lib/proxy'),
 	ServerError = require('./lib/ServerError'),
-	logger = require('./lib/logger'),
 	version = require('./package.json').version;
 
 const checkParams = params => {
