@@ -12,8 +12,8 @@ program
 			})
 			.catch(error => {
 				if(error.code==='DEST_NOT_EMPTY'){
-					logger.Error(`Init failed: Directory structure already exists. Command cancelled and your files have been left untouched.'`);
-				};
+					logger.Error('Init failed: Directory structure already exists. Command cancelled and your files have been left untouched.\'');
+				}
 			});
 	});
 

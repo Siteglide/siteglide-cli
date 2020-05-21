@@ -59,7 +59,7 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-f --filter <log type>', 'display only logs of given type, example: error')
-  .option('-q --quiet', 'show only log message, without context')
+	.option('-q --quiet', 'show only log message, without context')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 
@@ -73,7 +73,7 @@ program
 			const text = `[${created_at.replace('T', ' ')}] - ${error_type}: ${message.replace(/\n$/, '')}`;
 
 			if(error_type==='error') {
-				logger.Error(text, options)
+				logger.Error(text, options);
 				notifier.notify({
 					title: error_type,
 					message: message.slice(0,100),

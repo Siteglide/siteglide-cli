@@ -26,15 +26,15 @@ const logInvalidFile = (filename) => {
 };
 
 const dataImport = async(filename) => {
-  const data = fs.readFileSync(filename, 'utf8');
-  if (!isValidJSON(data)) return logInvalidFile(filename);
+	const data = fs.readFileSync(filename, 'utf8');
+	if (!isValidJSON(data)) return logInvalidFile(filename);
 
-  spinner.start();
-  const transformedData = await transform(JSON.parse(data));
-  shell.mkdir('-p', './tmp');
-  fs.writeFileSync(tmpFileName, JSON.stringify(transformedData));
+	spinner.start();
+	const transformedData = await transform(JSON.parse(data));
+	shell.mkdir('-p', './tmp');
+	fs.writeFileSync(tmpFileName, JSON.stringify(transformedData));
 	const formData = { 'marketplace_builder_file_body': fs.createReadStream(tmpFileName) };
-  gateway
+	gateway
 		.importStart(formData)
 		.then((importTask) => {
 			spinner.stopAndPersist().succeed('Data sent').start('Importing data');
@@ -73,7 +73,7 @@ program
 				dataImport(filename);
 			}
 		});
-  });
+	});
 
 program.parse(process.argv);
 

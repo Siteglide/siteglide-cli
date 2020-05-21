@@ -53,21 +53,21 @@ program
 
 		const authData = fetchAuthData(environment, program);
 
-			Confirm(`Are you sure you would like to deploy to ${authData.url}? (Y/n)\n`).then(function (response) {
-				if (response === 'Y') {
+		Confirm(`Are you sure you would like to deploy to ${authData.url}? (Y/n)\n`).then(function (response) {
+			if (response === 'Y') {
 
-					const env = Object.assign(process.env, {
-						SITEGLIDE_EMAIL: authData.email,
-						SITEGLIDE_TOKEN: authData.token,
-						SITEGLIDE_URL: authData.url,
-						SITEGLIDE_ENV: environment
-					});
+				const env = Object.assign(process.env, {
+					SITEGLIDE_EMAIL: authData.email,
+					SITEGLIDE_TOKEN: authData.token,
+					SITEGLIDE_URL: authData.url,
+					SITEGLIDE_ENV: environment
+				});
 
-					Promise.all([
-						deploy(env, authData, params)
-					])
-						.then(() => process.exit(0))
-						.catch(() => process.exit(1));
+				Promise.all([
+					deploy(env, authData, params)
+				])
+					.then(() => process.exit(0))
+					.catch(() => process.exit(1));
 			} else {
 				logger.Error('[Cancelled] Deploy command not excecuted, no files have been updated.');
 			}
