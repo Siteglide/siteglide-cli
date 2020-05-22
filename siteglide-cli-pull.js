@@ -2,7 +2,7 @@
 
 const program = require('commander'),
 	ora = require('ora'),
-	fs = require('fs'),
+	fs = require('fs-extra'),
 	logger = require('./lib/logger'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	version = require('./package.json').version,
@@ -38,7 +38,11 @@ program
 						.then(() => unzip(filename, dir.LEGACY_APP))
 						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${filename}`))
-						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/modules`))
+						.then(() => {
+							if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
+								shell.rm('-r',`./${dir.LEGACY_APP}/modules`)
+							}
+						})
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.then(() => {
 							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
