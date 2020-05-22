@@ -40,7 +40,7 @@ program
 						.then(() => shell.rm(`./${filename}`))
 						.then(() => {
 							if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
-								shell.rm('-r',`./${dir.LEGACY_APP}/modules`)
+								shell.rm('-r',`./${dir.LEGACY_APP}/modules`);
 							}
 						})
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
