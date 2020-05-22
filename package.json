@@ -48,7 +48,7 @@
 		"request": "^2.88.2",
 		"request-promise": "^4.2.5",
 		"shelljs": "^0.8.4",
-		"terser": "^4.6.13",
+		"terser": "^4.7.0",
 		"update-notifier": "^4.1.0",
 		"valid-url": "^1.0.9",
 		"website-scraper": "^4.2.1",
