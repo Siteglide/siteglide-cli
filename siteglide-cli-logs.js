@@ -19,7 +19,6 @@ class LogStream extends EventEmitter {
 	start() {
 		logger.Info('Live logging is starting. \n');
 		this.fetchData();
-		setInterval(() => this.fetchData(), 7500);
 	}
 
 	fetchData() {
@@ -41,6 +40,7 @@ class LogStream extends EventEmitter {
 					this.emit('message', row);
 				}
 			}
+			setTimeout(() => this.fetchData(), 7500);
 		});
 	}
 }
