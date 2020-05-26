@@ -63,9 +63,11 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-u --url <url>', 'Existing sites URL')
+	.option('-n --no-optimization', 'Do not automatically optimize assets')
 	.action(async (environment, params) => {
 		checkParams(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
+		const optimize = params.optimization;
 		const authData = fetchAuthData(environment,program);
 		const env = Object.assign(process.env, {
 			SITEGLIDE_EMAIL: authData.email,
@@ -74,20 +76,33 @@ program
 			SITEGLIDE_ENV: environment
 		});
 
-		await download.run({url: params.url})
+		if(optimize){
+			await download.run({url: params.url})
+				.then(async() => await assetURL.run())
+				.then(async() => await updateForms.run(authData.email))
+				.then(async() => await optimizeCSS.run())
+				.then(async() => await optimizeJS.run())
+				.then(async() => await optimizeImages.run()
+					.then(() => {
+						Promise.all([
+							deploy(env, authData, params)
+						])
+							.then(() => process.exit(0))
+							.catch(() => process.exit(1));
+					})
+				);
+		}else{
+			await download.run({url: params.url})
 			.then(async() => await assetURL.run())
 			.then(async() => await updateForms.run(authData.email))
-			.then(async() => await optimizeCSS.run())
-			.then(async() => await optimizeJS.run())
-			.then(async() => await optimizeImages.run()
-				.then(() => {
-					Promise.all([
-						deploy(env, authData, params)
-					])
-						.then(() => process.exit(0))
-						.catch(() => process.exit(1));
-				})
-			);
+			.then(() => {
+				Promise.all([
+					deploy(env, authData, params)
+				])
+					.then(() => process.exit(0))
+					.catch(() => process.exit(1));
+			})
+		}
 	});
 
 program.parse(process.argv);
