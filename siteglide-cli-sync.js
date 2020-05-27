@@ -7,11 +7,11 @@ const program = require('commander'),
 	logger = require('./lib/logger'),
 	version = require('./package.json').version;
 
-	program
+program
 	.version(version, '-v, --version')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-  .option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]')
+	.option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);

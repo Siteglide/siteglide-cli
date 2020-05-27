@@ -10,8 +10,7 @@ const program = require('commander'),
 
 const uploadArchive = (env, withImages) => {
 	return new Promise((resolve, reject) => {
-		// const options = withImages ? ['--with-images'] : [];
-		const options = [];
+		const options = withImages ? ['--with-images'] : [];
 		const archive = spawn(command('siteglide-cli-archive'), options, {
 			stdio: 'inherit'
 		});
@@ -40,34 +39,35 @@ const uploadArchive = (env, withImages) => {
 };
 
 const deploy = async (env, authData, params) => {
-	await uploadArchive(env, params.withImages);
+	await uploadArchive(env, params.withAssets);
 };
 
 program
 	.version(version)
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
+	.option('-w --with-assets', 'With assets, deploys yours "assets" folder')
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
-		process.env.WITH_IMAGES = params.withImages;
+		process.env.WITH_IMAGES = params.withAssets;
 
 		const authData = fetchAuthData(environment, program);
 
-			Confirm(`Are you sure you would like to deploy to ${authData.url}? (Y/n)\n`).then(function (response) {
-				if (response === 'Y') {
+		Confirm(`Are you sure you would like to deploy to ${authData.url}? (Y/n)\n`).then(function (response) {
+			if (response === 'Y') {
 
-					const env = Object.assign(process.env, {
-						SITEGLIDE_EMAIL: authData.email,
-						SITEGLIDE_TOKEN: authData.token,
-						SITEGLIDE_URL: authData.url,
-						SITEGLIDE_ENV: environment
-					});
+				const env = Object.assign(process.env, {
+					SITEGLIDE_EMAIL: authData.email,
+					SITEGLIDE_TOKEN: authData.token,
+					SITEGLIDE_URL: authData.url,
+					SITEGLIDE_ENV: environment
+				});
 
-					Promise.all([
-						deploy(env, authData, params)
-					])
-						.then(() => process.exit(0))
-						.catch(() => process.exit(1));
+				Promise.all([
+					deploy(env, authData, params)
+				])
+					.then(() => process.exit(0))
+					.catch(() => process.exit(1));
 			} else {
 				logger.Error('[Cancelled] Deploy command not excecuted, no files have been updated.');
 			}

@@ -48,7 +48,7 @@ program
 	.option('-e --export-internal-ids <export-internal-ids>', 'use normal object `id` instead of `external_id` in exported json data',
 		'false')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-  .option('-w --with-assets', 'With assets, also pulls the assets/images and PDFs in assets/documents folder', false)
+	.option('-w --with-assets', 'With assets, also pulls the assets/images and PDFs in assets/documents folder', false)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_ASSETS = params.withAssets;
@@ -75,7 +75,7 @@ program
 								try {
 									fs.rmdirSync(folder);
 								} catch(e) {
-									if(e.code!=="ENOTEMPTY"){
+									if(e.code!=='ENOTEMPTY'){
 										logger.Error(e);
 									}
 								}
@@ -86,10 +86,10 @@ program
 							exportSpinner.fail('Code export failed');
 						});
 				})
-				.catch(e => {
-					logger.Error(e.message);
-					exportSpinner.fail('Code export failed');
-				});
+					.catch(e => {
+						logger.Error(e.message);
+						exportSpinner.fail('Code export failed');
+					});
 
 				await gateway
 					.pull().then(async(response) => {
@@ -108,8 +108,8 @@ program
 						for(let i = 0; i < assets.length; i++) {
 							var file = assets[i];
 							var urlToTest = file.data.remote_url.toLowerCase();
-								if(
-									(urlToTest.indexOf('.css')>-1)||
+							if(
+								(urlToTest.indexOf('.css')>-1)||
 									(urlToTest.indexOf('.js')>-1)||
 									(urlToTest.indexOf('.scss')>-1)||
 									(urlToTest.indexOf('.sass')>-1)||
@@ -120,26 +120,26 @@ program
 									(urlToTest.indexOf('.map')>-1)||
 									(urlToTest.indexOf('.json')>-1)||
 									(urlToTest.indexOf('.htm')>-1)
-								){
-									await getBinary(file.data.remote_url,time).then(async response => {
-										if(response!=='error_missing_file'){
-											if(
-												(file.data.physical_file_path.indexOf('.json')>-1)||
+							){
+								await getBinary(file.data.remote_url,time).then(async response => {
+									if(response!=='error_missing_file'){
+										if(
+											(file.data.physical_file_path.indexOf('.json')>-1)||
 												(file.data.physical_file_path.indexOf('.map')>-1)
-											){
-												file.data.body = JSON.stringify(response)
-											}else{
-												file.data.body = response;
-											}
-											asset_files.push(file);
-											count++;
-											if(params.withAssets){
-												exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
-											}
+										){
+											file.data.body = JSON.stringify(response);
+										}else{
+											file.data.body = response;
 										}
-									}).catch(() => exportSpinner.fail('Asset download failed'));
-								}else if(
-									(urlToTest.indexOf('.jpg')>-1)||
+										asset_files.push(file);
+										count++;
+										if(params.withAssets){
+											exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
+										}
+									}
+								}).catch(() => exportSpinner.fail('Asset download failed'));
+							}else if(
+								(urlToTest.indexOf('.jpg')>-1)||
 									(urlToTest.indexOf('.jpeg')>-1)||
 									(urlToTest.indexOf('.png')>-1)||
 									(urlToTest.indexOf('.gif')>-1)||
@@ -167,23 +167,23 @@ program
 									(urlToTest.indexOf('.key')>-1)||
 									(urlToTest.indexOf('.zip')>-1)||
 									(urlToTest.indexOf('.csv')>-1)
-								){
-									var folderPath = file.data.physical_file_path.split('/');
-									folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
-									fs.mkdirSync(folderPath, { recursive: true });
-									await getAsset(file.data.remote_url,time).then(async response => {
-										if(response!=='error_missing_file'){
-											response.body.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path))
-											count++;
-											if(params.withAssets){
-												exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
-											}
+							){
+								var folderPath = file.data.physical_file_path.split('/');
+								folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
+								fs.mkdirSync(folderPath, { recursive: true });
+								await getAsset(file.data.remote_url,time).then(async response => {
+									if(response!=='error_missing_file'){
+										response.body.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path));
+										count++;
+										if(params.withAssets){
+											exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
 										}
-									}).catch(() => exportSpinner.fail('Asset download failed'));
-								}else{
-									logger.Error(`Cannot download asset ${file.data.remote_url}`, {exit: false})
-								}
-						};
+									}
+								}).catch(() => exportSpinner.fail('Asset download failed'));
+							}else{
+								logger.Error(`Cannot download asset ${file.data.remote_url}`, {exit: false});
+							}
+						}
 
 						asset_files.forEach(file => {
 							var folderPath = file.data.physical_file_path.split('/');
@@ -220,7 +220,7 @@ program
 					});
 			} else {
 				logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
-			};
+			}
 		});
 	});
 

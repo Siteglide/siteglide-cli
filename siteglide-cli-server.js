@@ -42,16 +42,16 @@ const start = (env) => {
 		logger.Success(`Connected to ${env.SITEGLIDE_URL}`);
 		logger.Success(`GraphQL Browser: http://localhost:${port}/gui/graphql`);
 	})
-	.on('error', err => {
-		if (err.errno === 'EADDRINUSE') {
-			logger.Error(`Port ${port} is already in use.`, { exit: false });
-			logger.Print('\n');
-			logger.Warn('Please use -p <port> to run server on a different port.\n');
-			logger.Warn('Example: pos-cli gui serve staging -p 31337');
-		} else {
-			logger.Error(`Something wrong happened when trying to run Express server: ${err}`);
-		}
-	});
+		.on('error', err => {
+			if (err.errno === 'EADDRINUSE') {
+				logger.Error(`Port ${port} is already in use.`, { exit: false });
+				logger.Print('\n');
+				logger.Warn('Please use -p <port> to run server on a different port.\n');
+				logger.Warn('Example: pos-cli gui serve staging -p 31337');
+			} else {
+				logger.Error(`Something wrong happened when trying to run Express server: ${err}`);
+			}
+		});
 };
 
 module.exports = {

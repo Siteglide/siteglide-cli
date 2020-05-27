@@ -17,9 +17,8 @@ class LogStream extends EventEmitter {
 	}
 
 	start() {
-		const t = this;
-		setInterval(() => t.fetchData(), process.env.INTERVAL);
 		logger.Info('Live logging is starting. \n');
+		this.fetchData();
 	}
 
 	fetchData() {
@@ -41,6 +40,7 @@ class LogStream extends EventEmitter {
 					this.emit('message', row);
 				}
 			}
+			setTimeout(() => this.fetchData(), 7500);
 		});
 	}
 }
@@ -58,12 +58,10 @@ const storage = {
 program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-	.option('--interval <interval>', 'time to wait between updates in ms', 3000)
 	.option('-f --filter <log type>', 'display only logs of given type, example: error')
-  .option('-q --quiet', 'show only log message, without context')
+	.option('-q --quiet', 'show only log message, without context')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
-		process.env.INTERVAL = program.interval;
 
 		const authData = fetchAuthData(environment, program);
 		const stream = new LogStream(authData);
@@ -75,7 +73,7 @@ program
 			const text = `[${created_at.replace('T', ' ')}] - ${error_type}: ${message.replace(/\n$/, '')}`;
 
 			if(error_type==='error') {
-				logger.Error(text, options)
+				logger.Error(text, options);
 				notifier.notify({
 					title: error_type,
 					message: message.slice(0,100),

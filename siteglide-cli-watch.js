@@ -54,13 +54,13 @@ const extensionAllowed = filePath => {
 		});
 	}
 	if(
-			(ext(filePath)==='mp4'||
+		(ext(filePath)==='mp4'||
 			ext(filePath)==='ogg'||
 			ext(filePath)==='webm')&&
 			!program.directAssetsUpload
 	){
 		allowed = false;
-		logger.Error(`[Sync] Please use the -d flag to sync video files`, {
+		logger.Error('[Sync] Please use the -d flag to sync video files', {
 			exit: false
 		});
 	}
@@ -90,17 +90,17 @@ CONCURRENCY = 3;
 const queue = Queue((task, callback) => {
 	let push = program.directAssetsUpload ? pushFileDirectAssets : pushFile;
 	switch (task.op) {
-		case "push":
+		case 'push':
 			push(gateway, task.path).then(callback);
 			break;
-		case "delete":
+		case 'delete':
 			deleteFile(gateway, task.path).then(callback);
 			break;
 	}
 }, CONCURRENCY);
 
-const enqueue = filePath => queue.push({ path: filePath, op: "push" }, () => { });
-const enqueueDelete = (filePath) => queue.push({ path: filePath, op: "delete" }, () => { });
+const enqueue = filePath => queue.push({ path: filePath, op: 'push' }, () => { });
+const enqueueDelete = (filePath) => queue.push({ path: filePath, op: 'delete' }, () => { });
 
 const getBody = (filePath, processTemplate) => {
 	if (processTemplate) {
@@ -121,7 +121,7 @@ const fetchDirectUploadData = async (gateway) => {
 	const remoteAssetsDir = `instances/${instanceId}/assets`;
 	const data = await presignDirectory(remoteAssetsDir);
 	directUploadData = data;
-}
+};
 
 const deleteFile = (gateway, syncedFilePath) => {
 	let filePath = filePathUnixified(syncedFilePath); // need path with / separators
@@ -165,7 +165,7 @@ const pushFile = (gateway, syncedFilePath) => {
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
 	if (isAssetsPath(syncedFilePath)){
 		syncedFilePath = syncedFilePath.replace(/\\/g, '/');
-		sendAsset(gateway, syncedFilePath)
+		sendAsset(gateway, syncedFilePath);
 		return Promise.resolve(true);
 	} else {
 		return pushFile(gateway, syncedFilePath);
@@ -189,9 +189,9 @@ const sendAsset = async (gateway, filePath) => {
 	try {
 		const data = cloneDeep(directUploadData);
 		const fileSubdir = filePath.startsWith('marketplace_builder/assets')
-		? path.dirname(filePath).replace('marketplace_builder/assets','')
-		: '/' + path.dirname(filePath).replace('/public/assets', '');
-		const key = data.fields.key.replace('assets/${filename}', `assets${fileSubdir}/\${filename}`)
+			? path.dirname(filePath).replace('marketplace_builder/assets','')
+			: '/' + path.dirname(filePath).replace('/public/assets', '');
+		const key = data.fields.key.replace('assets/${filename}', `assets${fileSubdir}/\${filename}`);
 		data.fields.key = key;
 		logger.Debug(data);
 		await uploadFileFormData(filePath, data);
@@ -203,7 +203,7 @@ const sendAsset = async (gateway, filePath) => {
 		logger.Debug(e.stack);
 		logger.Error(`[Sync] Failed to sync: ${filePath}`);
 	}
-}
+};
 
 const checkParams = params => {
 	validate.existence({ argumentValue: params.token, argumentName: 'token', fail: program.help.bind(program) });
@@ -215,7 +215,7 @@ program
 	.option('--email <email>', 'authentication token', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
-  .option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]', process.env.DIRECT_ASSETS_UPLOAD)
+	.option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]', process.env.DIRECT_ASSETS_UPLOAD)
 	.parse(process.argv);
 
 checkParams(program);
@@ -230,7 +230,7 @@ gateway.ping().then(async () => {
 		logger.Error('marketplace_builder has to exist! Please make sure you have the correct folder structure.');
 	}
 
-	logger.Info(`Enabling sync mode to: ${program.url}`);
+	logger.Info(`Enabled sync to: ${program.url}`);
 
 	chokidar.watch(directories, {
 		awaitWriteFinish: {
@@ -239,8 +239,8 @@ gateway.ping().then(async () => {
 		},
 		ignoreInitial: true
 	})
-	.on('change', fp => shouldBeSynced(fp) && enqueue(fp))
-	.on('add', fp => shouldBeSynced(fp) && enqueue(fp))
-	.on('unlink', fp => shouldBeSynced(fp) && enqueueDelete(fp));
+		.on('change', fp => shouldBeSynced(fp) && enqueue(fp))
+		.on('add', fp => shouldBeSynced(fp) && enqueue(fp))
+		.on('unlink', fp => shouldBeSynced(fp) && enqueueDelete(fp));
 
 });

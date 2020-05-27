@@ -7,7 +7,6 @@ const program = require('commander'),
 	validate = require('./lib/validators'),
 	Gateway = require('./lib/proxy'),
 	ServerError = require('./lib/ServerError'),
-	logger = require('./lib/logger'),
 	version = require('./package.json').version;
 
 const checkParams = params => {
@@ -29,14 +28,6 @@ program.parse(process.argv);
 
 checkParams(program);
 
-const formatMMSS = s => (s - (s %= 60)) / 60 + (9 < s ? ':' : ':0') + s;
-const duration = (t0, t1) => {
-	const duration = Math.round((t1 - t0) / 1000);
-	return formatMMSS(duration);
-};
-
-const t0 = performance.now();
-
 const spinner = ora({ text: `Deploying to: ${program.url}`, stream: process.stdout, spinner: 'clock' }).start();
 
 const gateway = new Gateway(program);
@@ -47,6 +38,9 @@ const formData = {
 
 const getDeploymentStatus = ({ id }) => {
 	return new Promise((resolve, reject) => {
+		if(id===undefined){
+			reject();
+		}
 		(getStatus = () => {
 			gateway.getStatus(id).then(response => {
 				if (response.status==='ready_for_import') {
@@ -66,11 +60,9 @@ gateway
 	.push(formData)
 	.then(getDeploymentStatus)
 	.then(() => {
-		const t1 = performance.now();
-		spinner.stopAndPersist().succeed(`Deploy succeeded after ${duration(t0, t1)}`);
+		spinner.stopAndPersist().succeed(`Deploy succeeded`);
 	})
 	.catch(() => {
-		const t1 = performance.now();
-		spinner.fail(`Deploy failed after ${duration(t0, t1)}`);
+		spinner.fail(`Deploy failed`);
 		process.exit(1);
 	});

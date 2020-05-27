@@ -2,7 +2,7 @@
 
 const program = require('commander'),
 	ora = require('ora'),
-	fs = require('fs'),
+	fs = require('fs-extra'),
 	logger = require('./lib/logger'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	version = require('./package.json').version,
@@ -38,7 +38,11 @@ program
 						.then(() => unzip(filename, dir.LEGACY_APP))
 						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${filename}`))
-						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/modules`))
+						.then(() => {
+							if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
+								shell.rm('-r',`./${dir.LEGACY_APP}/modules`);
+							}
+						})
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.then(() => {
 							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
@@ -47,7 +51,7 @@ program
 								try {
 									fs.rmdirSync(folder);
 								} catch(e) {
-									if(e.code!=="ENOTEMPTY"){
+									if(e.code!=='ENOTEMPTY'){
 										logger.Error(e);
 									}
 								}
@@ -58,17 +62,17 @@ program
 							pullSpinner.fail('Pull failed');
 						});
 				})
-				.catch(e => {
-					pullSpinner.fail('Pull failed');
-					logger.Error(e.message);
-				});
+					.catch(e => {
+						pullSpinner.fail('Pull failed');
+						logger.Error(e.message);
+					});
 
 				await gateway.pull().then(async(response) => {
 					var asset_files = [];
 					const assets = response.asset;
 					var time = '?updated='+new Date().getTime();
 					await Promise.all(assets.map(async function(file){
-						var urlToTest = file.data.remote_url.toLowerCase()
+						var urlToTest = file.data.remote_url.toLowerCase();
 						return new Promise(async function(resolve) {
 							if(
 								(urlToTest.indexOf('.css')>-1)||
