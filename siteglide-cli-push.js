@@ -38,6 +38,9 @@ const formData = {
 
 const getDeploymentStatus = ({ id }) => {
 	return new Promise((resolve, reject) => {
+		if(id===undefined){
+			reject();
+		}
 		(getStatus = () => {
 			gateway.getStatus(id).then(response => {
 				if (response.status==='ready_for_import') {
