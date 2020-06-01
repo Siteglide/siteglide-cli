@@ -57,6 +57,9 @@ const storage = {
 
 program
 	.arguments('[environment]', 'name of environment. Example: staging')
+	.name('siteglide-cli logs')
+	.usage('<env> [options]')
+	.description("This command will output the last 20 logs and then a live list of logs from your site. Logs are written by using the log liquid code, for example: {% log 'Hello World!' -%} .")
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-f --filter <log type>', 'display only logs of given type, example: error')
 	.option('-q --quiet', 'show only log message, without context')

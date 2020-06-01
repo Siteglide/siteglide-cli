@@ -60,6 +60,9 @@ const deploy = async (env) => {
 
 program
 	.version(version, '-v, --version')
+	.name('siteglide-cli migrate')
+	.usage('<env> [options]')
+	.description('Download and migrate an existing site to Siteglide. This tool will scrape the existing site, download all of the publicly accessible pages and assets, compress CSS/JS/images and then deploy as a static site to Siteglide.')
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-u --url <url>', 'Existing sites URL')

@@ -9,10 +9,13 @@ const program = require('commander'),
 
 program
 	.version(version, '-v, --version')
+	.name('siteglide-cli graphql')
+	.usage('<env> [options]')
+	.description('This command will open up the GraphiQL editor locally. This will let you run Graph queries and mutations to test them out before creating them within your site. Also good for quickly getting data out of the database to check.')
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-	.option('-p --port <port>', 'use PORT', '3333')
-	.option('-o, --open', 'when ready, open default browser')
+	.option('-p --port <port>', 'port number', '3333')
+	.option('-o, --open', 'automatically opens your default browser')
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);

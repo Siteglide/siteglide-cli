@@ -79,6 +79,9 @@ PARTNER_PORTAL_HOST = process.env.PARTNER_PORTAL_HOST || 'https://api.siteglide.
 
 program
 	.version(version, '-v, --version')
+	.name('siteglide-cli add')
+	.usage('<env> [options]')
+	.description('The first time you use the CLI with a project on your device, you will need to create an environment.')
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('--email <email>', 'Admin account email. Example: admin@example.com')
 	.option('--url <url>', 'Site URL. Example: https://example.com')
