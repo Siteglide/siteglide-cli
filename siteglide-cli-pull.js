@@ -106,7 +106,7 @@ program
 				});
 
 			} else {
-				logger.Error('[Cancelled] Pull command not excecuted, your files have been left untouched.');
+				logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 			}
 		});
 	});

@@ -72,7 +72,7 @@ program
 					.then(() => process.exit(0))
 					.catch(() => process.exit(1));
 			} else {
-				logger.Error('[Cancelled] Deploy command not excecuted, no files have been updated.');
+				logger.Error('[Cancelled] Deploy command not executed, no files have been updated.');
 			}
 		});
 	});

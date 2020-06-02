@@ -221,7 +221,7 @@ program
 						spinner.fail('Data Export failed');
 					});
 			} else {
-				logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
+				logger.Error('[Cancelled] Export command not executed, your files have been left untouched.');
 			}
 		});
 	});
