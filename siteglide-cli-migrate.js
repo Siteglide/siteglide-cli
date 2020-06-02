@@ -8,6 +8,7 @@ const program = require('commander'),
 	validate = require('./lib/validators'),
 	version = require('./package.json').version,
 	Confirm = require('./lib/confirm'),
+	Gateway = require('./lib/proxy'),
 	download = require('./lib/migration/commands/download'),
 	assetURL = require('./lib/migration/commands/urls'),
 	updateForms = require('./lib/migration/commands/forms'),
@@ -73,6 +74,7 @@ program
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const optimize = params.optimization;
 		const authData = fetchAuthData(environment,program);
+		const gateway = new Gateway(authData);
 		const env = Object.assign(process.env, {
 			SITEGLIDE_EMAIL: authData.email,
 			SITEGLIDE_TOKEN: authData.token,
@@ -82,33 +84,35 @@ program
 
 		Confirm('I certify that I own this domain or have the authority to import it from the owner. (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
-				if(optimize){
-					await download.run({url: params.url})
+				await gateway.migrate({'existingSite': params.url}).then(async() => {
+					if(optimize){
+						await download.run({url: params.url})
+							.then(async() => await assetURL.run())
+							.then(async() => await updateForms.run(authData.email))
+							.then(async() => await optimizeCSS.run())
+							.then(async() => await optimizeJS.run())
+							.then(async() => await optimizeImages.run()
+								.then(() => {
+									Promise.all([
+										deploy(env, authData, params)
+									])
+										.then(() => process.exit(0))
+										.catch(() => process.exit(1));
+								})
+							);
+					}else{
+						await download.run({url: params.url})
 						.then(async() => await assetURL.run())
 						.then(async() => await updateForms.run(authData.email))
-						.then(async() => await optimizeCSS.run())
-						.then(async() => await optimizeJS.run())
-						.then(async() => await optimizeImages.run()
-							.then(() => {
-								Promise.all([
-									deploy(env, authData, params)
-								])
-									.then(() => process.exit(0))
-									.catch(() => process.exit(1));
-							})
-						);
-				}else{
-					await download.run({url: params.url})
-					.then(async() => await assetURL.run())
-					.then(async() => await updateForms.run(authData.email))
-					.then(() => {
-						Promise.all([
-							deploy(env, authData, params)
-						])
-							.then(() => process.exit(0))
-							.catch(() => process.exit(1));
-					})
-				}
+						.then(() => {
+							Promise.all([
+								deploy(env, authData, params)
+							])
+								.then(() => process.exit(0))
+								.catch(() => process.exit(1));
+						})
+					}
+				});
 			} else {
 				logger.Error('[Cancelled] Migrate command not executed, please certify authority to continue.');
 			}
