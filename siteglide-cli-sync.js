@@ -9,6 +9,9 @@ const program = require('commander'),
 
 program
 	.version(version, '-v, --version')
+	.name('siteglide-cli sync')
+	.usage('<env> [options]')
+	.description('This command will setup a watcher that will automatically sync up files when you hit save in your IDE.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]')

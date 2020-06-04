@@ -42,7 +42,9 @@ const fetchFilesForData = async(data) => {
 };
 
 program
-	.version(version)
+	.name('siteglide-cli export')
+	.usage('<env> [options]')
+	.description('Export is very similar to Pull, but it will also grab all data.  This command will first grab all data from the site and export it into a data.json  file, then it will run a pull to grab your code base.')
 	.arguments('[environment]', 'name of the environment. Example: staging')
 	.option('-p --path <export-file-path>', 'output for exported data', 'data.json')
 	.option('-e --export-internal-ids <export-internal-ids>', 'use normal object `id` instead of `external_id` in exported json data',
@@ -219,7 +221,7 @@ program
 						spinner.fail('Data Export failed');
 					});
 			} else {
-				logger.Error('[Cancelled] Export command not excecuted, your files have been left untouched.');
+				logger.Error('[Cancelled] Export command not executed, your files have been left untouched.');
 			}
 		});
 	});

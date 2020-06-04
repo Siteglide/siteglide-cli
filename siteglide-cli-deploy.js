@@ -44,9 +44,12 @@ const deploy = async (env, authData, params) => {
 
 program
 	.version(version)
+	.name('siteglide-cli deploy')
+	.usage('<env> [options]')
+	.description('If you have made a lot of changes in your codebase, then you can use deploy to re-send all files to your site at once.  Deploy is a single command that will create a .zip  file of your site and then upload that to your website.')
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-	.option('-w --with-assets', 'With assets, deploys yours "assets" folder')
+	.option('-w --with-assets', 'With assets, deploys your "assets" folder')
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;
@@ -69,7 +72,7 @@ program
 					.then(() => process.exit(0))
 					.catch(() => process.exit(1));
 			} else {
-				logger.Error('[Cancelled] Deploy command not excecuted, no files have been updated.');
+				logger.Error('[Cancelled] Deploy command not executed, no files have been updated.');
 			}
 		});
 	});

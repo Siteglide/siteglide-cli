@@ -20,6 +20,9 @@ const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout, spinner
 
 program
 	.version(version, '-v, --version')
+	.name('siteglide-cli pull')
+	.usage('<env>')
+	.description('This will pull down all files from the site in to a folder named marketplace_builder within your current directory. During this process it will also overwrite any local versions of files if they already exist. If you have made any changes locally that you have not synced they WILL be overwritten.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.action((environment, params) => {
@@ -103,7 +106,7 @@ program
 				});
 
 			} else {
-				logger.Error('[Cancelled] Pull command not excecuted, your files have been left untouched.');
+				logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 			}
 		});
 	});

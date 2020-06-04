@@ -9,8 +9,7 @@ const program = require('commander'),
 updateNotifier({
 	pkg: pkg
 }).notify({
-	defer: true,
-	isGlobal: true
+	defer: true
 });
 
 program

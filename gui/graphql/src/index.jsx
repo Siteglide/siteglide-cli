@@ -1,9 +1,9 @@
 import React, { Component } from "react";
 import { render } from "react-dom";
-import { buildClientSchema, getIntrospectionQuery, parse } from "graphql";
+import { buildClientSchema, getIntrospectionQuery } from "graphql";
 import GraphiQL from "graphiql";
 import GraphiQLExplorer from "graphiql-explorer";
-import "graphiql/graphiql.css";
+import "graphiql/graphiql.min.css";
 
 let printConnectionInfo = env => {
   document.querySelector(
