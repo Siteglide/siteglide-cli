@@ -58,11 +58,20 @@ const getDeploymentStatus = ({ id }) => {
 
 gateway
 	.push(formData)
-	.then(getDeploymentStatus)
+	.then((res) => {
+		if(res==='LIMIT_FILE_SIZE'){
+			throw res;
+		}
+		getDeploymentStatus()
+	})
 	.then(() => {
 		spinner.stopAndPersist().succeed(`Deploy succeeded`);
 	})
-	.catch(() => {
+	.catch((err) => {
 		spinner.fail(`Deploy failed`);
-		process.exit(1);
+		if(err==='LIMIT_FILE_SIZE'){
+			process.exit(2);
+		}else{
+			process.exit(1);
+		}
 	});
