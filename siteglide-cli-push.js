@@ -62,7 +62,7 @@ gateway
 		if(res==='LIMIT_FILE_SIZE'){
 			throw res;
 		}
-		getDeploymentStatus()
+		getDeploymentStatus(res)
 	})
 	.then(() => {
 		spinner.stopAndPersist().succeed(`Deploy succeeded`);
