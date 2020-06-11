@@ -92,13 +92,13 @@ program
 							.then(async() => await optimizeCSS.run())
 							.then(async() => await optimizeJS.run())
 							.then(async() => await optimizeImages.run()
-								.then(() => {
-									Promise.all([
-										deploy(env, authData, params)
-									])
-										.then(() => process.exit(0))
-										.catch(() => process.exit(1));
-								})
+								// .then(() => {
+								// 	Promise.all([
+								// 		deploy(env, authData, params)
+								// 	])
+								// 		.then(() => process.exit(0))
+								// 		.catch(() => process.exit(1));
+								// })
 							);
 					}else{
 						await download.run({url: params.url})
