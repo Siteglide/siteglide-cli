@@ -41,11 +41,8 @@ program
 						.then(() => unzip(filename, dir.LEGACY_APP))
 						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${filename}`))
-						.then(() => {
-							if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
-								shell.rm('-r',`./${dir.LEGACY_APP}/modules`);
-							}
-						})
+						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`))
+						.then(() => shell.rm('-r', `./${dir.LEGACY_APP}/modules`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.then(() => {
 							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
