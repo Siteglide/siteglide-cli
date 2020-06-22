@@ -68,8 +68,9 @@ program
 						.then(() => unzip(zipFileName, dir.LEGACY_APP))
 						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${zipFileName}`))
+						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`))
+						.then(() => shell.rm('-r', `./${dir.LEGACY_APP}/modules`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
-						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/modules`))
 						.then(() => {
 							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
 							for(var i = 0; i < list.length; i++) {

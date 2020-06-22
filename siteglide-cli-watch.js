@@ -17,7 +17,7 @@ const program = require('commander'),
 	version = require('./package.json').version,
 	{ cloneDeep, debounce } = require('lodash');
 
-const WATCH_DIRECTORIES = ['marketplace_builder'];
+const WATCH_DIRECTORIES = ['marketplace_builder','modules'];
 const getWatchDirectories = () => WATCH_DIRECTORIES.filter(fs.existsSync);
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
