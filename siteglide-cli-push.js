@@ -2,7 +2,6 @@
 
 const program = require('commander'),
 	fs = require('fs'),
-	{ performance } = require('perf_hooks'),
 	ora = require('ora'),
 	validate = require('./lib/validators'),
 	Gateway = require('./lib/proxy'),
@@ -49,6 +48,7 @@ const getDeploymentStatus = ({ id }) => {
 					ServerError.deploy(response.error);
 					reject();
 				} else {
+					spinner.stopAndPersist().succeed(`Deploy succeeded`);
 					resolve();
 				}
 			});
@@ -63,9 +63,9 @@ gateway
 			throw res;
 		}
 		getDeploymentStatus(res)
-	})
-	.then(() => {
-		spinner.stopAndPersist().succeed(`Deploy succeeded`);
+		.catch(() => {
+			process.exit(3);
+		});
 	})
 	.catch((err) => {
 		spinner.fail(`Deploy failed`);
