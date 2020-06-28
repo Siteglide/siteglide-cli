@@ -33,6 +33,9 @@ const uploadArchive = (env, withImages) => {
 				} else if (exitCode === 2){
 					logger.Error('Deploy failed. Your sites codebase is more than 50mb, please check that you have any asset files within the assets folder.');
 					reject(false);
+				}else if (exitCode === 3) {
+					logger.Error('Deploy failed. Your site contains invalid syntax, please check the error report above');
+					reject(false);
 				} else if (exitCode === 0) {
 					resolve(true);
 				}
