@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const program = require('commander'),
-	fs = require('fs'),
+	fs = require('fs-extra'),
 	ora = require('ora'),
 	shell = require('shelljs'),
 	Gateway = require('./lib/proxy'),
@@ -15,8 +15,7 @@ const program = require('commander'),
 	dir = require('./lib/directories'),
 	Confirm = require('./lib/confirm'),
 	unzip = require('./lib/unzip'),
-	path = require('path'),
-	version = require('./package.json').version;
+	path = require('path');
 
 let gateway;
 const spinner = ora({ text: 'Exporting data', stream: process.stdout, spinner: 'clock' });
@@ -68,8 +67,13 @@ program
 						.then(() => unzip(zipFileName, dir.LEGACY_APP))
 						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
 						.then(() => shell.rm(`./${zipFileName}`))
-						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`))
-						.then(() => shell.rm('-r', `./${dir.LEGACY_APP}/modules`))
+						.then(() => {
+							if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
+								shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`)
+								shell.rm('-r', `./${dir.LEGACY_APP}/modules`)
+							}
+						})
+						.then(() => shell.rm(`./${dir.LEGACY_APP}/asset_manifest.json`))
 						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
 						.then(() => {
 							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
