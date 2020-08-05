@@ -47,7 +47,7 @@ const start = (env) => {
 				logger.Error(`Port ${port} is already in use.`, { exit: false });
 				logger.Print('\n');
 				logger.Warn('Please use -p <port> to run server on a different port.\n');
-				logger.Warn('Example: pos-cli gui serve staging -p 31337');
+				logger.Warn('Example: siteglide-cli graphql <env> -p 31337');
 			} else {
 				logger.Error(`Something wrong happened when trying to run Express server: ${err}`);
 			}
