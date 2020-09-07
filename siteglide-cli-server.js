@@ -37,21 +37,23 @@ const start = (env) => {
 	app.post('/graphql', graphqlRouting);
 	app.post('/api/graph', graphqlRouting);
 
-	app.listen(port, function() {
-		logger.Debug(`Server is listening on ${port}`);
-		logger.Success(`Connected to ${env.SITEGLIDE_URL}`);
-		logger.Success(`GraphQL Browser: http://localhost:${port}/gui/graphql`);
-	})
-		.on('error', err => {
-			if (err.errno === 'EADDRINUSE') {
-				logger.Error(`Port ${port} is already in use.`, { exit: false });
-				logger.Print('\n');
-				logger.Warn('Please use -p <port> to run server on a different port.\n');
-				logger.Warn('Example: siteglide-cli graphql <env> -p 31337');
-			} else {
-				logger.Error(`Something wrong happened when trying to run Express server: ${err}`);
-			}
-		});
+	gateway.ping().then(async () => {
+		app.listen(port, function() {
+			logger.Debug(`Server is listening on ${port}`);
+			logger.Success(`Connected to ${env.SITEGLIDE_URL}`);
+			logger.Success(`GraphQL Browser: http://localhost:${port}/gui/graphql`);
+		})
+			.on('error', err => {
+				if (err.errno === 'EADDRINUSE') {
+					logger.Error(`Port ${port} is already in use.`, { exit: false });
+					logger.Print('\n');
+					logger.Warn('Please use -p <port> to run server on a different port.\n');
+					logger.Warn('Example: siteglide-cli graphql <env> -p 31337');
+				} else {
+					logger.Error(`Something wrong happened when trying to run Express server: ${err}`);
+				}
+			});
+		})
 };
 
 module.exports = {

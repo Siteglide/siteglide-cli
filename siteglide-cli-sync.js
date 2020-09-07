@@ -29,13 +29,6 @@ program
 			env: env,
 			directAssetsUpload: params.directAssetsUpload
 		});
-
-		p.on('close', code => {
-			if (code === 1) logger.Error('Sync failed. Please check that you have the correct permissions or that your site is not locked.', {
-				exit: false
-			});
-		});
-
 		p.on('error', logger.Error);
 	});
 
