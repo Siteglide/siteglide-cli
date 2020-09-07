@@ -84,7 +84,13 @@ program
 								(urlToTest.indexOf('.js')>-1)||
 								(urlToTest.indexOf('.scss')>-1)||
 								(urlToTest.indexOf('.sass')>-1)||
-								(urlToTest.indexOf('.less')>-1)
+								(urlToTest.indexOf('.less')>-1)||
+								(urlToTest.indexOf('.txt')>-1)||
+								(urlToTest.indexOf('.html')>-1)||
+								(urlToTest.indexOf('.svg')>-1)||
+								(urlToTest.indexOf('.map')>-1)||
+								(urlToTest.indexOf('.json')>-1)||
+								(urlToTest.indexOf('.htm')>-1)
 							){
 								await getBinary(file.data.remote_url,time).then(response => {
 									if(response!=='error_missing_file'){

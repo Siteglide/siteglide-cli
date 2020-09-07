@@ -116,7 +116,7 @@ program
 							var file = assets[i];
 							var urlToTest = file.data.remote_url.toLowerCase();
 							if(
-								(urlToTest.indexOf('.css')>-1)||
+									(urlToTest.indexOf('.css')>-1)||
 									(urlToTest.indexOf('.js')>-1)||
 									(urlToTest.indexOf('.scss')>-1)||
 									(urlToTest.indexOf('.sass')>-1)||
