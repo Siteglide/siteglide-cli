@@ -10,7 +10,7 @@ updateNotifier({
 	pkg: pkg,
 	isGlobal: true
 }).notify({
-	defer: true
+	defer: false
 });
 
 program
