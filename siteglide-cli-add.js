@@ -95,6 +95,10 @@ program
 			email: params.email
 		};
 
+		if(!params.url.includes('platform-os.com')){
+			logger.Error('Please use the platform URL to add the environment, not the vanity URL. For example: https://my-great-site.prod01.oregon.platform-os.com/');
+		}
+
 		getPassword().then(password => {
 			logger.Info(`\nAsking ${PARTNER_PORTAL_HOST} for access token...`);
 
