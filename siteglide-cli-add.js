@@ -50,7 +50,7 @@ const storeEnvironment = settings => {
 	const environmentSettings = {
 		[settings.endpoint]: {
 			url: settings.url,
-			token: settings.token,
+			token: settings.token.api_key,
 			email: settings.email
 		}
 	};
