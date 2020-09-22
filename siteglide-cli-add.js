@@ -95,7 +95,10 @@ program
 			email: params.email
 		};
 
-		if(!params.url.includes('platform-os.com')){
+		if(
+			(!params.url.includes('platform-os.com'))&&
+			(!params.url.includes('platformos.com'))
+		){
 			logger.Error('Please use the platform URL to add the environment, not the vanity URL. For example: https://my-great-site.prod01.oregon.platform-os.com/');
 		}
 
