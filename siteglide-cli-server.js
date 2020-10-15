@@ -7,7 +7,7 @@ const express = require('express'),
 	logger = require('./lib/logger'),
 	path = require('path');
 
-const start = (env) => {
+const start = (env,command) => {
 	const port = env.PORT || 3333;
 	const app = express();
 
@@ -24,18 +24,24 @@ const start = (env) => {
 			.catch(error => res.send(error));
 	};
 
-	const liquidRouting = (req, res) => {
-		gateway
-			.liquid(req.body)
-			.then(body => res.send(body))
-			.catch(error => res.send(error));
-	};
+	var liquidRouting;
+
+	if(command==='gui'){
+		liquidRouting = (req, res) => {
+			gateway
+				.liquid(req.body)
+				.then(body => res.send(body))
+				.catch(error => res.send(error));
+		};
+	}
 
 	app.use(bodyParser.json());
 	app.use(compression());
 
 	app.use('/gui/graphql', express.static(path.resolve(__dirname, 'gui', 'graphql', 'public')));
-	app.use('/gui/liquid', express.static(path.resolve(__dirname, 'gui', 'liquid', 'public')));
+	if(command==='gui'){
+		app.use('/gui/liquid', express.static(path.resolve(__dirname, 'gui', 'liquid', 'public')));
+	}
 
 	// INFO
 	const info = (req, res) => {
@@ -45,15 +51,21 @@ const start = (env) => {
 	app.get('/info', info);
 	app.post('/graphql', graphqlRouting);
 	app.post('/api/graph', graphqlRouting);
-	app.post('/api/liquid', liquidRouting);
-	app.get('/api/liquid', liquidRouting);
+	if(command==='gui'){
+		app.post('/api/liquid', liquidRouting);
+		app.get('/api/liquid', liquidRouting);
+	}
 
 	gateway.ping().then(async () => {
 		app.listen(port, function() {
 			logger.Debug(`Server is listening on ${port}`);
 			logger.Success(`Connected to ${env.SITEGLIDE_URL}`);
 			logger.Success(`GraphQL Browser: http://localhost:${port}/gui/graphql`);
-			logger.Success(`Liquid evaluator: http://localhost:${port}/gui/liquid`);
+			if(command==='gui'){
+				logger.Success(`Liquid evaluator: http://localhost:${port}/gui/liquid`);
+			}else{
+				logger.Warn('The graphql command is now deprecated and will be removed in a future update. Please switch to the new gui command to use the GraphiQL editor and Liquid Evaluator.')
+			}
 		})
 			.on('error', err => {
 				if (err.errno === 'EADDRINUSE') {
