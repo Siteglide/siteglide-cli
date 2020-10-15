@@ -23,10 +23,19 @@ const start = (env) => {
 			.then(body => res.send(body))
 			.catch(error => res.send(error));
 	};
+
+	const liquidRouting = (req, res) => {
+		gateway
+			.liquid(req.body)
+			.then(body => res.send(body))
+			.catch(error => res.send(error));
+	};
+
 	app.use(bodyParser.json());
 	app.use(compression());
 
 	app.use('/gui/graphql', express.static(path.resolve(__dirname, 'gui', 'graphql', 'public')));
+	app.use('/gui/liquid', express.static(path.resolve(__dirname, 'gui', 'liquid', 'public')));
 
 	// INFO
 	const info = (req, res) => {
@@ -36,12 +45,15 @@ const start = (env) => {
 	app.get('/info', info);
 	app.post('/graphql', graphqlRouting);
 	app.post('/api/graph', graphqlRouting);
+	app.post('/api/liquid', liquidRouting);
+	app.get('/api/liquid', liquidRouting);
 
 	gateway.ping().then(async () => {
 		app.listen(port, function() {
 			logger.Debug(`Server is listening on ${port}`);
 			logger.Success(`Connected to ${env.SITEGLIDE_URL}`);
 			logger.Success(`GraphQL Browser: http://localhost:${port}/gui/graphql`);
+			logger.Success(`Liquid evaluator: http://localhost:${port}/gui/liquid`);
 		})
 			.on('error', err => {
 				if (err.errno === 'EADDRINUSE') {
