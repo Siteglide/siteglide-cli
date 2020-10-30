@@ -60,11 +60,11 @@ const start = (env,command) => {
 		app.listen(port, function() {
 			logger.Debug(`Server is listening on ${port}`);
 			logger.Success(`Connected to ${env.SITEGLIDE_URL}`);
-			logger.Success(`GraphQL Browser: http://localhost:${port}/gui/graphql`);
+			logger.Success(`GraphiQL Editor: http://localhost:${port}/gui/graphql`);
 			if(command==='gui'){
-				logger.Success(`Liquid evaluator: http://localhost:${port}/gui/liquid`);
+				logger.Success(`Liquid Evaluator: http://localhost:${port}/gui/liquid`);
 			}else{
-				logger.Warn('The graphql command is now deprecated and will be removed in a future update. Please switch to the new gui command to use the GraphiQL editor and Liquid Evaluator.')
+				logger.Warn('The graphql command is now deprecated and will be removed in a future update. Please switch to the new gui command to use the GraphiQL Editor and Liquid Evaluator.')
 			}
 		})
 			.on('error', err => {
