@@ -14,7 +14,7 @@ const program = require('commander'),
 	updateForms = require('./lib/migration/commands/forms'),
 	optimizeJS = require('./lib/migration/commands/optimize/js'),
 	optimizeCSS = require('./lib/migration/commands/optimize/css'),
-	optimizeImages = require('./lib/migration/commands/optimize/Images');
+	optimizeImages = require('./lib/migration/commands/optimize/images');
 
 const checkParams = params => {
 	validate.existence({
