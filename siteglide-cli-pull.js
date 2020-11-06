@@ -65,11 +65,13 @@ program
 						.catch(error => {
 							logger.Debug(error);
 							pullSpinner.fail('Pull failed');
+							process.exit(1);
 						});
 				})
 					.catch(e => {
 						pullSpinner.fail('Pull failed');
 						logger.Error(e.message);
+						process.exit(1);
 					});
 
 				await gateway.pull().then(async(response) => {

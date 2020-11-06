@@ -14,7 +14,7 @@ const program = require('commander'),
 	updateForms = require('./lib/migration/commands/forms'),
 	optimizeJS = require('./lib/migration/commands/optimize/js'),
 	optimizeCSS = require('./lib/migration/commands/optimize/css'),
-	optimizeImages = require('./lib/migration/commands/optimize/Images');
+	optimizeImages = require('./lib/migration/commands/optimize/images');
 
 const checkParams = params => {
 	validate.existence({
@@ -69,10 +69,12 @@ program
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-u --url <url>', 'Existing sites URL')
 	.option('-n --no-optimization', 'Do not automatically optimize assets')
+	.option('-a --auto-deploy', 'Automatically deploy the site after downloading and optimizing', false)
 	.action(async (environment, params) => {
 		checkParams(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const optimize = params.optimization;
+		const autoDeploy = params.autoDeploy;
 		const authData = fetchAuthData(environment,program);
 		const gateway = new Gateway(authData);
 		const env = Object.assign(process.env, {
@@ -93,11 +95,13 @@ program
 							.then(async() => await optimizeJS.run())
 							.then(async() => await optimizeImages.run()
 								.then(() => {
-									Promise.all([
-										deploy(env, authData, params)
-									])
+									if(autoDeploy){
+										Promise.all([
+											deploy(env, authData, params)
+										])
 										.then(() => process.exit(0))
 										.catch(() => process.exit(1));
+									}
 								})
 							);
 					}else{
@@ -105,11 +109,13 @@ program
 						.then(async() => await assetURL.run())
 						.then(async() => await updateForms.run(authData.email))
 						.then(() => {
-							Promise.all([
-								deploy(env, authData, params)
-							])
+							if(autoDeploy){
+								Promise.all([
+									deploy(env, authData, params)
+								])
 								.then(() => process.exit(0))
 								.catch(() => process.exit(1));
+							}
 						})
 					}
 				});

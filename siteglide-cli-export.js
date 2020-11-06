@@ -50,9 +50,11 @@ program
 		'false')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-w --with-assets', 'With assets, also pulls the assets/images and PDFs in assets/documents folder', false)
+	.option('--csv', 'Exports the data as a CSV instead of JSON', false)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_ASSETS = params.withAssets;
+		process.env.CSV = params.csv;
 		const filename = params.path;
 		const exportInternalIds = params.exportInternalIds;
 		const authData = fetchAuthData(environment, program, program);
@@ -203,19 +205,25 @@ program
 					}, logger.Error);
 
 				await gateway
-					.export(exportInternalIds)
+					.export(exportInternalIds, params.csv)
 					.then(exportTask => {
 						spinner.start();
-						waitForStatus(() => gateway.exportStatus(exportTask.id)).then(exportTask => {
-							shell.mkdir('-p', '.tmp');
-							fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
-							let data = transform(exportTask.data);
-							fetchFilesForData(data).then(data => {
-								fs.writeFileSync(filename, JSON.stringify(data));
-								spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
-							}).catch(e => {
-								logger.Error('Data Export error');
-							});
+						waitForStatus(() => gateway.exportStatus(exportTask.id, params.csv)).then(exportTask => {
+							if(params.csv){
+								downloadFile(exportTask.zip_file_url, 'data.zip').then(() => {
+									spinner.stopAndPersist().succeed(`Exported data to data.zip`);
+								});
+							}else{
+								shell.mkdir('-p', '.tmp');
+								fs.writeFileSync('.tmp/exported.json', JSON.stringify(exportTask.data));
+								let data = transform(exportTask.data);
+								fetchFilesForData(data).then(data => {
+									fs.writeFileSync(filename, JSON.stringify(data));
+									spinner.stopAndPersist().succeed(`Exported data to ${filename}`);
+								}).catch(e => {
+									logger.Error('Data Export error');
+								});
+							}
 						}).catch(error => {
 							logger.Debug(error);
 							spinner.fail('Data Export failed');
