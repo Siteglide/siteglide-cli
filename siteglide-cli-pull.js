@@ -25,7 +25,7 @@ program
 	.description('This will pull down all files from the site in to a folder named marketplace_builder within your current directory. During this process it will also overwrite any local versions of files if they already exist. If you have made any changes locally that you have not synced they WILL be overwritten.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-	.option('-i --ignore-assets', 'Do not download assets such as images, CSS, JS etc', false)
+	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const ignoreAssets = params.ignoreAssets;
