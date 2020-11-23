@@ -27,7 +27,7 @@ program.parse(process.argv);
 
 checkParams(program);
 
-const spinner = ora({ text: `Deploying to: ${program.url}`, stream: process.stdout, spinner: 'clock' }).start();
+const spinner = ora({ text: `Deploying codebase to: ${program.url}`, stream: process.stdout, spinner: 'clock' }).start();
 
 const gateway = new Gateway(program);
 
@@ -48,7 +48,7 @@ const getDeploymentStatus = ({ id }) => {
 					ServerError.deploy(response.error);
 					reject();
 				} else {
-					spinner.stopAndPersist().succeed(`Deploy succeeded`);
+					spinner.stopAndPersist().succeed(`Deploying codebase succeeded`);
 					resolve();
 				}
 			});
