@@ -51,10 +51,12 @@ program
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-w --with-assets', 'With assets, also pulls the assets/images and PDFs in assets/documents folder', false)
 	.option('--csv', 'Exports the data as a CSV instead of JSON', false)
+	.option('-a --assets-only', 'Only download code files stored in the assets folder', false)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_ASSETS = params.withAssets;
 		process.env.CSV = params.csv;
+		process.env.ASSETS_ONLY = params.assetsOnly;
 		const filename = params.path;
 		const exportInternalIds = params.exportInternalIds;
 		const authData = fetchAuthData(environment, program, program);
@@ -63,42 +65,44 @@ program
 
 		Confirm('Are you sure you would like to export? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
-				await gateway.pullZip().then(pullTask => {
-					waitForStatus(() => gateway.pullZipStatus(pullTask.id))
-						.then(pullTask => downloadFile(pullTask.zip_file.url, zipFileName))
-						.then(() => unzip(zipFileName, dir.LEGACY_APP))
-						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
-						.then(() => shell.rm(`./${zipFileName}`))
-						.then(() => {
-							if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
-								shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`)
-								shell.rm('-r', `./${dir.LEGACY_APP}/modules`)
-							}
-						})
-						.then(() => shell.rm(`./${dir.LEGACY_APP}/asset_manifest.json`))
-						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
-						.then(() => {
-							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
-							for(var i = 0; i < list.length; i++) {
-								var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
-								try {
-									fs.rmdirSync(folder);
-								} catch(e) {
-									if(e.code!=='ENOTEMPTY'){
-										logger.Error(e);
+				if(!params.assetsOnly){
+					await gateway.pullZip().then(pullTask => {
+						waitForStatus(() => gateway.pullZipStatus(pullTask.id))
+							.then(pullTask => downloadFile(pullTask.zip_file.url, zipFileName))
+							.then(() => unzip(zipFileName, dir.LEGACY_APP))
+							.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
+							.then(() => shell.rm(`./${zipFileName}`))
+							.then(() => {
+								if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
+									shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`)
+									shell.rm('-r', `./${dir.LEGACY_APP}/modules`)
+								}
+							})
+							.then(() => shell.rm(`./${dir.LEGACY_APP}/asset_manifest.json`))
+							.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
+							.then(() => {
+								var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
+								for(var i = 0; i < list.length; i++) {
+									var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
+									try {
+										fs.rmdirSync(folder);
+									} catch(e) {
+										if(e.code!=='ENOTEMPTY'){
+											logger.Error(e);
+										}
 									}
 								}
-							}
-						})
-						.catch(error => {
-							logger.Debug(error);
+							})
+							.catch(error => {
+								logger.Debug(error);
+								exportSpinner.fail('Code export failed');
+							});
+					})
+						.catch(e => {
+							logger.Error(e.message);
 							exportSpinner.fail('Code export failed');
 						});
-				})
-					.catch(e => {
-						logger.Error(e.message);
-						exportSpinner.fail('Code export failed');
-					});
+				}
 
 				await gateway
 					.pull().then(async(response) => {

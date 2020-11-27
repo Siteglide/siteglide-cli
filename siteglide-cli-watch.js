@@ -11,6 +11,8 @@ const program = require('commander'),
 	watchFilesExtensions = require('./lib/watch-files-extensions'),
 	templates = require('./lib/templates'),
 	settings = require('./lib/settings'),
+	livereload = require('livereload'),
+	directories = require('./lib/directories'),
 	presignDirectory = require('./lib/presignUrl').presignDirectory,
 	manifestGenerateForAssets = require('./lib/assets/generateManifest').manifestGenerateForAssets,
 	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
@@ -210,12 +212,15 @@ const checkParams = params => {
 	validate.existence({ argumentValue: params.url, argumentName: 'URL', fail: program.help.bind(program) });
 };
 
+const reload = () => liveReload && liveReloadServer.refresh(program.url);
+
 program
 	.version(version)
 	.option('--email <email>', 'authentication token', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
 	.option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]', process.env.DIRECT_ASSETS_UPLOAD)
+	.option('-l, --livereload', 'Turns on a livereload server', process.env.LIVE_RELOAD)
 	.parse(process.argv);
 
 checkParams(program);
@@ -231,6 +236,23 @@ gateway.ping().then(async () => {
 	}
 
 	logger.Info(`Enabled sync to: ${program.url}`);
+
+	let liveReloadServer;
+  if (program.livereload) {
+    liveReloadServer = livereload.createServer({
+      exts: watchFilesExtensions,
+      delay: 2000
+    });
+
+    let liveReloadDirectories = [];
+    liveReloadDirectories.push(process.cwd(), 'marketplace_builder');
+    liveReloadDirectories.push(process.cwd(), 'app');
+    liveReloadDirectories.push(process.cwd(), 'modules');
+
+    liveReloadServer.watch(liveReloadDirectories);
+
+    logger.Info('LiveReload Enabled');
+  }
 
 	chokidar.watch(directories, {
 		awaitWriteFinish: {
