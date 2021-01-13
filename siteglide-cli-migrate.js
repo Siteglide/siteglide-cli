@@ -86,7 +86,7 @@ program
 
 		Confirm('I certify that I own this domain or have the authority to import it from the owner. (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
-				// await gateway.migrate({'existingSite': params.url}).then(async() => {
+				await gateway.migrate({'existingSite': params.url}).then(async() => {
 					if(optimize){
 						await download.run({url: params.url})
 							.then(async() => await assetURL.run())
@@ -118,7 +118,7 @@ program
 							}
 						})
 					}
-				// });
+				});
 			} else {
 				logger.Error('[Cancelled] Migrate command not executed, please certify authority to continue.');
 			}
