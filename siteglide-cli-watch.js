@@ -55,17 +55,6 @@ const extensionAllowed = filePath => {
 			exit: false
 		});
 	}
-	if(
-		(ext(filePath)==='mp4'||
-			ext(filePath)==='ogg'||
-			ext(filePath)==='webm')&&
-			!program.directAssetsUpload
-	){
-		allowed = false;
-		logger.Error('[Sync] Please use the -d flag to sync video files', {
-			exit: false
-		});
-	}
 	return allowed;
 };
 
@@ -90,7 +79,7 @@ const isNotEmptyYML = filePath => {
 CONCURRENCY = 3;
 
 const queue = Queue((task, callback) => {
-	let push = program.directAssetsUpload ? pushFileDirectAssets : pushFile;
+	let push = pushFileDirectAssets
 	switch (task.op) {
 		case 'push':
 			push(gateway, task.path).then(callback);
@@ -219,7 +208,6 @@ program
 	.option('--email <email>', 'authentication token', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
-	.option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]', process.env.DIRECT_ASSETS_UPLOAD)
 	.option('-l, --livereload', 'Turns on a livereload server', process.env.LIVE_RELOAD)
 	.parse(process.argv);
 
@@ -228,7 +216,7 @@ checkParams(program);
 const gateway = new Gateway(program);
 
 gateway.ping().then(async () => {
-	if (program.directAssetsUpload) await fetchDirectUploadData(gateway);
+	await fetchDirectUploadData(gateway);
 	const directories = getWatchDirectories();
 
 	if (directories.length === 0) {

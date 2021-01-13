@@ -14,7 +14,6 @@ program
 	.description('This command will setup a watcher that will automatically sync up files when you hit save in your IDE.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-	.option('-d, --direct-assets-upload', 'Uploads assets straight to S3 servers. [Beta]')
 	.option('-l, --livereload', 'Turns on a livereload server')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
@@ -24,14 +23,14 @@ program
 			SITEGLIDE_TOKEN: authData.token,
 			SITEGLIDE_URL: authData.url
 		});
-		const options = params.directAssetsUpload ? ['-d'] : [];
+		const options = [];
 		if(params.livereload){
 			options.push('-l');
 		}
 		const p = spawn(command('siteglide-cli-watch'), options, {
 			stdio: 'inherit',
 			env: env,
-			directAssetsUpload: params.directAssetsUpload,
+			directAssetsUpload: true,
 			liveReload: params.livereload
 		});
 		p.on('error', logger.Error);
