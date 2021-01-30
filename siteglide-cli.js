@@ -7,9 +7,9 @@ const program = require('commander'),
 	version = 'Siteglide CLI v' + pkg.version;
 
 updateNotifier({
-	pkg: pkg,
-	isGlobal: true
+	pkg: pkg
 }).notify({
+	isGlobal: true,
 	defer: false
 });
 
