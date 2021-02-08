@@ -55,6 +55,17 @@ const extensionAllowed = filePath => {
 			exit: false
 		});
 	}
+	if(
+		(ext(filePath)==='mp4'||
+			ext(filePath)==='ogg'||
+			ext(filePath)==='webm')&&
+			!program.directAssetsUpload
+	){
+		allowed = false;
+		logger.Error('[Sync] Please use the -d flag to sync video files', {
+			exit: false
+		});
+	}
 	return allowed;
 };
 
@@ -79,7 +90,7 @@ const isNotEmptyYML = filePath => {
 CONCURRENCY = 3;
 
 const queue = Queue((task, callback) => {
-	let push = pushFileDirectAssets
+	let push = program.directAssetsUpload ? pushFileDirectAssets : pushFile;
 	switch (task.op) {
 		case 'push':
 			push(gateway, task.path).then(callback);
@@ -216,7 +227,7 @@ checkParams(program);
 const gateway = new Gateway(program);
 
 gateway.ping().then(async () => {
-	await fetchDirectUploadData(gateway);
+	if (program.directAssetsUpload) await fetchDirectUploadData(gateway);
 	const directories = getWatchDirectories();
 
 	if (directories.length === 0) {

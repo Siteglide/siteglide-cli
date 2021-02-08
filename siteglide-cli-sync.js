@@ -23,14 +23,14 @@ program
 			SITEGLIDE_TOKEN: authData.token,
 			SITEGLIDE_URL: authData.url
 		});
-		const options = [];
+		const options = params.directAssetsUpload ? ['-d'] : [];
 		if(params.livereload){
 			options.push('-l');
 		}
 		const p = spawn(command('siteglide-cli-watch'), options, {
 			stdio: 'inherit',
 			env: env,
-			directAssetsUpload: true,
+			directAssetsUpload: params.directAssetsUpload,
 			liveReload: params.livereload
 		});
 		p.on('error', logger.Error);
