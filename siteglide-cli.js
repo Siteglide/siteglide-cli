@@ -4,13 +4,20 @@ const program = require('commander'),
 	updateNotifier = require('update-notifier'),
 	pkg = require('./package.json'),
 	logger = require('./lib/logger'),
+	chalk = require('chalk'),
 	version = 'Siteglide CLI v' + pkg.version;
 
 updateNotifier({
 	pkg: pkg
 }).notify({
 	isGlobal: true,
-	defer: false
+	defer: false,
+	message: 'Update available ' +
+	chalk.dim('{currentVersion}') +
+	chalk.reset(' → ') +
+	chalk.green('{latestVersion}') +
+	' \nRun ' + chalk.cyan('{updateCommand}') + ' to update' +
+	' \nChangelog: https://developers.siteglide.com/cli-changelog'
 });
 
 program
