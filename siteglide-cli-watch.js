@@ -49,7 +49,7 @@ const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets') || 
 let manifestFilesToAdd = [];
 
 const extensionAllowed = filePath => {
-	var allowed = watchFilesExtensions.includes(ext(filePath));
+	var allowed = watchFilesExtensions.includes(ext(filePath).toLowerCase());
 	if (!allowed) {
 		logger.Error(`[Sync] Not syncing, file extension if now allowed: ${filePath}`, {
 			exit: false
