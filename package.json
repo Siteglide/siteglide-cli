@@ -1,6 +1,6 @@
 {
 	"name": "@siteglide/siteglide-cli",
-	"version": "1.7.7",
+	"version": "1.8.0",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
@@ -40,6 +40,7 @@
 		"js-yaml": "^4.0.0",
 		"livereload": "^0.9.2",
 		"mime-types": "^2.1.29",
+		"minimist": "^1.2.5",
 		"mustache": "^4.1.0",
 		"node-fetch": "^2.6.1",
 		"node-notifier": "^9.0.0",
