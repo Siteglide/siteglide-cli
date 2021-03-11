@@ -15,7 +15,7 @@ const program = require('commander'),
 
 
 let gateway;
-const spinner = ora({ text: 'Sending data', stream: process.stdout, spinner: 'clock' });
+const spinner = ora({ text: 'Sending data', stream: process.stdout });
 const tmpFileName = './tmp/data-imported.json';
 PARTNER_PORTAL_HOST = process.env.PARTNER_PORTAL_HOST || 'https://partners.platform-os.com';
 

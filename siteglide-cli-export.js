@@ -18,8 +18,8 @@ const program = require('commander'),
 	path = require('path');
 
 let gateway;
-const spinner = ora({ text: 'Exporting data', stream: process.stdout, spinner: 'clock' });
-const exportSpinner = ora({ text: 'Downloading files', stream: process.stdout, spinner: 'clock' });
+const spinner = ora({ text: 'Exporting data', stream: process.stdout });
+const exportSpinner = ora({ text: 'Downloading files', stream: process.stdout });
 
 const transform = ({ users = { results: [] }, transactables = { results: [] }, models = { results: [] } }) => {
 	return {

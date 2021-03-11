@@ -27,7 +27,7 @@ program.parse(process.argv);
 
 checkParams(program);
 
-const spinner = ora({ text: `Deploying codebase to: ${program.url}`, stream: process.stdout, spinner: 'clock' }).start();
+const spinner = ora({ text: `Deploying codebase to: ${program.url}`, stream: process.stdout }).start();
 
 const gateway = new Gateway(program);
 
