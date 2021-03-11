@@ -107,7 +107,7 @@ program
 								})
 							);
 					}else{
-						await download.run({url: params.url})
+						await download.run({url: params.url, maxRecursiveDepth: params.maxRecursiveDepth, ignore: params.ignore})
 						.then(async() => await assetURL.run())
 						.then(async() => await updateForms.run(authData.email))
 						.then(() => {
