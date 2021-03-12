@@ -1,6 +1,6 @@
 {
 	"name": "@siteglide/siteglide-cli",
-	"version": "1.8.0",
+	"version": "1.8.1",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
@@ -43,7 +43,7 @@
 		"minimist": "^1.2.5",
 		"mustache": "^4.1.0",
 		"node-fetch": "^2.6.1",
-		"node-notifier": "^9.0.0",
+		"node-notifier": "^9.0.1",
 		"node-stream-zip": "^1.13.2",
 		"normalize-url": "^5.3.0",
 		"open": "^8.0.2",
