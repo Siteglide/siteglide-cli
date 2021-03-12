@@ -23,6 +23,7 @@ updateNotifier({
 program
 	.version(version, '-v, --version')
 	.command('add [environment] --email [email] --url [url]', 'Add a site or environment')
+	.command('list', 'List your current environments for the site')
 	.command('sync [environment]', 'update site on local file change')
 	.command('pull [environment]', 'get all files from site')
 	.command('gui [environment]', 'gui for GraphiQL and Liquid Evaluator')

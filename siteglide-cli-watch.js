@@ -188,7 +188,7 @@ const sendAsset = async (gateway, filePath) => {
 		await uploadFileFormData(filePath, data);
 		manifestAddAsset(filePath);
 		manifestSend(gateway);
-		logger.Success(`[Sync] Synced asset: ${filePath}`);
+		logger.Success(`[Sync] ${filePath.slice(20)} - done`);
 	} catch (e) {
 		logger.Debug(e.message);
 		logger.Debug(e.stack);

@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+
+const logger = require('./lib/logger'),
+  files = require('./lib/assets/files');
+
+const listEnvironments = () => {
+  const settings = Object(files.getConfig());
+  const list = Object.keys(settings);
+
+  if (list.length) {
+    logger.Info('Available environments: ');
+    for (const id in list) {
+      const env = list[id];
+      logger.Info(`- [${env}] ${settings[env].url}`, { hideTimestamp: true });
+    }
+  } else {
+    logger.Error('No environments registered yet, please see siteglide-cli add', { exit: false });
+  }
+};
+
+listEnvironments();

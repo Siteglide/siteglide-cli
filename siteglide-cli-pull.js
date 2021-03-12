@@ -16,7 +16,7 @@ const program = require('commander'),
 	path = require('path'),
 	dir = require('./lib/directories');
 
-const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout, spinner: 'clock' });
+const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 
 program
 	.version(version, '-v, --version')
