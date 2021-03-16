@@ -30,7 +30,7 @@ class LogStream extends EventEmitter {
 
 			for (let k in logs) {
 				const row = logs[k];
-				const filter = !!program.filter && program.filter.toLowerCase();
+				const filter = !!program.opts().filter && program.opts().filter.toLowerCase();
 				const errorType = (row.error_type || 'error').toLowerCase();
 
 				if (!!program.filter && filter !== errorType) continue;
@@ -86,7 +86,7 @@ program
 			}else{
 				logger.Info(text, options);
 			}
-			if (!program.quiet) {
+			if (!program.opts().quiet) {
 				let parts = [];
 				if (data.url) {
 					requestUrl = url.parse(`https://${data.url}`);

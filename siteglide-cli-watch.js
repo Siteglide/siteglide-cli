@@ -197,11 +197,11 @@ const sendAsset = async (gateway, filePath) => {
 };
 
 const checkParams = params => {
-	validate.existence({ argumentValue: params.token, argumentName: 'token', fail: program.help.bind(program) });
-	validate.existence({ argumentValue: params.url, argumentName: 'URL', fail: program.help.bind(program) });
+	validate.existence({ argumentValue: params.opts().token, argumentName: 'token', fail: program.help.bind(program) });
+	validate.existence({ argumentValue: params.opts().url, argumentName: 'URL', fail: program.help.bind(program) });
 };
 
-const reload = () => liveReload && liveReloadServer.refresh(program.url);
+const reload = () => liveReload && liveReloadServer.refresh(program.opts().url);
 
 program
 	.version(version)
@@ -213,7 +213,7 @@ program
 
 checkParams(program);
 
-const gateway = new Gateway(program);
+const gateway = new Gateway(program.opts());
 
 gateway.ping().then(async () => {
 	await fetchDirectUploadData(gateway);
@@ -223,10 +223,10 @@ gateway.ping().then(async () => {
 		logger.Error('marketplace_builder has to exist! Please make sure you have the correct folder structure.');
 	}
 
-	logger.Info(`Enabled sync to: ${program.url}`);
+	logger.Info(`Enabled sync to: ${program.opts().url}`);
 
 	let liveReloadServer;
-  if (program.livereload) {
+  if (program.opts().livereload) {
     liveReloadServer = livereload.createServer({
       exts: watchFilesExtensions,
       delay: 2000
