@@ -89,14 +89,10 @@ program
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.action((environment, params) => {
 
-		console.log(os.homedir());
-		console.log(process.cwd());
-
 		if(process.cwd()===os.homedir()){
 			logger.Error('Error - You cannot run Siteglide CLI from your home folder.  Please make a folder such as "siteglide/site_name" and try again.')
 			throw Error;
 		}
-
 
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		checkParams(params);
