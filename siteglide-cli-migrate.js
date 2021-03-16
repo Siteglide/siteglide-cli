@@ -71,7 +71,7 @@ program
 	.option('-n --no-optimization', 'Do not automatically optimize assets')
 	.option('-a --auto-deploy', 'Automatically deploy the site after downloading and optimizing', false)
 	.option('-m --max-recursive-depth <maxRecursiveDepth>', 'Maximum allowed depth for hyperlinks', 5)
-	.option('-i --ignore <ignore>','A string of urls to ignore during download', false)
+	.option('-i --ignore <ignore>','A pattern of urls to ignore during download', false)
 	.action(async (environment, params) => {
 		checkParams(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
