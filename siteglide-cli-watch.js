@@ -24,6 +24,7 @@ const getWatchDirectories = () => WATCH_DIRECTORIES.filter(fs.existsSync);
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/').replace('marketplace_builder/', '');
+let counter = 0;
 const isEmpty = filePath => {
 	let isEmpty;
 	try {
@@ -194,9 +195,19 @@ const sendAsset = async (gateway, filePath) => {
 		manifestSend(gateway);
 		logger.Success(`[Sync] ${filePath.slice(20)} - done`);
 	} catch (e) {
+		logger.Debug(e);
 		logger.Debug(e.message);
 		logger.Debug(e.stack);
-		logger.Error(`[Sync] Failed to sync: ${filePath}`);
+		if(e=='403'&&counter<3){
+			counter++;
+			await fetchDirectUploadData(gateway)
+			.then(() => {
+				cloneDeep(directUploadData);
+				sendAsset(gateway,filePath);
+			})
+		}else{
+			logger.Error(`[Sync] Failed to sync: ${filePath}`);
+		}
 	}
 };
 
