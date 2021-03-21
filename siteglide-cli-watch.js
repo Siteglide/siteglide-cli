@@ -51,9 +51,11 @@ let manifestFilesToAdd = [];
 const extensionAllowed = filePath => {
 	var allowed = watchFilesExtensions.includes(ext(filePath).toLowerCase());
 	if (!allowed) {
-		logger.Error(`[Sync] Not syncing, file extension if now allowed: ${filePath}`, {
-			exit: false
-		});
+		if(filename(filePath)!=='.DS_Store'){
+			logger.Error(`[Sync] Not syncing, file extension is not allowed: ${filePath}`, {
+				exit: false
+			});
+		}
 	}
 	return allowed;
 };
@@ -62,7 +64,9 @@ const isNotHidden = filePath => {
 	const isHidden = filename(filePath).startsWith('.');
 
 	if (isHidden) {
-		logger.Warn(`[Sync] Not syncing hidden file: ${filePath}`);
+		if(filename(filePath)!=='.DS_Store'){
+			logger.Warn(`[Sync] Not syncing hidden file: ${filePath}`);
+		}
 	}
 	return !isHidden;
 };
