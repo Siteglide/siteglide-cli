@@ -51,9 +51,9 @@ module.exports = {
 	},
 	resolve: {
 		extensions: ['.js', '.json', '.jsx', '.css', '.mjs'],
-	},
-	node: {
-		fs: 'empty',
-		module: 'empty',
+		fallback: {
+			fs: false,
+			module: false
+	  }
 	}
 };

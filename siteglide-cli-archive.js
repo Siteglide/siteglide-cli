@@ -69,7 +69,7 @@ const makeArchive = (path, directory, program) => {
 		releaseArchive.finalize();
 	});
 
-	if(program.withImages===true){
+	if(program.opts().withImages===true){
 		deployAssets(program);
 	}
 };
@@ -96,4 +96,4 @@ program
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
 	.parse(process.argv);
 
-makeArchive(program.target, dir.LEGACY_APP, program);
+makeArchive(program.opts().target, dir.LEGACY_APP, program);

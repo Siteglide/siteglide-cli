@@ -6,6 +6,7 @@ const program = require('commander'),
 	logger = require('./lib/logger'),
 	validate = require('./lib/validators'),
 	version = require('./package.json').version,
+	os = require('os'),
 	Portal = require('./lib/portal');
 
 const checkParams = params => {
@@ -87,6 +88,12 @@ program
 	.option('--url <url>', 'Site URL. Example: https://example.com')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.action((environment, params) => {
+
+		if(process.cwd()===os.homedir()){
+			logger.Error('Error - You cannot run Siteglide CLI from your home folder.  Please make a folder such as "siteglide/site_name" and try again.')
+			throw Error;
+		}
+
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		checkParams(params);
 		const settings = {

@@ -24,6 +24,7 @@ const getWatchDirectories = () => WATCH_DIRECTORIES.filter(fs.existsSync);
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/').replace('marketplace_builder/', '');
+let counter = 0;
 const isEmpty = filePath => {
 	let isEmpty;
 	try {
@@ -51,9 +52,11 @@ let manifestFilesToAdd = [];
 const extensionAllowed = filePath => {
 	var allowed = watchFilesExtensions.includes(ext(filePath).toLowerCase());
 	if (!allowed) {
-		logger.Error(`[Sync] Not syncing, file extension if now allowed: ${filePath}`, {
-			exit: false
-		});
+		if(filename(filePath)!=='.DS_Store'){
+			logger.Error(`[Sync] Not syncing, file extension is not allowed: ${filePath}`, {
+				exit: false
+			});
+		}
 	}
 	return allowed;
 };
@@ -62,7 +65,9 @@ const isNotHidden = filePath => {
 	const isHidden = filename(filePath).startsWith('.');
 
 	if (isHidden) {
-		logger.Warn(`[Sync] Not syncing hidden file: ${filePath}`);
+		if(filename(filePath)!=='.DS_Store'){
+			logger.Warn(`[Sync] Not syncing hidden file: ${filePath}`);
+		}
 	}
 	return !isHidden;
 };
@@ -190,18 +195,28 @@ const sendAsset = async (gateway, filePath) => {
 		manifestSend(gateway);
 		logger.Success(`[Sync] ${filePath.slice(20)} - done`);
 	} catch (e) {
+		logger.Debug(e);
 		logger.Debug(e.message);
 		logger.Debug(e.stack);
-		logger.Error(`[Sync] Failed to sync: ${filePath}`);
+		if(e=='403'&&counter<3){
+			counter++;
+			await fetchDirectUploadData(gateway)
+			.then(() => {
+				cloneDeep(directUploadData);
+				sendAsset(gateway,filePath);
+			})
+		}else{
+			logger.Error(`[Sync] Failed to sync: ${filePath}`);
+		}
 	}
 };
 
 const checkParams = params => {
-	validate.existence({ argumentValue: params.token, argumentName: 'token', fail: program.help.bind(program) });
-	validate.existence({ argumentValue: params.url, argumentName: 'URL', fail: program.help.bind(program) });
+	validate.existence({ argumentValue: params.opts().token, argumentName: 'token', fail: program.help.bind(program) });
+	validate.existence({ argumentValue: params.opts().url, argumentName: 'URL', fail: program.help.bind(program) });
 };
 
-const reload = () => liveReload && liveReloadServer.refresh(program.url);
+const reload = () => liveReload && liveReloadServer.refresh(program.opts().url);
 
 program
 	.version(version)
@@ -213,7 +228,7 @@ program
 
 checkParams(program);
 
-const gateway = new Gateway(program);
+const gateway = new Gateway(program.opts());
 
 gateway.ping().then(async () => {
 	await fetchDirectUploadData(gateway);
@@ -223,10 +238,10 @@ gateway.ping().then(async () => {
 		logger.Error('marketplace_builder has to exist! Please make sure you have the correct folder structure.');
 	}
 
-	logger.Info(`Enabled sync to: ${program.url}`);
+	logger.Info(`Enabled sync to: ${program.opts().url}`);
 
 	let liveReloadServer;
-  if (program.livereload) {
+  if (program.opts().livereload) {
     liveReloadServer = livereload.createServer({
       exts: watchFilesExtensions,
       delay: 2000
