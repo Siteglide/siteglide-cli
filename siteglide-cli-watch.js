@@ -53,7 +53,7 @@ const extensionAllowed = filePath => {
 	var allowed = watchFilesExtensions.includes(ext(filePath).toLowerCase());
 	if (!allowed) {
 		if(filename(filePath)!=='.DS_Store'){
-			logger.Error(`[Sync] Not syncing, file extension is not allowed: ${filePath}`, {
+			logger.Warn(`[Sync] Ignored: ${filePath.slice(20)} - File extension is not allowed`, {
 				exit: false
 			});
 		}
@@ -66,7 +66,7 @@ const isNotHidden = filePath => {
 
 	if (isHidden) {
 		if(filename(filePath)!=='.DS_Store'){
-			logger.Warn(`[Sync] Not syncing hidden file: ${filePath}`);
+			logger.Warn(`[Sync] Ignored: ${filePath.slice(20)} - Hidden file`);
 		}
 	}
 	return !isHidden;
@@ -74,7 +74,7 @@ const isNotHidden = filePath => {
 
 const isNotEmptyYML = filePath => {
 	if (ext(filePath) === 'yml' && isEmpty(filePath)) {
-		logger.Warn(`[Sync] Not syncing empty YML file: ${filePath}`);
+		logger.Warn(`[Sync] Ignored: ${filePath.slice(20)} - Empty YML file`);
 		return false;
 	}
 
@@ -144,15 +144,15 @@ const pushFile = (gateway, syncedFilePath) => {
 	return gateway.sync(formData).then(body => {
 		if (body && body.refresh_index) {
 			logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
-			logger.Success(`[Sync] ${filePath} - done`);
+			logger.Success(`[Sync] Uploaded: ${filePath}`);
 		}
 
 		if (body && body.error){
-			logger.Error(`[Sync Error] ${body.error}`, {
+			logger.Error(`[Sync] Error: ${body.error}`, {
 				exit: false
 			});
 		} else {
-			logger.Success(`[Sync] ${filePath} - done`);
+			logger.Success(`[Sync] Uploaded: ${filePath}`);
 		}
 
 	});
@@ -193,7 +193,8 @@ const sendAsset = async (gateway, filePath) => {
 		await uploadFileFormData(filePath, data);
 		manifestAddAsset(filePath);
 		manifestSend(gateway);
-		logger.Success(`[Sync] ${filePath.slice(20)} - done`);
+		logger.Success(`[Sync] Uploaded: ${filePath.slice(20)}`);
+		counter = 0;
 	} catch (e) {
 		logger.Debug(e);
 		logger.Debug(e.message);
@@ -206,7 +207,7 @@ const sendAsset = async (gateway, filePath) => {
 				sendAsset(gateway,filePath);
 			})
 		}else{
-			logger.Error(`[Sync] Failed to sync: ${filePath}`);
+			logger.Error(`[Sync] Error: ${filePath.slice(20)} - Failed to sync`);
 		}
 	}
 };
