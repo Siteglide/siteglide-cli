@@ -25,11 +25,11 @@ program
 
 program.parse(process.argv);
 
-checkParams(program);
+checkParams(program.opts());
 
 const spinner = ora({ text: `Deploying codebase to: ${program.opts().url}`, stream: process.stdout }).start();
 
-const gateway = new Gateway(program);
+const gateway = new Gateway(program.opts());
 
 const formData = {
 	'marketplace_builder_file_body': fs.createReadStream('.tmp/marketplace-release.zip')
