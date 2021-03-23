@@ -33,7 +33,7 @@ class LogStream extends EventEmitter {
 				const filter = !!program.opts().filter && program.opts().filter.toLowerCase();
 				const errorType = (row.error_type || 'error').toLowerCase();
 
-				if (!!program.filter && filter !== errorType) continue;
+				if (!!program.opts().filter && filter !== errorType) continue;
 
 				if (!storage.exists(row.id)) {
 					storage.add(row);
