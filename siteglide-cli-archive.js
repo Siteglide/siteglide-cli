@@ -70,7 +70,7 @@ const makeArchive = (path, directory, program) => {
 	});
 
 	if(program.opts().withImages===true){
-		deployAssets(program);
+		deployAssets(program.opts());
 	}
 };
 
