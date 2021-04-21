@@ -125,7 +125,7 @@ program
 						logger.Error('Credentials correct but API Key has not been generated within Siteglide Admin.  Please visit your site in within portal to generate an API key');
 					}
 				})
-				.catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error('Authentication Failed: Please check that you have the correct permissions or that your site is not locked.'));
+				.catch((err) => err.statusCode==422 ? logger.Error('Authentication Failed: Your Email Address or Password are incorrect') : logger.Error('Authentication Failed: Please check that you have the correct permissions and your site is not locked or creating.'));
 		});
 	});
 

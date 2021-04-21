@@ -28,7 +28,7 @@ const uploadArchive = (env, withImages) => {
 
 			push.on('close', exitCode => {
 				if (exitCode === 1) {
-					logger.Error('Deploy failed. Please check that you have the correct permissions or that your site is not locked.');
+					logger.Error('Deploy failed. Please check that you have the correct permissions and your site is not locked or creating.');
 					reject(false);
 				} else if (exitCode === 2){
 					logger.Error('Deploy failed. Your sites codebase is more than 50mb, please check that all asset files are in the assets folder and not in the codebase.');

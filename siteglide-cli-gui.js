@@ -35,7 +35,7 @@ program
 				},1000);
 			}
 		} catch (e) {
-			logger.Error('GUI failed. Please check that you have the correct permissions or that your site is not locked.');
+			logger.Error('GUI failed. Please check that you have the correct permissions and your site is not locked or creating.');
 		}
 	});
 
