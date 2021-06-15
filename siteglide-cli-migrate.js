@@ -9,12 +9,16 @@ const program = require('commander'),
 	version = require('./package.json').version,
 	Confirm = require('./lib/confirm'),
 	Gateway = require('./lib/proxy'),
+	glob = require('glob'),
 	download = require('./lib/migration/commands/download'),
 	assetURL = require('./lib/migration/commands/urls'),
 	updateForms = require('./lib/migration/commands/forms'),
 	optimizeJS = require('./lib/migration/commands/optimize/js'),
 	optimizeCSS = require('./lib/migration/commands/optimize/css'),
-	optimizeImages = require('./lib/migration/commands/optimize/images');
+	optimizeImages = require('./lib/migration/commands/optimize/images'),
+	dir = require('./lib/directories'),
+	fs = require('fs'),
+	archiver = require('archiver');
 
 const checkParams = params => {
 	validate.existence({
@@ -30,7 +34,7 @@ const uploadArchive = (env,) => {
 		const archive = spawn(command('siteglide-cli-archive'), ['--with-images'], {
 			stdio: 'inherit',
 			withImages: true,
-			engv: env
+			env: env
 		});
 
 		archive.on('close', code => {
@@ -45,7 +49,7 @@ const uploadArchive = (env,) => {
 			});
 
 			push.on('close', exitCode => {
-				if (exitCode === 1)  {
+				if (exitCode === 1) {
 					logger.Error('Deploy failed. Please check that you have the correct permissions and your site is not locked or creating.');
 					reject(false);
 				} else if (exitCode === 0) {
@@ -60,6 +64,47 @@ const deploy = async (env) => {
 	await uploadArchive(env);
 };
 
+const makeArchive = (path, directory) => {
+	return new Promise((resolve, reject) => {
+		const releaseArchive = prepareArchive(path);
+		if (path ==='./.tmp/assets.zip'){
+			releaseArchive.glob('**/**', { cwd: `${directory}/assets` });
+		}else{
+			releaseArchive.glob('**/*', { cwd: directory, ignore: ['assets/**'] }, { prefix: directory });
+		}
+
+		releaseArchive.finalize();
+		resolve(true);
+	});
+};
+
+
+const prepareArchive = (path, verbose = true) => {
+	const output = fs.createWriteStream(path);
+	const archive = archiver('zip', { zlib: { level: 6 }, store: true });
+
+	output.on('close', () => {
+		if (verbose) {
+			const sizeInMB = archive.pointer() / 1024 / 1024;
+			if (path === './.tmp/assets.zip') {
+				logger.Info(`Assets archive size: ${sizeInMB.toFixed(2)} MB`);
+			} else {
+				logger.Info(`Codebase archive size: ${sizeInMB.toFixed(2)} MB`);
+			}
+		}
+	});
+	archive.on('warning', err => {
+		if (err.code === 'ENOENT') {
+			logger.Error(err);
+		} else throw err;
+	});
+	archive.on('error', err => {
+		throw err;
+	});
+	archive.pipe(output);
+	return archive;
+};
+
 program
 	.version(version, '-v, --version')
 	.name('siteglide-cli migrate')
@@ -71,14 +116,14 @@ program
 	.option('-n --no-optimization', 'Do not automatically optimize assets')
 	.option('-a --auto-deploy', 'Automatically deploy the site after downloading and optimizing', false)
 	.option('-m --max-recursive-depth <maxRecursiveDepth>', 'Maximum allowed depth for hyperlinks', 5)
-	.option('-i --ignore <ignore>','A pattern of urls to ignore during download', false)
-	.option('--muse','Set if this is an Adobe Muse website')
+	.option('-i --ignore <ignore>', 'A pattern of urls to ignore during download', false)
+	.option('--muse', 'Set if this is an Adobe Muse website')
 	.action(async (environment, params) => {
 		checkParams(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const optimize = params.optimization;
 		const autoDeploy = params.autoDeploy;
-		const authData = fetchAuthData(environment,program);
+		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
 		const env = Object.assign(process.env, {
 			SITEGLIDE_EMAIL: authData.email,
@@ -90,38 +135,47 @@ program
 		Confirm('I certify that I own this domain or have the authority to import it from the owner. (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
 				await gateway.migrate({'existingSite': params.url}).then(async() => {
-					if(optimize){
-						await download.run({url: params.url, maxRecursiveDepth: params.maxRecursiveDepth, ignore: params.ignore, muse: params.muse})
-							.then(async() => await assetURL.run(params))
-							.then(async() => await updateForms.run(authData.email))
-							.then(async() => await optimizeCSS.run())
-							.then(async() => await optimizeJS.run())
-							.then(async() => await optimizeImages.run()
-								.then(() => {
-									if(autoDeploy){
-										Promise.all([
-											deploy(env, authData, params)
-										])
+					if (optimize) {
+						await download.run({ url: params.url, maxRecursiveDepth: params.maxRecursiveDepth, ignore: params.ignore, muse: params.muse })
+							.then(async () => await assetURL.run(params))
+							.then(async () => await updateForms.run(authData.email))
+							.then(async () => await optimizeCSS.run())
+							.then(async () => await optimizeJS.run())
+							.then(async () => await optimizeImages.run()
+							.then(async() => {
+								if (autoDeploy) {
+									logger.Info(`Starting deploy to ${authData.url}`);
+									Promise.all([
+										deploy(env, authData, params)
+									])
 										.then(() => process.exit(0))
 										.catch(() => process.exit(1));
-									}
-								})
-							);
-					}else{
+								} else {
+									await makeArchive('./.tmp/assets.zip', dir.LEGACY_APP)
+										.then(async () => await makeArchive('./.tmp/marketplace-release.zip', dir.LEGACY_APP))
+								}
+							})
+						);
+					} else {
 						await download.run({url: params.url, maxRecursiveDepth: params.maxRecursiveDepth, ignore: params.ignore, muse: params.muse})
-						.then(async() => await assetURL.run(params))
-						.then(async() => await updateForms.run(authData.email))
-						.then(() => {
-							if(autoDeploy){
-								Promise.all([
-									deploy(env, authData, params)
-								])
-								.then(() => process.exit(0))
-								.catch(() => process.exit(1));
-							}
-						})
+						.then(async () => await assetURL.run(params))
+						.then(async () => await updateForms.run(authData.email)
+							.then(async () => {
+								if(autoDeploy){
+									logger.Info(`Starting deploy to ${authData.url}`);
+									Promise.all([
+										deploy(env, authData, params)
+									])
+									.then(() => process.exit(0))
+									.catch(() => process.exit(1));
+								} else {
+									await makeArchive('./.tmp/assets.zip', dir.LEGACY_APP)
+										.then(async () => await makeArchive('./.tmp/marketplace-release.zip', dir.LEGACY_APP))
+								}
+							})
+						);
 					}
-				});
+				})
 			} else {
 				logger.Error('[Cancelled] Migrate command not executed, please certify authority to continue.');
 			}
