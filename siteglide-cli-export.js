@@ -112,7 +112,7 @@ program
 						}
 						var assets = response.asset;
 						if(!params.withAssets){
-							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|svg|pdf|mp3|mp4|mov|ogg|otf|ttf|webm|webp|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|zip|csv)$/i));
+							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|heic|svg|pdf|mp3|mp4|mov|ogg|otf|ttf|webm|webp|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|zip|csv)$/i));
 						}
 						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep')).filter(file => !file.data.physical_file_path.includes('_sgthumb'));
 						var count = 0;
@@ -153,33 +153,34 @@ program
 								}).catch(() => exportSpinner.fail('Asset download failed'));
 							}else if(
 								(urlToTest.indexOf('.jpg')>-1)||
-									(urlToTest.indexOf('.jpeg')>-1)||
-									(urlToTest.indexOf('.png')>-1)||
-									(urlToTest.indexOf('.gif')>-1)||
-									(urlToTest.indexOf('.pdf')>-1)||
-									(urlToTest.indexOf('.mp3')>-1)||
-									(urlToTest.indexOf('.mp4')>-1)||
-									(urlToTest.indexOf('.mov')>-1)||
-									(urlToTest.indexOf('.ogg')>-1)||
-									(urlToTest.indexOf('.otf')>-1)||
-									(urlToTest.indexOf('.ttf')>-1)||
-									(urlToTest.indexOf('.webm')>-1)||
-									(urlToTest.indexOf('.webp')>-1)||
-									(urlToTest.indexOf('.eot')>-1)||
-									(urlToTest.indexOf('.woff')>-1)||
-									(urlToTest.indexOf('.woff2')>-1)||
-									(urlToTest.indexOf('.ico')>-1)||
-									(urlToTest.indexOf('.ppt')>-1)||
-									(urlToTest.indexOf('.pptx')>-1)||
-									(urlToTest.indexOf('.doc')>-1)||
-									(urlToTest.indexOf('.docx')>-1)||
-									(urlToTest.indexOf('.xls')>-1)||
-									(urlToTest.indexOf('.xlsx')>-1)||
-									(urlToTest.indexOf('.pages')>-1)||
-									(urlToTest.indexOf('.numbers')>-1)||
-									(urlToTest.indexOf('.key')>-1)||
-									(urlToTest.indexOf('.zip')>-1)||
-									(urlToTest.indexOf('.csv')>-1)
+								(urlToTest.indexOf('.jpeg')>-1)||
+								(urlToTest.indexOf('.png')>-1)||
+								(urlToTest.indexOf('.gif')>-1)||
+								(urlToTest.indexOf('.heic')>-1)||
+								(urlToTest.indexOf('.pdf')>-1)||
+								(urlToTest.indexOf('.mp3')>-1)||
+								(urlToTest.indexOf('.mp4')>-1)||
+								(urlToTest.indexOf('.mov')>-1)||
+								(urlToTest.indexOf('.ogg')>-1)||
+								(urlToTest.indexOf('.otf')>-1)||
+								(urlToTest.indexOf('.ttf')>-1)||
+								(urlToTest.indexOf('.webm')>-1)||
+								(urlToTest.indexOf('.webp')>-1)||
+								(urlToTest.indexOf('.eot')>-1)||
+								(urlToTest.indexOf('.woff')>-1)||
+								(urlToTest.indexOf('.woff2')>-1)||
+								(urlToTest.indexOf('.ico')>-1)||
+								(urlToTest.indexOf('.ppt')>-1)||
+								(urlToTest.indexOf('.pptx')>-1)||
+								(urlToTest.indexOf('.doc')>-1)||
+								(urlToTest.indexOf('.docx')>-1)||
+								(urlToTest.indexOf('.xls')>-1)||
+								(urlToTest.indexOf('.xlsx')>-1)||
+								(urlToTest.indexOf('.pages')>-1)||
+								(urlToTest.indexOf('.numbers')>-1)||
+								(urlToTest.indexOf('.key')>-1)||
+								(urlToTest.indexOf('.zip')>-1)||
+								(urlToTest.indexOf('.csv')>-1)
 							){
 								var folderPath = file.data.physical_file_path.split('/');
 								folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
