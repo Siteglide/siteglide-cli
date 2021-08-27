@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 
 const program = require('commander'),
+	Gateway = require('./lib/proxy'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	spawn = require('child_process').spawn,
 	command = require('./lib/command'),
 	logger = require('./lib/logger'),
 	Confirm = require('./lib/confirm'),
+	glob = require('globby'),
+	fs = require('fs'),
+	getFile = require('./lib/migration/lib/utils/get-file'),
 	version = require('./package.json').version;
 
+const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
 const uploadArchive = (env, withImages) => {
 	return new Promise((resolve, reject) => {
 		const options = withImages ? ['--with-images'] : [];
@@ -44,7 +49,42 @@ const uploadArchive = (env, withImages) => {
 	});
 };
 
+const getBody = (filePath, processTemplate) => {
+	if (processTemplate) {
+		const templatePath = `modules/${filePath.split(path.sep)[1]}/template-values.json`;
+		const moduleTemplateData = templateData(templatePath);
+		return templates.fillInTemplateValues(filePath, moduleTemplateData);
+	} else {
+		return fs.createReadStream(filePath);
+	}
+};
+
 const deploy = async (env, authData, params) => {
+	const gateway = new Gateway(authData);
+
+	let files = await glob('marketplace_builder/views/pages/**/*.liquid');
+
+	try {
+		for(var i=0;i<files.length;i++){
+			await getFile.run(files[i], i, params)
+			.then(async(file) => {
+				if(file.fileContent.includes('is_homepage: true')){
+					let filePath = filePathUnixified(file.filePath); // need path with / separators
+
+					const formData = {
+						path: filePath,
+						marketplace_builder_file_body: getBody(filePath, false)
+					};
+
+					return gateway.sync(formData);
+				}
+			})
+			.catch((err) => console.log(err))
+		}
+	} catch (error) {
+		console.log(`Error: ${error}`);
+	}
+
 	await uploadArchive(env, params.withAssets);
 };
 
