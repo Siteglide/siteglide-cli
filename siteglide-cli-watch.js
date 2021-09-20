@@ -159,7 +159,13 @@ const pushFile = (gateway, syncedFilePath) => {
 };
 
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
-	if (isAssetsPath(syncedFilePath)){
+	if (
+		(isAssetsPath(syncedFilePath))&&
+		(
+			(syncedFilePath!=='marketplace_builder/assets/css/modules/module_19/_custom-variables.scss')&&
+			(syncedFilePath!=='marketplace_builder/assets/css/modules/module_19/_custom.scss')
+		)
+	){
 		syncedFilePath = syncedFilePath.replace(/\\/g, '/');
 		sendAsset(gateway, syncedFilePath);
 		return Promise.resolve(true);
