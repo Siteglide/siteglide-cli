@@ -26,9 +26,11 @@ program
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
+	.option('-m --module <module>', 'Module name to pull', '')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const ignoreAssets = params.ignoreAssets;
+		const module = params.module;
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
 		const filename = `${dir.LEGACY_APP}.zip`;
@@ -37,7 +39,7 @@ program
 			if (response === 'Y') {
 				pullSpinner.start();
 
-				await gateway.pullZip().then(pullTask => {
+				await gateway.pullZip({ module_name: module }).then(pullTask => {
 					waitForStatus(() => gateway.pullZipStatus(pullTask.id))
 						.then(pullTask => downloadFile(pullTask.zip_file.url, filename))
 						.then(() => unzip(filename, dir.LEGACY_APP))

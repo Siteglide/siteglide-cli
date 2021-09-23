@@ -32,6 +32,7 @@ program
 	.command('deploy [environment]', 'upload all code to your site')
 	.command('export [environment]', 'export the code, assets and data from your site')
 	.command('migrate [environment] --url [url]', 'Static site migration into siteglide')
+	.command('modules [environment]', 'list modules installed on the site')
 	// .command('import [environment]', 'import your data.json to bulk upload all data')
 	.parse(process.argv);
 
