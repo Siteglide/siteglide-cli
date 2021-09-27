@@ -117,7 +117,6 @@ program
 	.option('-a --auto-deploy', 'Automatically deploy the site after downloading and optimizing', false)
 	.option('-m --max-recursive-depth <maxRecursiveDepth>', 'Maximum allowed depth for hyperlinks', 5)
 	.option('-i --ignore <ignore>', 'A pattern of urls to ignore during download', false)
-	.option('--muse', 'Set if this is an Adobe Muse website')
 	.action(async (environment, params) => {
 		checkParams(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
@@ -136,7 +135,7 @@ program
 			if (response === 'Y') {
 				await gateway.migrate({'existingSite': params.url}).then(async() => {
 					if (optimize) {
-						await download.run({ url: params.url, maxRecursiveDepth: params.maxRecursiveDepth, ignore: params.ignore, muse: params.muse })
+						await download.run({ url: params.url, maxRecursiveDepth: params.maxRecursiveDepth, ignore: params.ignore})
 							.then(async () => await assetURL.run(params))
 							.then(async () => await updateForms.run(authData.email))
 							.then(async () => await optimizeCSS.run())
@@ -157,7 +156,7 @@ program
 							})
 						);
 					} else {
-						await download.run({url: params.url, maxRecursiveDepth: params.maxRecursiveDepth, ignore: params.ignore, muse: params.muse})
+						await download.run({url: params.url, maxRecursiveDepth: params.maxRecursiveDepth, ignore: params.ignore})
 						.then(async () => await assetURL.run(params))
 						.then(async () => await updateForms.run(authData.email)
 							.then(async () => {
