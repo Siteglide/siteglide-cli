@@ -3,9 +3,7 @@
 const program = require('commander'),
 	EventEmitter = require('events'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
-	notifier = require('node-notifier'),
 	logger = require('./lib/logger'),
-	path = require('path'),
 	url = require('url'),
 	Gateway = require('./lib/proxy');
 
@@ -77,12 +75,6 @@ program
 
 			if(error_type==='error') {
 				logger.Error(text, options);
-				notifier.notify({
-					title: error_type,
-					message: message.slice(0,100),
-					icon: path.resolve(__dirname, './lib/siteglide-logo.png'),
-					a: 'siteglide-cli'
-				});
 			}else{
 				logger.Info(text, options);
 			}
