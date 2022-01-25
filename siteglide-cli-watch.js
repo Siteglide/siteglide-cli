@@ -148,7 +148,7 @@ const pushFile = (gateway, syncedFilePath) => {
 		}
 
 		if (body && body.error){
-			logger.Error(`[Sync] Error: ${body.error}`, {
+			logger.Error(`[Sync] Error: ${filePath}\n${body.error}`, {
 				exit: false
 			});
 		} else {
