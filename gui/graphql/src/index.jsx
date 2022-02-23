@@ -119,6 +119,7 @@ class App extends Component {
           query={query}
           onEditQuery={this._handleEditQuery}
           docExplorerOpen={false}
+          headerEditorEnabled={false}
         >
           <GraphiQL.Toolbar>
             <GraphiQL.Button
