@@ -71,7 +71,8 @@ program
 			if (message == null) message = '';
 
 			const options = { exit: false, hideTimestamp: true };
-			const text = `[${created_at.replace('T', ' ')}] - ${error_type}: ${message.replace(/\n$/, '')}`;
+			const msg = typeof message === 'object'? message.body : message;
+			const text = `[${created_at.replace('T', ' ')}] - ${error_type}: ${msg.replace(/\n$/, '')}`;
 
 			if(error_type==='error') {
 				logger.Error(text, options);
