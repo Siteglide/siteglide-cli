@@ -34,7 +34,8 @@ const uploadArchive = (env,) => {
 		const archive = spawn(command('siteglide-cli-archive'), ['--with-images'], {
 			stdio: 'inherit',
 			withImages: true,
-			env: env
+			env,
+			shell: true
 		});
 
 		archive.on('close', code => {
@@ -45,7 +46,8 @@ const uploadArchive = (env,) => {
 
 			const push = spawn(command('siteglide-cli-push'), [], {
 				stdio: 'inherit',
-				env: env
+				env,
+				shell: true
 			});
 
 			push.on('close', exitCode => {

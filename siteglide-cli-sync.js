@@ -29,9 +29,10 @@ program
 		}
 		const p = spawn(command('siteglide-cli-watch'), options, {
 			stdio: 'inherit',
-			env: env,
+			env,
 			directAssetsUpload: true,
-			liveReload: params.livereload
+			liveReload: params.livereload,
+			shell: true
 		});
 		p.on('error', logger.Error);
 	});
