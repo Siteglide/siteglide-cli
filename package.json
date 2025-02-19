@@ -1,6 +1,6 @@
 {
 	"name": "@siteglide/siteglide-cli",
-	"version": "1.9.8",
+	"version": "1.10.0",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
@@ -54,6 +54,7 @@
 		"terser": "^5.12.1",
 		"update-notifier": "^5.1.0",
 		"valid-url": "^1.0.9",
+		"webpack-cli": "6.0.1",
 		"website-scraper": "^4.2.3",
 		"website-scraper-existing-directory": "^0.1.0"
 	},

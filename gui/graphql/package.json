@@ -4,8 +4,8 @@
   "description": "",
   "main": "",
   "scripts": {
-    "start": "NODE_ENV=development webpack-cli -w",
-    "build": "NODE_ENV=production webpack-cli"
+    "start": "cross-env NODE_ENV=development webpack-cli -w",
+    "build": "cross-env NODE_ENV=production webpack-cli"
   },
   "keywords": [],
   "author": "siteglide",
@@ -27,6 +27,7 @@
     "webpack-cli": "^4.9.2"
   },
   "dependencies": {
+    "cross-env": "^7.0.2",
     "graphiql": "^1.6.0",
     "graphql": "^16.3.0",
     "prop-types": "^15.8.1",

@@ -104,8 +104,7 @@ program
 						});
 				}
 
-				await gateway
-					.pull().then(async(response) => {
+				await gateway.pull().then(async(response) => {
 						exportSpinner.start();
 						if(params.withAssets){
 							exportSpinner.text = 'Downloading all images and videos as well, this may take a while...';
@@ -209,9 +208,7 @@ program
 						exportSpinner.stopAndPersist().succeed(`Files downloaded into ${dir.LEGACY_APP} folder`);
 					}, logger.Error);
 
-				await gateway
-					.export(exportInternalIds, params.csv)
-					.then(exportTask => {
+				await gateway.export(exportInternalIds, params.csv).then(exportTask => {
 						spinner.start();
 						waitForStatus(() => gateway.exportStatus(exportTask.id, params.csv)).then(exportTask => {
 							if(params.csv){

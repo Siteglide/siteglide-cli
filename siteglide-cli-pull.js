@@ -36,52 +36,52 @@ program
 		const filename = `${dir.LEGACY_APP}.zip`;
 
 		Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
-			if (response === 'Y') {
+			if(response === 'Y'){
 				pullSpinner.start();
 
 				await gateway.pullZip({ module_name: module }).then(pullTask => {
 					waitForStatus(() => gateway.pullZipStatus(pullTask.id))
-						.then(pullTask => downloadFile(pullTask.zip_file.url, filename))
-						.then(() => unzip(filename, dir.LEGACY_APP))
-						.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
-						.then(() => shell.rm(`./${filename}`))
-						.then(() => {
-							if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
-								shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`)
-								shell.rm('-r', `./${dir.LEGACY_APP}/modules`)
-							}
-						})
-						.then(() => shell.rm(`./${dir.LEGACY_APP}/asset_manifest.json`))
-						.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
-						.then(() => {
-							var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
-							for(var i = 0; i < list.length; i++) {
-								var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
-								try {
-									fs.rmdirSync(folder);
-								} catch(e) {
-									if(e.code!=='ENOTEMPTY'){
-										logger.Error(e);
-									}
+					.then(pullTask => downloadFile(pullTask.zip_file.url, filename))
+					.then(() => unzip(filename, dir.LEGACY_APP))
+					.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
+					.then(() => shell.rm(`./${filename}`))
+					.then(() => {
+						if(fs.existsSync(`./${dir.LEGACY_APP}/modules`)){
+							shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`)
+							shell.rm('-r', `./${dir.LEGACY_APP}/modules`)
+						}
+					})
+					.then(() => shell.rm(`./${dir.LEGACY_APP}/asset_manifest.json`))
+					.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
+					.then(() => {
+						var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
+						for(var i=0; i<list.length; i++){
+							var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
+							try{
+								fs.rmdirSync(folder);
+							}catch(e){
+								if(e.code!=='ENOTEMPTY'){
+									logger.Error(e);
 								}
 							}
-						})
-						.then(() => {
-							if(ignoreAssets){
-								pullSpinner.succeed('Pulled files');
-							}
-						})
-						.catch(error => {
-							logger.Debug(error);
-							pullSpinner.fail('Pull failed');
-							process.exit(1);
-						});
-				})
+						}
+					})
+					.then(() => {
+						if(ignoreAssets){
+							pullSpinner.succeed('Pulled files');
+						}
+					})
 					.catch(e => {
+						logger.Debug(e);
 						pullSpinner.fail('Pull failed');
-						logger.Error(e.message);
 						process.exit(1);
 					});
+				})
+				.catch(e => {
+					pullSpinner.fail('Pull failed');
+					logger.Error(e.message);
+					process.exit(1);
+				});
 
 				if(!ignoreAssets){
 					await gateway.pull().then(async(response) => {
@@ -126,7 +126,7 @@ program
 					});
 				}
 
-			} else {
+			}else{
 				logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 			}
 		});
