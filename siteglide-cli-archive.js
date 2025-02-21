@@ -63,7 +63,7 @@ const makeArchive = (path, directory, program) => {
 	}
 
 	const releaseArchive = prepareArchive(path);
-	releaseArchive.glob('**/*', { cwd: directory, ignore: ['assets/**']}, { prefix: directory });
+	releaseArchive.glob('**/*', { cwd: directory, ignore: ['assets/**', '**/node_modules/**']}, { prefix: directory });
 
 	addModulesToArchive(releaseArchive).then(r => {
 		releaseArchive.finalize();
