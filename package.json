@@ -19,6 +19,7 @@
 		"Siteglide"
 	],
 	"dependencies": {
+		"@inquirer/prompts": "^7.3.2",
 		"archiver": "^5.3.0",
 		"archiver-promise": "^1.0.0",
 		"async": "^3.2.3",
@@ -74,7 +75,8 @@
 		"siteglide-cli-push": "./siteglide-cli-push.js",
 		"siteglide-cli-server": "./siteglide-cli-server.js",
 		"siteglide-cli-sync": "./siteglide-cli-sync.js",
-		"siteglide-cli-watch": "./siteglide-cli-watch.js"
+		"siteglide-cli-watch": "./siteglide-cli-watch.js",
+		"siteglide-cli-sitebuilder": "./siteglide-cli-sitebuilder.js"
 	},
 	"preferGlobal": true,
 	"repository": "siteglide/siteglide-cli"
