@@ -24,13 +24,15 @@ import command from './lib/command.js';
 import {fetchSettings} from './lib/settings.js';
 import program from 'commander';
 import cli_package_json from './package.json' with { type: "json" };
-import {confirm, checkbox} from '@inquirer/prompts';
+import {confirm, checkbox, input} from '@inquirer/prompts';
 
 
 
 const child_process = {spawn, spawnSync};
 const fetchAuthData = fetchSettings;
 const version = cli_package_json.version;
+
+//DEFINE PROGRAM
 
 program
 .version(version, '-v, --version')
@@ -121,32 +123,15 @@ program
   const setups = await Promise.all(modulesForSetup.map((module) => {
     return moduleSetup(themeModules.find((m) => {
       return m.id === module
-    }))
-  }))
+    }));
+  }));
 
-  // const themeModuleQuestions = themeModules.map(async (module) => {
-  //   const value = await confirm({
-  //     message: `Do you want to setup the Theme: ${module.metadata.name || module.id}, by ${module.metadata.author || 'unknown author'}?`,
-  //     default: false
-  //   });
-  //   return {
-  //     id: module.id,
-  //     value: value
-  //   }
-  // })
-  // const modulesForSetup = await Promise.all(themeModuleQuestions);
-  // step 4. In each module, move the files out of assets/config/open_me step into the module_folder location
-
-  
-  //const ans = await sitebuilder.setupThemeConfirm(themeModules);
-  //console.log('ans', ans)
-  // const ans = await sitebuilder.firstTailwindSetup();
-  // console.log(ans);
 
   
 });
 
-program.parse(process.argv)
+//RUN PROGRAM
+program.parse(process.argv);
 
 
 //Helpers
@@ -173,16 +158,17 @@ async function moduleSetup(module) {
     return false;
   }
   if(checkSRootDirExists) {
-    //Merge root package.json into root.
+    //Merge root package.json into root, or create new one
     const existingRootPackageJson = existsSync(rootPackageJsonPath);
     const moduleSetupPackageJsonPath = `${sRootPath}/package.json`;
     const moduleSetupPackageJsonExists = existsSync(moduleSetupPackageJsonPath);
     if(!moduleSetupPackageJsonExists) {
-      console.error('No settings exist for root packasge.json file. This may be a module author\'s error.');
+      console.error('No settings exist for root package.json file. This may be a module author\'s error.');
       return false;
     }
     console.log('existingRootPackageJson', existingRootPackageJson);
     if(existingRootPackageJson) {
+      //Merge root package.json into root
       const permissionToMerge = await confirm({
         message: `Your project already has a package.json file (used to store a list of node package manager dependencies). SiteBuilder uses npm workspaces to store dependencies specific to your SiteBuilder Themes. Are you happy for us to merge our workspace settings into your package.json file?`,
         default: false
@@ -191,7 +177,7 @@ async function moduleSetup(module) {
         console.log('Sorry, permission to merge npm package.json files is required to continue with the wizard. Please setup manually using the documentation or restart the wizard again.');
         return false;
       }
-      //Merge
+      //Merge configs on root
       let rootPackageJson, moduleSetupPackageJson, rootPackageJsonStream, moduleSetupPackageJsonStream;
       try {
         rootPackageJson = await readFile(rootPackageJsonPath, {encoding: 'utf8'});
@@ -219,18 +205,43 @@ async function moduleSetup(module) {
           });
         }
         if(srcJson.scripts) {
-          
+          if(destJson.scripts) {
+            //Merge scripts
+            if(typeof destJson.scripts === 'object' && typeof srcJson.scripts === 'object') {
+              for(let key in srcJson.scripts) {
+                const value = srcJson.scripts[key];
+                destJson.scripts.hasOwnProperty(key);
+                
+                const newKey = await input({
+                  message: `The npm script with name ${key} already exists. Pick a new short name for the script that will compile this Theme on a day-to-day basis, e.g. "tw". please use characters "[A-Z]_-" only.`,
+                  required: true,
+                  validate: (inputStr) => {
+                    return !destJson.scripts.hasOwnProperty(key);
+                  }
+                });
+                destJson.scripts[newKey] = value;
+              }
+            } else {
+              console.log('Expected scripts in package.json file to be an object. Cannot automatically merge. Cancelling setup.');
+              return false;
+            }
+          } else {
+            //New scripts
+            destJson.scripts = srcJson.scripts;
+          }
         }
-
-
       } catch(e) {
         console.error(e);
       }
       
     } else {
+      //Create new package.json on root.
       console.log('Creating a new package.json file');
     }
   }
   return true;
 }
 
+function new_uniq_key() {
+
+}
