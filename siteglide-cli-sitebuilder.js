@@ -2,6 +2,7 @@
   Steps
   step 0. a) get env in case need to pull or sync anything
   step 0. b) In future check if first-time setup of Tailwind, but for step now we'll assume it is. 
+  step 0. c) Strongly recommend github and walk them through setting up local repo before proceeding. This will help them undo anything we do wrong!!
   step 1. a) Find modules - check if user wants to set up Tailwind for them.
   step 1. b) check them for views/partials/sitebuilder/step module_registry- if they have package.json but not step module_registry, then b)
   step 1. c) Possibly need to do siteglide-cli pull -m module_86?
@@ -16,7 +17,7 @@
   step 10. Ask if they want to deploy changes? Do so if yes. Maybe
   */
 
-import { opendir, open, readFile, writeFile } from 'node:fs/promises';
+import { opendir, readFile, writeFile, cp, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import yaml from 'js-yaml';
 import {spawn, spawnSync} from 'child_process';
@@ -61,7 +62,7 @@ program
     for await (const dirent of modules) {
       try {
         const regFilePath = `./modules/${dirent.name}/public/views/partials/sitebuilder/module_registry.liquid`;
-        const exists = await existsSync(regFilePath);
+        const exists = existsSync(regFilePath);
         if(!exists) {
           //No registry file exists
           // step 1. b. Possibly need to do siteglide-cli pull -m module_86? Can only do this for known modules built accordining to SiteBuilder
@@ -125,9 +126,22 @@ program
       return m.id === module
     }));
   }));
-
-
-  
+  console.log('All module files installed. Next will attempt installing dependencies.');
+  const dependencies = await new Promise((resolve,reject) => {
+    const dependenciesCmd = child_process.spawn('npm install', [], {
+      stdio: 'inherit',
+      env: process.env,
+      shell: true
+    });
+    dependenciesCmd.on('close', () => {
+      resolve(true);
+    });
+    dependenciesCmd.on('error', (e) => {
+      reject(e);
+    });
+  }).catch((e) => {
+    console.error(e);
+  });
 });
 
 //RUN PROGRAM
@@ -137,23 +151,21 @@ program.parse(process.argv);
 //Helpers
 async function moduleSetup(module) {
   //step 4. In each module, move the files out of assets/config/open_me step into the module_folder location
-  const module_path = `./modules/${module.id}/public/`;
-  const module_assets_path = `${module_path}assets/`;
-  const setupPath = `${module_assets_path}first_time_setup/`;
+  const modulePath = `./modules/${module.id}/public/`;
+  const moduleWorkspacePath = `${modulePath}assets/${module.id}_workspace/`;
+  const setupPath = `${modulePath}assets/first_time_setup/`;
   const sRootPath = `${setupPath}root/`;
-  const sAssetsPath = `${setupPath}root/`;
-  const sAssetsSrcPath = `${setupPath}root/`;
+  const sWorkspacePath = `${setupPath}${module.id}_workspace/`;
+  const moduleWorkspaceSrcPath = `${moduleWorkspacePath}src/`;
   const rootPackageJsonPath = `./package.json`;
   const checkSetupDirExists = existsSync(setupPath),
-
   checkSRootDirExists = existsSync(sRootPath),
-  checkSAssetsDirExists = existsSync(sAssetsPath),
-  checkSAssetsSrcDirExists = existsSync(sAssetsSrcPath)
+  checkSWorkspaceDirExists = existsSync(sWorkspacePath);
   if(!checkSetupDirExists) {
     console.error(`Missing setup folder for module ${module.metadata.name}, cancelling setup.`);
     return false;
   }
-  if(!checkSRootDirExists && !checkSAssetsDirExists && !checkSAssetsSrcDirExists) {
+  if(!checkSRootDirExists && !checkSWorkspaceDirExists && !checkSWorkspaceSrcDirExists) {
     console.error(`Nothing to unpack for module ${module.metadata.name}, cancelling setup.`);
     return false;
   }
@@ -184,6 +196,7 @@ async function moduleSetup(module) {
         moduleSetupPackageJson = await readFile(`${sRootPath}package.json`, {encoding: 'utf8'});
         const srcJson = JSON.parse(moduleSetupPackageJson);
         let destJson = JSON.parse(rootPackageJson);
+        let destChanged = false;
         if(srcJson.workspaces) {
           if(destJson.workspaces) {
             console.log(typeof srcJson.workspaces, typeof destJson.workspaces)
@@ -191,6 +204,7 @@ async function moduleSetup(module) {
               destJson['workspaces'] = destJson['workspaces'].concat(srcJson.workspaces).filter((value, index, array) => {
                 return array.indexOf(value) === index;
               });
+              destChanged = true;
               console.log('new merged array', destJson['workspaces'])
             } else {
               console.log('Expected workspaces in package.json file to be an array. Cannot automatically merge. Cancelling setup.');
@@ -198,11 +212,8 @@ async function moduleSetup(module) {
             }
           } else {
             destJson['workspaces'] = srcJson.workspaces;
+            destChanged = true;
           }
-          const newFileContents = JSON.stringify(destJson);
-          const newPackageJSONFile = await writeFile(rootPackageJsonPath,newFileContents, {
-            encoding: 'utf8'
-          });
         }
         if(srcJson.scripts) {
           if(destJson.scripts) {
@@ -211,15 +222,16 @@ async function moduleSetup(module) {
               for(let key in srcJson.scripts) {
                 const value = srcJson.scripts[key];
                 destJson.scripts.hasOwnProperty(key);
-                
+                destChanged = true;
                 const newKey = await input({
-                  message: `The npm script with name ${key} already exists. Pick a new short name for the script that will compile this Theme on a day-to-day basis, e.g. "tw". please use characters "[A-Z]_-" only.`,
+                  message: `Script name already exists. Pick a new short name which will act as a shortcut to ${module.metadata.name}'s ${key}, e.g. "tw". please use characters "[A-Z]_-" only.`,
                   required: true,
                   validate: (inputStr) => {
                     return !destJson.scripts.hasOwnProperty(key);
                   }
                 });
-                destJson.scripts[newKey] = value;
+                destJson['scripts'][newKey] = value;
+                destChanged = true;
               }
             } else {
               console.log('Expected scripts in package.json file to be an object. Cannot automatically merge. Cancelling setup.');
@@ -230,18 +242,94 @@ async function moduleSetup(module) {
             destJson.scripts = srcJson.scripts;
           }
         }
+        if(destChanged) {
+          const newFileContents = JSON.stringify(destJson, null, 2);
+          const newPackageJSONFile = await writeFile(rootPackageJsonPath,newFileContents, {
+            encoding: 'utf8'
+          });
+          console.log('Root package.json file updated.');
+        } else {
+          console.log('No changes made to root package.json file.');
+        }
       } catch(e) {
         console.error(e);
       }
       
     } else {
       //Create new package.json on root.
-      console.log('Creating a new package.json file');
+      try {
+        console.log('Creating a new package.json file. We will ask you some questions to fill in the required details.');
+        moduleSetupPackageJson = await readFile(`${sRootPath}package.json`, {encoding: 'utf8'});
+        const srcJson = JSON.parse(moduleSetupPackageJson);
+        let project = {
+          name: await input({
+            message: "What is the name of your Siteglide project?",
+            required: true,
+            default: "New Siteglide Project"
+          }),
+          version: await input({
+            message: "Choose a version number. (Required by npm, but not required by Siteglide, so you don't need to update this later unless you want to).",
+            required: true,
+            default: "0.1.0"
+          }),
+          description: await input({
+            message: "A short description of your website/app/project",
+            required: true,
+            default: "A website project using Siteglide"
+          }),
+          author: await input({
+            message: "Your name, or organisation name",
+            required: true,
+            default: "Anonymous"
+          }),
+          license: await input({
+            message: "How is this project licensed? (This is required by npm but not by Siteglide, you can simply choose the default to skip.)",
+            required: true,
+            default: "UNLICENSED"
+          }),
+          private: true,
+          workspaces: srcJson.workspaces,
+          scripts: srcJson.scripts
+        };
+        console.log('Thank you, creating your package.json file now.');
+        const newFile = await writeFile(rootPackageJsonPath, JSON.stringify(project, null, 2), {
+          encoding: 'utf8'
+        });
+      } catch(e) {
+
+      }
+      
     }
+    console.log('Unpacking module ${module.metadata.name || module.id} workspace.');
+    if(!existsSync(moduleWorkspacePath)) {
+      const mADir = await mkdir(moduleWorkspacePath);
+    }
+    const copyWorkspace = await cp(
+      sWorkspacePath,
+      moduleWorkspacePath,
+      {
+        recursive: true,
+        filter: confirmCopyIfFileExists
+      }
+    );
+    console.log(`Module ${module.metadata.name || module.id} workspace unpacked.`);
   }
+  //Resolve promise. Module is setup.
   return true;
 }
 
-function new_uniq_key() {
-
+async function confirmCopyIfFileExists(src,dest) {
+  //Can skip file copy if there is a chance this is overriding a previous setup.
+  const isDir = src.split('')[src.split('').length - 1] === '/';
+  console.log('trying to copy', src, dest);
+  if(isDir) {
+    return true;
+  } else if(existsSync(dest)) {
+    return await confirm({
+      message: `It looks like file ${dest} already exists. A developer may have setup this module already, and the target file may contain important styling or other configuration for the project. Are you sure you want to overwrite this file with the default setup? Yes continues, no cancels.`,
+      default: false
+    });
+  } else {
+    return true;
+  }
 }
