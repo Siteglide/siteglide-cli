@@ -72,7 +72,7 @@ const makeArchive = (path, directory) => {
 		if (path ==='./.tmp/assets.zip'){
 			releaseArchive.glob('**/**', { cwd: `${directory}/assets` });
 		}else{
-			releaseArchive.glob('**/*', { cwd: directory, ignore: ['assets/**'] }, { prefix: directory });
+			releaseArchive.glob('**/*', { cwd: directory, ignore: ['assets/**', '**/node_modules/**'] }, { prefix: directory });
 		}
 
 		releaseArchive.finalize();
