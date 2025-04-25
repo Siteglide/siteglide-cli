@@ -44,7 +44,7 @@ const isEmpty = filePath => {
 	return isEmpty;
 };
 const shouldBeSynced = (filePath) => {
-	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath);
+	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath) && isNotInNodeModules(filePath);
 };
 const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets') || path.startsWith('marketplace_builder\\assets');
 let manifestFilesToAdd = [];
@@ -79,6 +79,10 @@ const isNotEmptyYML = filePath => {
 	}
 
 	return true;
+};
+
+const isNotInNodeModules = filePath => {
+	return !filePath.includes(`${path.sep}node_modules${path.sep}`);
 };
 
 CONCURRENCY = 3;
