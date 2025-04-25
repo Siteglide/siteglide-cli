@@ -142,17 +142,29 @@ const pushFile = (gateway, syncedFilePath) => {
 	};
 
 	return gateway.sync(formData).then(body => {
-		if (body && body.refresh_index) {
-			logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
-			logger.Success(`[Sync] Uploaded: ${filePath}`);
+		if(!body){
+			logger.Error(`[Sync] Error: unhandled.`, { exit: false });
+			return false;
 		}
 
-		if (body && body.error){
-			logger.Error(`[Sync] Error: ${filePath}\n${body.error}`, {
-				exit: false
-			});
-		} else {
+		if(body.error){
+			logger.Error(`[Sync] Error: ${filePath}\n${body.error}`, { exit: false });
+		}else if(
+			(body.reason)||
+			(body.message)
+		){
+			let error_msg = `[Sync] Error: ${filePath}`;
+			let error_name = body.name? body.name : 'Error';
+			error_msg += body.mark? `\nLocation: ${error_name} on line ${body.mark.line}, column ${body.mark.column}.` : '';
+			error_msg += `\nGuide: ${body.message || body.reason}`;
+
+			logger.Error(error_msg, { exit: false });
+		}else{
 			logger.Success(`[Sync] Uploaded: ${filePath}`);
+
+			if(body.refresh_index){
+				logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
+			}
 		}
 
 	});
