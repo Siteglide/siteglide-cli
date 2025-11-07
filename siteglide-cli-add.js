@@ -105,9 +105,12 @@ program
 		if(
 			(!params.url.includes('platform-os.com'))&&
 			(!params.url.includes('platformos.com'))&&
-			(!params.url.includes('uk-siteglide.com'))
+			(!params.url.includes('au-siteglide.com'))&&
+			(!params.url.includes('uk-siteglide.com'))&&
+			(!params.url.includes('us-siteglide.com'))&&
+			(!params.url.includes('staging-siteglide.com'))
 		){
-			logger.Error('Please use the platform URL to add the environment, not the vanity URL. For example: https://my-great-site.uk-siteglide.com/');
+			logger.Error('Please use the platform URL to add the environment, not the vanity URL. For example: https://my-great-site.us-siteglide.com/');
 		}
 
 		getPassword().then(password => {
