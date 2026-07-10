@@ -12,11 +12,27 @@ const program = require('commander'),
 	Confirm = require('./lib/confirm'),
 	getBinary = require('./lib/assets/getBinary'),
 	unzip = require('./lib/unzip'),
-	shell = require('shelljs'),
 	path = require('path'),
 	dir = require('./lib/directories');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
+
+/**
+ * Copy each child of `srcDir` into `destDir` (merge/overwrite).
+ * Used instead of copying a folder into its parent, which fs-extra cannot do safely.
+ *
+ * @param {string} srcDir - Source directory whose children should be copied.
+ * @param {string} destDir - Destination directory to receive those children.
+ * Side effects: writes/overwrites files and folders under destDir.
+ */
+const copyChildren = async (srcDir, destDir) => {
+	await fs.ensureDir(destDir);
+	const children = await fs.readdir(srcDir);
+	for (let i = 0; i < children.length; i++) {
+		const name = children[i];
+		await fs.copy(path.join(srcDir, name), path.join(destDir, name), { overwrite: true });
+	}
+};
 
 /**
  * Remove empty directories left under a pull root after restructuring.
@@ -24,12 +40,20 @@ const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
  * @param {string} root - Relative directory to scan (e.g. marketplace_builder).
  * Side effects: deletes empty child directories under `./${root}`; logs non-ENOTEMPTY errors.
  */
-const cleanupEmptyDirs = (root) => {
-	const list = fs.readdirSync(`./${root}`).filter(folder => fs.statSync(path.join(`./${root}`, folder)).isDirectory());
-	for (let i = 0; i < list.length; i++) {
-		const folder = path.join(`./${root}`, list[i]);
+const cleanupEmptyDirs = async (root) => {
+	const rootPath = `./${root}`;
+	if (!(await fs.pathExists(rootPath))) {
+		return;
+	}
+	const entries = await fs.readdir(rootPath);
+	for (let i = 0; i < entries.length; i++) {
+		const folder = path.join(rootPath, entries[i]);
+		const stat = await fs.stat(folder);
+		if (!stat.isDirectory()) {
+			continue;
+		}
 		try {
-			fs.rmdirSync(folder);
+			await fs.rmdir(folder);
 		} catch (e) {
 			if (e.code !== 'ENOTEMPTY') {
 				logger.Error(e);
@@ -39,19 +63,23 @@ const cleanupEmptyDirs = (root) => {
 };
 
 /**
- * If a pull extract contains a nested `modules/` folder, merge it into `./modules`.
+ * If a pull extract contains a nested `modules/` folder, merge it into `./modules`
+ * (project root), then delete the nested copy. Siteglide expects modules at `./modules`,
+ * not under `marketplace_builder/modules`.
  *
  * @param {string} fromRoot - Relative directory that may contain `modules/` (e.g. marketplace_builder or .tmp/...).
  * Side effects: creates `./modules` if needed; copies module files into it (overwrites); deletes `${fromRoot}/modules`.
  * No-op if `${fromRoot}/modules` does not exist.
  */
-const moveModulesToRoot = (fromRoot) => {
+const moveModulesToRoot = async (fromRoot) => {
 	const modulesPath = `./${fromRoot}/modules`;
-	if (fs.existsSync(modulesPath)) {
-		fs.ensureDirSync(`./${dir.MODULES}`);
-		shell.cp('-R', `${modulesPath}/*`, `./${dir.MODULES}/`);
-		shell.rm('-r', modulesPath);
+	if (!(await fs.pathExists(modulesPath))) {
+		return;
 	}
+	logger.Info(`[pull] Moving ./${fromRoot}/modules → ./${dir.MODULES}`);
+	await fs.ensureDir(`./${dir.MODULES}`);
+	await fs.copy(modulesPath, `./${dir.MODULES}`, { overwrite: true });
+	await fs.remove(modulesPath);
 };
 
 /**
@@ -73,14 +101,14 @@ const pullSiteZip = async (gateway) => {
 	await downloadFile(readyTask.zip_file.url, filename);
 	logger.Info(`[pull] Unzipping site into ./${dir.LEGACY_APP} and converting app/ → marketplace_builder`);
 	await unzip(filename, dir.LEGACY_APP);
-	shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`);
-	shell.rm(`./${filename}`);
-	moveModulesToRoot(dir.LEGACY_APP);
-	if (fs.existsSync(`./${dir.LEGACY_APP}/asset_manifest.json`)) {
-		shell.rm(`./${dir.LEGACY_APP}/asset_manifest.json`);
+	await copyChildren(`./${dir.LEGACY_APP}/app`, `./${dir.LEGACY_APP}`);
+	await fs.remove(`./${filename}`);
+	await moveModulesToRoot(dir.LEGACY_APP);
+	if (await fs.pathExists(`./${dir.LEGACY_APP}/asset_manifest.json`)) {
+		await fs.remove(`./${dir.LEGACY_APP}/asset_manifest.json`);
 	}
-	shell.rm('-r', `./${dir.LEGACY_APP}/app`);
-	cleanupEmptyDirs(dir.LEGACY_APP);
+	await fs.remove(`./${dir.LEGACY_APP}/app`);
+	await cleanupEmptyDirs(dir.LEGACY_APP);
 	logger.Info('[pull] Site files pull complete');
 };
 
@@ -106,40 +134,38 @@ const pullModuleZip = async (gateway, moduleName, index, total) => {
 	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
 	logger.Info(`[pull] Module "${moduleName}" backup ready (status: ${readyTask.status}) — downloading zip`);
 	await downloadFile(readyTask.zip_file.url, filename);
-	fs.removeSync(workDir);
+	await fs.remove(workDir);
 	await unzip(filename, workDir);
-	shell.rm(`./${filename}`);
+	await fs.remove(`./${filename}`);
 
-	if (fs.existsSync(`./${workDir}/app`)) {
-		shell.cp('-R', `./${workDir}/app/*`, `./${workDir}`);
-		shell.rm('-r', `./${workDir}/app`);
+	if (await fs.pathExists(`./${workDir}/app`)) {
+		await copyChildren(`./${workDir}/app`, `./${workDir}`);
+		await fs.remove(`./${workDir}/app`);
 	}
 
-	moveModulesToRoot(workDir);
+	await moveModulesToRoot(workDir);
 
 	// Some module zips nest files as <moduleName>/... instead of modules/<moduleName>/...
 	const directModulePath = `./${workDir}/${moduleName}`;
-	if (fs.existsSync(directModulePath)) {
+	if (await fs.pathExists(directModulePath)) {
 		logger.Info(`[pull] Module "${moduleName}" zip used direct layout; copying into ./${dir.MODULES}/${moduleName}`);
-		fs.ensureDirSync(`./${dir.MODULES}/${moduleName}`);
-		shell.cp('-R', `${directModulePath}/*`, `./${dir.MODULES}/${moduleName}/`);
+		await fs.ensureDir(`./${dir.MODULES}/${moduleName}`);
+		await fs.copy(directModulePath, `./${dir.MODULES}/${moduleName}`, { overwrite: true });
 	}
 
-	if (fs.existsSync(`./${workDir}`)) {
-		shell.rm('-r', `./${workDir}`);
-	}
-	if (fs.existsSync(`./${dir.TMP}`) && fs.readdirSync(`./${dir.TMP}`).length === 0) {
-		shell.rm('-r', `./${dir.TMP}`);
+	if (await fs.pathExists(`./${workDir}`)) {
+		await fs.remove(`./${workDir}`);
 	}
 	logger.Info(`[pull] Module "${moduleName}" pull complete`);
 };
 
 /**
  * Fetch the asset file list from Siteglide-API `/cli/pull` and download matching text/binary assets
- * into `marketplace_builder/` by physical_file_path.
+ * by physical_file_path. Paths under `modules/` are written to `./modules/...`; everything else
+ * goes under `./marketplace_builder/...` so this step does not recreate `marketplace_builder/modules`.
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
- * Side effects: creates dirs and writes/overwrites asset files under `./marketplace_builder`;
+ * Side effects: creates dirs and writes/overwrites asset files under `./marketplace_builder` or `./modules`;
  * updates `pullSpinner` text; downloads each asset from its remote_url.
  */
 const pullAssets = async (gateway) => {
@@ -178,13 +204,71 @@ const pullAssets = async (gateway) => {
 			}
 		});
 	}));
+	let moduleAssetCount = 0;
 	asset_files.forEach(file => {
-		let folderPath = file.data.physical_file_path.split('/');
-		folderPath = dir.LEGACY_APP + '/' + folderPath.slice(0, folderPath.length - 1).join('/');
-		fs.mkdirSync(folderPath, { recursive: true });
-		fs.writeFileSync(dir.LEGACY_APP + '/' + file.data.physical_file_path, file.data.body, logger.Error);
+		const physicalPath = file.data.physical_file_path.replace(/\\/g, '/');
+		const isModuleAsset = physicalPath === dir.MODULES || physicalPath.indexOf(dir.MODULES + '/') === 0;
+		const root = isModuleAsset ? dir.MODULES : dir.LEGACY_APP;
+		const relativePath = isModuleAsset
+			? physicalPath.slice(dir.MODULES.length).replace(/^\//, '')
+			: physicalPath;
+		if (isModuleAsset) {
+			moduleAssetCount++;
+		}
+		if (!relativePath) {
+			return;
+		}
+		const fullPath = path.join(root, relativePath);
+		fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+		fs.writeFileSync(fullPath, file.data.body, logger.Error);
 	});
-	logger.Info(`[pull] Wrote ${asset_files.length} asset file(s) into ./${dir.LEGACY_APP}`);
+	logger.Info(`[pull] Wrote ${asset_files.length} asset file(s) (${moduleAssetCount} under ./${dir.MODULES})`);
+};
+
+/**
+ * Final local cleanup after site/module/asset pulls have finished.
+ *
+ * Side effects: removes leftover pull zips (`marketplace_builder.zip`, `modules-*.zip`),
+ * removes `./.tmp` if present, moves any leftover `marketplace_builder/modules` into `./modules`
+ * then deletes that nested folder, removes empty dirs under `marketplace_builder`;
+ * updates `pullSpinner` text and writes tidying-up logs.
+ */
+const tidyUpAfterPull = async () => {
+	logger.Info('[pull] Step: tidying up local files');
+	pullSpinner.text = 'Tidying up...';
+
+	const siteZip = `./${dir.LEGACY_APP}.zip`;
+	if (await fs.pathExists(siteZip)) {
+		await fs.remove(siteZip);
+		logger.Info(`[pull] Removed leftover ${siteZip}`);
+	}
+
+	const cwdEntries = await fs.readdir('.');
+	for (let i = 0; i < cwdEntries.length; i++) {
+		const name = cwdEntries[i];
+		if (name.indexOf(`${dir.MODULES}-`) === 0 && name.slice(-4) === '.zip') {
+			await fs.remove(`./${name}`);
+			logger.Info(`[pull] Removed leftover ./${name}`);
+		}
+	}
+
+	if (await fs.pathExists(`./${dir.TMP}`)) {
+		await fs.remove(`./${dir.TMP}`);
+		logger.Info(`[pull] Removed ./${dir.TMP}`);
+	}
+
+	// Pull must not leave modules nested under marketplace_builder
+	const nestedModules = `./${dir.LEGACY_APP}/modules`;
+	if (await fs.pathExists(nestedModules)) {
+		await moveModulesToRoot(dir.LEGACY_APP);
+	}
+	if (await fs.pathExists(nestedModules)) {
+		await fs.remove(nestedModules);
+		logger.Info(`[pull] Removed leftover ${nestedModules}`);
+	}
+
+	await cleanupEmptyDirs(dir.LEGACY_APP);
+	logger.Info('[pull] Tidying up complete');
 };
 
 /**
@@ -221,7 +305,7 @@ program
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
 
-		Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
+		return Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
 				try {
 					pullSpinner.start();
@@ -276,6 +360,8 @@ program
 					} else {
 						logger.Info('[pull] Skipping assets step');
 					}
+
+					await tidyUpAfterPull();
 
 					logger.Info('[pull] All steps finished');
 					pullSpinner.succeed('Pulled files');
