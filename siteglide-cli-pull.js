@@ -102,14 +102,14 @@ const copyAgentsTree = async (srcDir, destDir, moduleName) => {
 		const destPath = path.join(destDir, name);
 		const stats = await fs.stat(srcPath);
 		if (stats.isDirectory()) {
-			logger.Info(`[pull] .agents: merging directory "${name}/" from module "${moduleName}"`);
+			logger.Debug(`[pull] .agents: merging directory "${name}/" from module "${moduleName}"`);
 			fileCount += await copyAgentsTree(srcPath, destPath, moduleName);
 		} else {
 			await makeWritable(destPath);
 			await fs.copy(srcPath, destPath, { overwrite: true });
 			await makeReadOnly(destPath);
 			const displayPath = destPath.replace(/\\/g, '/').replace(/^\.\//, '');
-			logger.Info(`[pull] .agents: wrote ./${displayPath} (from module "${moduleName}")`);
+			logger.Debug(`[pull] .agents: wrote ./${displayPath} (from module "${moduleName}")`);
 			fileCount++;
 		}
 	}
@@ -128,13 +128,13 @@ const copyAgentsTree = async (srcDir, destDir, moduleName) => {
  * root folders/symlinks; updates pullSpinner text.
  */
 const mergeModuleAgentsToRoot = async (moduleNames) => {
-	logger.Info(`[pull] Step: merging modules/*/public/assets/${AGENTS_ROOT} → ./${AGENTS_ROOT}`);
+	logger.Info('[pull] Looking for AI agent skills relevant to your current modules');
 	pullSpinner.text = `Merging ${AGENTS_ROOT} files`;
 
 	const result = { modulesWithAgents: 0, totalFiles: 0, skillCount: 0 };
 
 	if (!moduleNames || moduleNames.length === 0) {
-		logger.Info(`[pull] No modules to scan for ${AGENTS_ROOT} — skip`);
+		logger.Info('[pull] No skills found — skipping IDE folders');
 		return result;
 	}
 
@@ -142,16 +142,16 @@ const mergeModuleAgentsToRoot = async (moduleNames) => {
 		const moduleName = moduleNames[i];
 		const agentsSrc = path.join('.', dir.MODULES, moduleName, 'public', 'assets', AGENTS_ROOT);
 		const agentsSrcDisplay = agentsSrc.replace(/\\/g, '/');
-		logger.Info(`[pull] Checking for ${agentsSrcDisplay}`);
+		logger.Debug(`[pull] Checking for ${agentsSrcDisplay}`);
 
 		if (!(await fs.pathExists(agentsSrc))) {
-			logger.Info(`[pull] Module "${moduleName}" — no ${AGENTS_ROOT} directory found`);
+			logger.Debug(`[pull] Module "${moduleName}" — no ${AGENTS_ROOT} directory found`);
 			continue;
 		}
 
 		const srcStat = await fs.stat(agentsSrc);
 		if (!srcStat.isDirectory()) {
-			logger.Info(`[pull] Module "${moduleName}" — ${AGENTS_ROOT} exists but is not a directory; skip`);
+			logger.Debug(`[pull] Module "${moduleName}" — ${AGENTS_ROOT} exists but is not a directory; skip`);
 			continue;
 		}
 
@@ -159,20 +159,23 @@ const mergeModuleAgentsToRoot = async (moduleNames) => {
 		const count = await copyAgentsTree(agentsSrc, `./${AGENTS_ROOT}`, moduleName);
 		result.modulesWithAgents++;
 		result.totalFiles += count;
-		logger.Info(`[pull] Module "${moduleName}" — merged ${count} file(s) into ./${AGENTS_ROOT}`);
+		if (count > 0) {
+			logger.Info(`[pull] Module "${moduleName}" — merged ${count} file(s) into ./${AGENTS_ROOT}`);
+		}
 	}
 
-	logger.Info(
-		`[pull] ${AGENTS_ROOT} merge complete: ${result.modulesWithAgents} module(s) contributed, ${result.totalFiles} file(s) written to ./${AGENTS_ROOT}`
-	);
-
 	result.skillCount = await countSkillMarkdownFiles(`./${AGENTS_ROOT}`);
-	logger.Info(`[pull] Found ${result.skillCount} SKILL.md file(s) under ./${AGENTS_ROOT}`);
+
+	if (result.totalFiles > 0) {
+		logger.Info(
+			`[pull] .agents: merged ${result.totalFiles} file(s) from ${result.modulesWithAgents} module(s) (${result.skillCount} skills)`
+		);
+	}
 
 	if (result.skillCount > 0) {
 		await ensureAgentIdeScaffolding();
 	} else {
-		logger.Info('[pull] No skills found — skipping IDE discovery scaffolding');
+		logger.Info('[pull] No skills found — skipping IDE folders');
 	}
 
 	return result;
@@ -218,7 +221,7 @@ const ensureSkillsDirLink = async (linkPath, targetPath) => {
 	const linkAbs = path.resolve(linkPath);
 	const targetAbs = path.resolve(targetPath);
 
-	logger.Info(`[pull] Ensuring skills link: ${linkPath} → ${targetPath}`);
+	logger.Debug(`[pull] Ensuring skills link: ${linkPath} → ${targetPath}`);
 	await fs.ensureDir(path.dirname(linkAbs));
 	await fs.ensureDir(targetAbs);
 
@@ -230,13 +233,13 @@ const ensureSkillsDirLink = async (linkPath, targetPath) => {
 				currentTarget = path.resolve(path.dirname(linkAbs), currentTarget);
 			}
 			if (path.resolve(currentTarget) === targetAbs) {
-				logger.Info(`[pull] Skills link already correct: ${linkPath}`);
+				logger.Debug(`[pull] Skills link already correct: ${linkPath}`);
 				return;
 			}
-			logger.Info(`[pull] Replacing outdated skills link at ${linkPath}`);
+			logger.Debug(`[pull] Replacing outdated skills link at ${linkPath}`);
 			await fs.remove(linkAbs);
 		} else {
-			logger.Info(`[pull] Replacing existing path at ${linkPath} with link to shared ${targetPath}`);
+			logger.Debug(`[pull] Replacing existing path at ${linkPath} with link to shared ${targetPath}`);
 			await fs.remove(linkAbs);
 		}
 	}
@@ -246,7 +249,7 @@ const ensureSkillsDirLink = async (linkPath, targetPath) => {
 		? targetAbs
 		: path.relative(path.dirname(linkAbs), targetAbs) || '.';
 	await fs.symlink(linkTarget, linkAbs, linkType);
-	logger.Info(`[pull] Created ${linkType} ${linkPath} → ${targetPath}`);
+	logger.Debug(`[pull] Created ${linkType} ${linkPath} → ${targetPath}`);
 };
 
 /**
@@ -262,7 +265,7 @@ const writeManagedAgentFile = async (filePath, contents) => {
 	await makeWritable(filePath);
 	await fs.writeFile(filePath, contents, 'utf8');
 	await makeReadOnly(filePath);
-	logger.Info(`[pull] Wrote ${filePath.replace(/\\/g, '/')}`);
+	logger.Debug(`[pull] Wrote ${filePath.replace(/\\/g, '/')}`);
 };
 
 /** Cursor always-on rule — mirrors Siteglide/Siteglide-AI-Skills `.cursor/rules/setup_siteglide_skills.mdc`. */
@@ -300,14 +303,12 @@ If agent skills are not already available, use the skills under ./.agents/skills
  * pointer files; creates/replaces skills directory links; updates pullSpinner text.
  */
 const ensureAgentIdeScaffolding = async () => {
-	logger.Info('[pull] Step: scaffolding IDE skill discovery folders (cursor, claude, windsurf, copilot)');
 	pullSpinner.text = 'Setting up IDE skill folders';
 
 	const skillsTarget = path.join(AGENTS_ROOT, 'skills');
 	await fs.ensureDir(`./${skillsTarget}`);
 
 	// Cursor — rule (as in Siteglide-AI-Skills) + skills link for native .cursor/skills discovery
-	logger.Info('[pull] Scaffolding .cursor/');
 	await writeManagedAgentFile(
 		path.join('.cursor', 'rules', 'setup_siteglide_skills.mdc'),
 		CURSOR_SETUP_RULE
@@ -315,12 +316,10 @@ const ensureAgentIdeScaffolding = async () => {
 	await ensureSkillsDirLink(path.join('.cursor', 'skills'), skillsTarget);
 
 	// Claude — CLAUDE.md pointer + skills link (Claude discovers .claude/skills)
-	logger.Info('[pull] Scaffolding .claude/');
 	await writeManagedAgentFile(path.join('.claude', 'CLAUDE.md'), CLAUDE_SETUP_MD);
 	await ensureSkillsDirLink(path.join('.claude', 'skills'), skillsTarget);
 
 	// Windsurf — rule + skills link (Cascade discovers .windsurf/skills; also reads .agents/skills)
-	logger.Info('[pull] Scaffolding .windsurf/');
 	await writeManagedAgentFile(
 		path.join('.windsurf', 'rules', 'setup_siteglide_skills.md'),
 		WINDSURF_SETUP_RULE
@@ -328,14 +327,13 @@ const ensureAgentIdeScaffolding = async () => {
 	await ensureSkillsDirLink(path.join('.windsurf', 'skills'), skillsTarget);
 
 	// Copilot — instructions under .github + skills link (.github/skills is Copilot's project path)
-	logger.Info('[pull] Scaffolding .github/ (Copilot)');
 	await writeManagedAgentFile(
 		path.join('.github', 'copilot-instructions.md'),
 		COPILOT_INSTRUCTIONS_MD
 	);
 	await ensureSkillsDirLink(path.join('.github', 'skills'), skillsTarget);
 
-	logger.Info('[pull] IDE skill discovery scaffolding complete');
+	logger.Info('[pull] IDE folders ready (.cursor, .claude, .windsurf, .github → .agents/skills)');
 };
 
 /**
@@ -380,7 +378,7 @@ const moveModulesToRoot = async (fromRoot) => {
 	if (!(await fs.pathExists(modulesPath))) {
 		return;
 	}
-	logger.Info(`[pull] Moving ./${fromRoot}/modules → ./${dir.MODULES}`);
+	logger.Debug(`[pull] Moving ./${fromRoot}/modules → ./${dir.MODULES}`);
 	await fs.ensureDir(`./${dir.MODULES}`);
 	await fs.copy(modulesPath, `./${dir.MODULES}`, { overwrite: true });
 	await fs.remove(modulesPath);
@@ -395,15 +393,14 @@ const moveModulesToRoot = async (fromRoot) => {
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
 const pullSiteZip = async (gateway) => {
-	logger.Info('[pull] Step: downloading main site zip (no module_name)');
+	logger.Info('[pull] Step: downloading main site zip');
 	const filename = `${dir.LEGACY_APP}.zip`;
 	pullSpinner.text = 'Pulling site files';
 	const pullTask = await gateway.pullZip();
-	logger.Info(`[pull] Site backup started (id: ${pullTask.id})`);
+	logger.Debug(`[pull] Site backup started (id: ${pullTask.id})`);
 	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
-	logger.Info(`[pull] Site backup ready (status: ${readyTask.status}) — downloading zip`);
+	logger.Debug(`[pull] Site backup ready (status: ${readyTask.status}) — downloading zip`);
 	await downloadFile(readyTask.zip_file.url, filename);
-	logger.Info(`[pull] Unzipping site into ./${dir.LEGACY_APP} and converting app/ → marketplace_builder`);
 	await unzip(filename, dir.LEGACY_APP);
 	await copyChildren(`./${dir.LEGACY_APP}/app`, `./${dir.LEGACY_APP}`);
 	await fs.remove(`./${filename}`);
@@ -413,7 +410,7 @@ const pullSiteZip = async (gateway) => {
 	}
 	await fs.remove(`./${dir.LEGACY_APP}/app`);
 	await cleanupEmptyDirs(dir.LEGACY_APP);
-	logger.Info('[pull] Site files pull complete');
+	logger.Info('[pull] Site files pulled');
 };
 
 /**
@@ -429,13 +426,13 @@ const pullSiteZip = async (gateway) => {
  * uses then deletes a temp zip and `.tmp/pull-<moduleName>` work directory.
  */
 const pullModuleZip = async (gateway, moduleName, index, total) => {
-	logger.Info(`[pull] Step: module ${index}/${total} — "${moduleName}"`);
+	logger.Info(`[pull] Module ${moduleName} (${index}/${total})`);
 	const filename = `${dir.MODULES}-${moduleName}.zip`;
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
 	const pullTask = await gateway.pullZip({ module_name: moduleName });
-	logger.Info(`[pull] Module "${moduleName}" backup started (id: ${pullTask.id})`);
+	logger.Debug(`[pull] Module "${moduleName}" backup started (id: ${pullTask.id})`);
 	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
-	logger.Info(`[pull] Module "${moduleName}" backup ready (status: ${readyTask.status}) — downloading zip`);
+	logger.Debug(`[pull] Module "${moduleName}" backup ready (status: ${readyTask.status}) — downloading zip`);
 	await downloadFile(readyTask.zip_file.url, filename);
 	await fs.remove(workDir);
 	await unzip(filename, workDir);
@@ -451,7 +448,7 @@ const pullModuleZip = async (gateway, moduleName, index, total) => {
 	// Some module zips nest files as <moduleName>/... instead of modules/<moduleName>/...
 	const directModulePath = `./${workDir}/${moduleName}`;
 	if (await fs.pathExists(directModulePath)) {
-		logger.Info(`[pull] Module "${moduleName}" zip used direct layout; copying into ./${dir.MODULES}/${moduleName}`);
+		logger.Debug(`[pull] Module "${moduleName}" zip used direct layout; copying into ./${dir.MODULES}/${moduleName}`);
 		await fs.ensureDir(`./${dir.MODULES}/${moduleName}`);
 		await fs.copy(directModulePath, `./${dir.MODULES}/${moduleName}`, { overwrite: true });
 	}
@@ -459,7 +456,7 @@ const pullModuleZip = async (gateway, moduleName, index, total) => {
 	if (await fs.pathExists(`./${workDir}`)) {
 		await fs.remove(`./${workDir}`);
 	}
-	logger.Info(`[pull] Module "${moduleName}" pull complete`);
+	logger.Info(`[pull] Module "${moduleName}" done`);
 };
 
 /**
@@ -511,7 +508,7 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
 	}
 
 	const limit = Math.max(1, concurrency);
-	logger.Info(`[pull] Pulling ${total} module(s) with concurrency ${limit}`);
+	logger.Info(`[pull] Pulling ${total} module(s) (up to ${limit} at a time)`);
 	pullSpinner.text = `Pulling modules (up to ${limit} at a time)`;
 
 	let completed = 0;
@@ -520,6 +517,8 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
 		completed += 1;
 		pullSpinner.text = `Pulling modules (${completed}/${total} done, up to ${limit} at a time)`;
 	});
+
+	logger.Info(`[pull] Pulled ${total} module(s)`);
 };
 
 /**
@@ -532,12 +531,11 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
  * updates `pullSpinner` text; downloads each asset from its remote_url.
  */
 const pullAssets = async (gateway) => {
-	logger.Info('[pull] Step: downloading assets via /cli/pull');
 	pullSpinner.text = 'Pulling assets';
 	const response = await gateway.pull();
 	const asset_files = [];
 	const assets = response.asset || [];
-	logger.Info(`[pull] Asset list returned ${assets.length} file(s); filtering by extension`);
+	logger.Debug(`[pull] Asset list returned ${assets.length} file(s); filtering by extension`);
 	const time = '?updated=' + new Date().getTime();
 	await Promise.all(assets.map(async function (file) {
 		const urlToTest = file.data.remote_url.toLowerCase();
@@ -585,7 +583,7 @@ const pullAssets = async (gateway) => {
 		fs.mkdirSync(path.dirname(fullPath), { recursive: true });
 		fs.writeFileSync(fullPath, file.data.body, logger.Error);
 	});
-	logger.Info(`[pull] Wrote ${asset_files.length} asset file(s) (${moduleAssetCount} under ./${dir.MODULES})`);
+	logger.Info(`[pull] Assets: wrote ${asset_files.length} file(s) (${moduleAssetCount} under modules)`);
 };
 
 /**
@@ -603,7 +601,7 @@ const tidyUpAfterPull = async () => {
 	const siteZip = `./${dir.LEGACY_APP}.zip`;
 	if (await fs.pathExists(siteZip)) {
 		await fs.remove(siteZip);
-		logger.Info(`[pull] Removed leftover ${siteZip}`);
+		logger.Debug(`[pull] Removed leftover ${siteZip}`);
 	}
 
 	const cwdEntries = await fs.readdir('.');
@@ -611,13 +609,13 @@ const tidyUpAfterPull = async () => {
 		const name = cwdEntries[i];
 		if (name.indexOf(`${dir.MODULES}-`) === 0 && name.slice(-4) === '.zip') {
 			await fs.remove(`./${name}`);
-			logger.Info(`[pull] Removed leftover ./${name}`);
+			logger.Debug(`[pull] Removed leftover ./${name}`);
 		}
 	}
 
 	if (await fs.pathExists(`./${dir.TMP}`)) {
 		await fs.remove(`./${dir.TMP}`);
-		logger.Info(`[pull] Removed ./${dir.TMP}`);
+		logger.Debug(`[pull] Removed ./${dir.TMP}`);
 	}
 
 	// Pull must not leave modules nested under marketplace_builder
@@ -627,7 +625,7 @@ const tidyUpAfterPull = async () => {
 	}
 	if (await fs.pathExists(nestedModules)) {
 		await fs.remove(nestedModules);
-		logger.Info(`[pull] Removed leftover ${nestedModules}`);
+		logger.Debug(`[pull] Removed leftover ${nestedModules}`);
 	}
 
 	await cleanupEmptyDirs(dir.LEGACY_APP);
@@ -686,35 +684,30 @@ program
 			if (response === 'Y') {
 				try {
 					pullSpinner.start();
-					logger.Info('[pull] Confirmed — starting pull');
 					if (moduleFilter) {
 						logger.Info(`[pull] Module filter (-m): "${moduleFilter}"`);
-					} else {
-						logger.Info('[pull] No -m filter — will pull all installed modules');
 					}
 					if (ignoreAssets) {
 						logger.Info('[pull] --ignore-assets set; asset download step will be skipped');
 					}
-					logger.Info(`[pull] Module pull concurrency: ${modulePullConcurrency}`);
 
 					pullSpinner.text = 'Fetching installed modules';
-					logger.Info('[pull] Step: listing installed modules via /cli/list_modules');
 					const modulesResponse = await gateway.listModules();
 					const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
-					logger.Info(`[pull] list_modules returned ${installedModules.length} module(s)`);
+					logger.Debug(`[pull] list_modules returned ${installedModules.length} module(s)`);
 					if (installedModules.length > 0) {
 						installedModules.forEach((name, i) => {
-							logger.Info(`\t${i + 1}. ${name}`, { hideTimestamp: true });
+							logger.Debug(`\t${i + 1}. ${name}`, { hideTimestamp: true });
 						});
 					} else {
-						logger.Info('[pull] Raw list_modules response keys: ' + Object.keys(modulesResponse || {}).join(', '));
+						logger.Debug('[pull] Raw list_modules response keys: ' + Object.keys(modulesResponse || {}).join(', '));
 					}
 
 					const modulesToPull = selectModules(installedModules, moduleFilter);
 
 					if (moduleFilter && modulesToPull === null) {
 						pullSpinner.fail(`Module "${moduleFilter}" is not installed on this site`);
-						logger.Error(`[pull] Filter "${moduleFilter}" not found in installed modules list above`);
+						logger.Error(`[pull] Filter "${moduleFilter}" not found in installed modules`);
 						process.exit(1);
 					}
 
@@ -727,9 +720,6 @@ program
 					await pullSiteZip(gateway);
 
 					await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency);
-					if (modulesToPull.length > 0) {
-						logger.Info('[pull] All selected modules pulled');
-					}
 
 					if (!ignoreAssets) {
 						await pullAssets(gateway);
