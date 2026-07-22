@@ -13,7 +13,9 @@ const program = require('commander'),
 	getBinary = require('./lib/assets/getBinary'),
 	unzip = require('./lib/unzip'),
 	path = require('path'),
-	dir = require('./lib/directories');
+	dir = require('./lib/directories'),
+	{ ensureMcpRegistered } = require('./lib/ai'),
+	{ migrateMarketplaceBuilderToApp } = require('./lib/migrateAppDirectory');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 
@@ -385,31 +387,31 @@ const moveModulesToRoot = async (fromRoot) => {
 };
 
 /**
- * Download the main site backup zip and convert it into local `marketplace_builder/`.
+ * Download the main site backup zip and convert it into local `app/`.
  * Calls Siteglide-API `/cli/backup` then `/cli/backupStatus/:id` (no module_name).
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
- * Side effects: writes/overwrites `./marketplace_builder`; may merge into `./modules`;
+ * Side effects: writes/overwrites `./app`; may merge into `./modules`;
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
 const pullSiteZip = async (gateway) => {
 	logger.Info('[pull] Step: downloading main site zip');
-	const filename = `${dir.LEGACY_APP}.zip`;
+	const filename = `${dir.APP}.zip`;
 	pullSpinner.text = 'Pulling site files';
 	const pullTask = await gateway.pullZip();
 	logger.Debug(`[pull] Site backup started (id: ${pullTask.id})`);
 	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
 	logger.Debug(`[pull] Site backup ready (status: ${readyTask.status}) — downloading zip`);
 	await downloadFile(readyTask.zip_file.url, filename);
-	await unzip(filename, dir.LEGACY_APP);
-	await copyChildren(`./${dir.LEGACY_APP}/app`, `./${dir.LEGACY_APP}`);
+	await unzip(filename, dir.APP);
+	await copyChildren(`./${dir.APP}/app`, `./${dir.APP}`);
 	await fs.remove(`./${filename}`);
-	await moveModulesToRoot(dir.LEGACY_APP);
-	if (await fs.pathExists(`./${dir.LEGACY_APP}/asset_manifest.json`)) {
-		await fs.remove(`./${dir.LEGACY_APP}/asset_manifest.json`);
+	await moveModulesToRoot(dir.APP);
+	if (await fs.pathExists(`./${dir.APP}/asset_manifest.json`)) {
+		await fs.remove(`./${dir.APP}/asset_manifest.json`);
 	}
-	await fs.remove(`./${dir.LEGACY_APP}/app`);
-	await cleanupEmptyDirs(dir.LEGACY_APP);
+	await fs.remove(`./${dir.APP}/app`);
+	await cleanupEmptyDirs(dir.APP);
 	logger.Info('[pull] Site files pulled');
 };
 
@@ -524,10 +526,10 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
 /**
  * Fetch the asset file list from Siteglide-API `/cli/pull` and download matching text/binary assets
  * by physical_file_path. Paths under `modules/` are written to `./modules/...`; everything else
- * goes under `./marketplace_builder/...` so this step does not recreate `marketplace_builder/modules`.
+ * goes under `./app/...` so this step does not recreate `app/modules`.
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
- * Side effects: creates dirs and writes/overwrites asset files under `./marketplace_builder` or `./modules`;
+ * Side effects: creates dirs and writes/overwrites asset files under `./app` or `./modules`;
  * updates `pullSpinner` text; downloads each asset from its remote_url.
  */
 const pullAssets = async (gateway) => {
@@ -576,7 +578,7 @@ const pullAssets = async (gateway) => {
 			return;
 		}
 		const isModuleAsset = physicalPath === dir.MODULES || physicalPath.indexOf(dir.MODULES + '/') === 0;
-		const root = isModuleAsset ? dir.MODULES : dir.LEGACY_APP;
+		const root = isModuleAsset ? dir.MODULES : dir.APP;
 		const relativePath = isModuleAsset
 			? physicalPath.slice(dir.MODULES.length).replace(/^\//, '')
 			: physicalPath;
@@ -600,19 +602,22 @@ const pullAssets = async (gateway) => {
 /**
  * Final local cleanup after site/module/asset pulls have finished.
  *
- * Side effects: removes leftover pull zips (`marketplace_builder.zip`, `modules-*.zip`),
- * removes `./.tmp` if present, moves any leftover `marketplace_builder/modules` into `./modules`
- * then deletes that nested folder, removes empty dirs under `marketplace_builder`;
+ * Side effects: removes leftover pull zips (`app.zip`, `marketplace_builder.zip`, `modules-*.zip`),
+ * removes `./.tmp` if present, moves any leftover `app/modules` into `./modules`
+ * then deletes that nested folder, removes empty dirs under `app`;
  * updates `pullSpinner` text and writes tidying-up logs.
  */
 const tidyUpAfterPull = async () => {
 	logger.Info('[pull] Step: tidying up local files');
 	pullSpinner.text = 'Tidying up...';
 
-	const siteZip = `./${dir.LEGACY_APP}.zip`;
-	if (await fs.pathExists(siteZip)) {
-		await fs.remove(siteZip);
-		logger.Debug(`[pull] Removed leftover ${siteZip}`);
+	const siteZips = [`./${dir.APP}.zip`, `./${dir.LEGACY_APP}.zip`];
+	for (let i = 0; i < siteZips.length; i++) {
+		const siteZip = siteZips[i];
+		if (await fs.pathExists(siteZip)) {
+			await fs.remove(siteZip);
+			logger.Debug(`[pull] Removed leftover ${siteZip}`);
+		}
 	}
 
 	const cwdEntries = await fs.readdir('.');
@@ -629,17 +634,22 @@ const tidyUpAfterPull = async () => {
 		logger.Debug(`[pull] Removed ./${dir.TMP}`);
 	}
 
-	// Pull must not leave modules nested under marketplace_builder
-	const nestedModules = `./${dir.LEGACY_APP}/modules`;
-	if (await fs.pathExists(nestedModules)) {
-		await moveModulesToRoot(dir.LEGACY_APP);
+	// Pull must not leave modules nested under app (or leftover marketplace_builder)
+	const appRoots = [dir.APP, dir.LEGACY_APP];
+	for (let i = 0; i < appRoots.length; i++) {
+		const appRoot = appRoots[i];
+		const nestedModules = `./${appRoot}/modules`;
+		if (await fs.pathExists(nestedModules)) {
+			await moveModulesToRoot(appRoot);
+		}
+		if (await fs.pathExists(nestedModules)) {
+			await fs.remove(nestedModules);
+			logger.Debug(`[pull] Removed leftover ${nestedModules}`);
+		}
+		if (await fs.pathExists(`./${appRoot}`)) {
+			await cleanupEmptyDirs(appRoot);
+		}
 	}
-	if (await fs.pathExists(nestedModules)) {
-		await fs.remove(nestedModules);
-		logger.Debug(`[pull] Removed leftover ${nestedModules}`);
-	}
-
-	await cleanupEmptyDirs(dir.LEGACY_APP);
 	logger.Info('[pull] Tidying up complete');
 };
 
@@ -665,7 +675,7 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into marketplace_builder and module public files into modules/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds .cursor/.claude/.windsurf/.github discovery folders linked to ./.agents/skills. Modules pull in parallel (see --concurrency). Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
+	.description('Pull site files into app/ and module public files into modules/. Migrates marketplace_builder/ → app/ when needed (git mv in a git repo). Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
@@ -694,6 +704,10 @@ program
 		return Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
 				try {
+					// Must run before any unzip/download creates ./app (otherwise both
+					// marketplace_builder/ and app/ appear and migration is skipped).
+					await migrateMarketplaceBuilderToApp();
+
 					pullSpinner.start();
 					if (moduleFilter) {
 						logger.Info(`[pull] Module filter (-m): "${moduleFilter}"`);
@@ -740,6 +754,9 @@ program
 
 					// After module zips (and assets that may land under modules/) are on disk
 					await mergeModuleAgentsToRoot(modulesToPull);
+
+					pullSpinner.text = 'Checking IDE MCP registration';
+					ensureMcpRegistered();
 
 					await tidyUpAfterPull();
 
