@@ -566,24 +566,35 @@ const pullAssets = async (gateway) => {
 		});
 	}));
 	let moduleAssetCount = 0;
+	let wroteCount = 0;
+	let skippedEmptyPath = 0;
 	asset_files.forEach(file => {
 		const physicalPath = file.data.physical_file_path.replace(/\\/g, '/');
+		if (physicalPath.indexOf('//') > -1) {
+			skippedEmptyPath++;
+			logger.Info(`[pull] Skipping asset with empty folder in path: ${physicalPath}`);
+			return;
+		}
 		const isModuleAsset = physicalPath === dir.MODULES || physicalPath.indexOf(dir.MODULES + '/') === 0;
 		const root = isModuleAsset ? dir.MODULES : dir.LEGACY_APP;
 		const relativePath = isModuleAsset
 			? physicalPath.slice(dir.MODULES.length).replace(/^\//, '')
 			: physicalPath;
-		if (isModuleAsset) {
-			moduleAssetCount++;
-		}
 		if (!relativePath) {
 			return;
+		}
+		if (isModuleAsset) {
+			moduleAssetCount++;
 		}
 		const fullPath = path.join(root, relativePath);
 		fs.mkdirSync(path.dirname(fullPath), { recursive: true });
 		fs.writeFileSync(fullPath, file.data.body, logger.Error);
+		wroteCount++;
 	});
-	logger.Info(`[pull] Assets: wrote ${asset_files.length} file(s) (${moduleAssetCount} under modules)`);
+	if (skippedEmptyPath > 0) {
+		logger.Info(`[pull] Assets: skipped ${skippedEmptyPath} file(s) with empty folder in path`);
+	}
+	logger.Info(`[pull] Assets: wrote ${wroteCount} file(s) (${moduleAssetCount} under modules)`);
 };
 
 /**
