@@ -20,6 +20,9 @@ const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 /** Project-root folder that receives merged agent files from modules. */
 const AGENTS_ROOT = '.agents';
 
+/** Default max concurrent module backup/download/extract jobs. */
+const DEFAULT_MODULE_PULL_CONCURRENCY = 3;
+
 /**
  * Copy each child of `srcDir` into `destDir` (merge/overwrite).
  * Used instead of copying a folder into its parent, which fs-extra cannot do safely.
@@ -429,7 +432,6 @@ const pullModuleZip = async (gateway, moduleName, index, total) => {
 	logger.Info(`[pull] Step: module ${index}/${total} — "${moduleName}"`);
 	const filename = `${dir.MODULES}-${moduleName}.zip`;
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
-	pullSpinner.text = `Pulling module: ${moduleName}`;
 	const pullTask = await gateway.pullZip({ module_name: moduleName });
 	logger.Info(`[pull] Module "${moduleName}" backup started (id: ${pullTask.id})`);
 	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
@@ -458,6 +460,66 @@ const pullModuleZip = async (gateway, moduleName, index, total) => {
 		await fs.remove(`./${workDir}`);
 	}
 	logger.Info(`[pull] Module "${moduleName}" pull complete`);
+};
+
+/**
+ * Run `iterator` over `items` with at most `limit` promises in flight.
+ * Preserves result order. Fails fast if any iterator rejects.
+ *
+ * @template T, R
+ * @param {T[]} items - Items to process.
+ * @param {number} limit - Max concurrent iterators.
+ * @param {(item: T, index: number) => Promise<R>} iterator - Async worker.
+ * @returns {Promise<R[]>} Results in the same order as `items`.
+ * Side effects: whatever `iterator` does.
+ */
+const mapLimit = async (items, limit, iterator) => {
+	const results = new Array(items.length);
+	let nextIndex = 0;
+	const workerCount = Math.min(Math.max(1, limit), items.length);
+
+	const workers = [];
+	for (let w = 0; w < workerCount; w++) {
+		workers.push((async () => {
+			while (true) {
+				const i = nextIndex;
+				nextIndex += 1;
+				if (i >= items.length) {
+					return;
+				}
+				results[i] = await iterator(items[i], i);
+			}
+		})());
+	}
+
+	await Promise.all(workers);
+	return results;
+};
+
+/**
+ * Pull every selected module with capped concurrency (unique zip/work paths per module).
+ *
+ * @param {Gateway} gateway - Authenticated API client.
+ * @param {string[]} modulesToPull - Module machine names to pull.
+ * @param {number} concurrency - Max concurrent module pulls.
+ * Side effects: same as `pullModuleZip` for each module; updates pullSpinner text.
+ */
+const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
+	const total = modulesToPull.length;
+	if (total === 0) {
+		return;
+	}
+
+	const limit = Math.max(1, concurrency);
+	logger.Info(`[pull] Pulling ${total} module(s) with concurrency ${limit}`);
+	pullSpinner.text = `Pulling modules (up to ${limit} at a time)`;
+
+	let completed = 0;
+	await mapLimit(modulesToPull, limit, async (moduleName, index) => {
+		await pullModuleZip(gateway, moduleName, index + 1, total);
+		completed += 1;
+		pullSpinner.text = `Pulling modules (${completed}/${total} done, up to ${limit} at a time)`;
+	});
 };
 
 /**
@@ -594,15 +656,29 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into marketplace_builder and module public files into modules/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds .cursor/.claude/.windsurf/.github discovery folders linked to ./.agents/skills. Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
+	.description('Pull site files into marketplace_builder and module public files into modules/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds .cursor/.claude/.windsurf/.github discovery folders linked to ./.agents/skills. Modules pull in parallel (see --concurrency). Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
 	.option('-m --module <module>', 'Optional module name filter. Without this flag, all installed modules are pulled.')
+	.option(
+		'--concurrency <number>',
+		`Max concurrent module pulls (default: ${DEFAULT_MODULE_PULL_CONCURRENCY}, or CONCURRENCY env)`,
+		(value) => {
+			const parsed = parseInt(value, 10);
+			if (isNaN(parsed) || parsed < 1) {
+				throw new Error('--concurrency must be a positive integer');
+			}
+			return parsed;
+		}
+	)
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const ignoreAssets = params.ignoreAssets;
 		const moduleFilter = params.module;
+		const envConcurrency = parseInt(process.env.CONCURRENCY, 10);
+		const modulePullConcurrency = params.concurrency
+			|| (envConcurrency > 0 ? envConcurrency : DEFAULT_MODULE_PULL_CONCURRENCY);
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
 
@@ -619,6 +695,7 @@ program
 					if (ignoreAssets) {
 						logger.Info('[pull] --ignore-assets set; asset download step will be skipped');
 					}
+					logger.Info(`[pull] Module pull concurrency: ${modulePullConcurrency}`);
 
 					pullSpinner.text = 'Fetching installed modules';
 					logger.Info('[pull] Step: listing installed modules via /cli/list_modules');
@@ -649,9 +726,7 @@ program
 
 					await pullSiteZip(gateway);
 
-					for (let i = 0; i < modulesToPull.length; i++) {
-						await pullModuleZip(gateway, modulesToPull[i], i + 1, modulesToPull.length);
-					}
+					await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency);
 					if (modulesToPull.length > 0) {
 						logger.Info('[pull] All selected modules pulled');
 					}
