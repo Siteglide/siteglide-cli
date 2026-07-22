@@ -17,6 +17,9 @@ const program = require('commander'),
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 
+/** Project-root folder that receives merged agent files from modules. */
+const AGENTS_ROOT = '.agents';
+
 /**
  * Copy each child of `srcDir` into `destDir` (merge/overwrite).
  * Used instead of copying a folder into its parent, which fs-extra cannot do safely.
@@ -32,6 +35,304 @@ const copyChildren = async (srcDir, destDir) => {
 		const name = children[i];
 		await fs.copy(path.join(srcDir, name), path.join(destDir, name), { overwrite: true });
 	}
+};
+
+/**
+ * Clear the read-only / write-protect bit on a file so it can be overwritten on the next pull.
+ * No-op for missing paths and directories. Failures are logged at Debug and ignored.
+ *
+ * @param {string} filePath - Absolute or relative path to a file.
+ * Side effects: may chmod the file to add owner-write.
+ */
+const makeWritable = async (filePath) => {
+	try {
+		if (!(await fs.pathExists(filePath))) {
+			return;
+		}
+		const stats = await fs.stat(filePath);
+		if (stats.isDirectory()) {
+			return;
+		}
+		await fs.chmod(filePath, stats.mode | 0o200);
+	} catch (e) {
+		logger.Debug(`[pull] Could not clear read-only on ${filePath}: ${e.message}`);
+	}
+};
+
+/**
+ * Mark a file read-only after merge (cross-platform hint that it came from a module).
+ * Directories are left writable so later pulls can add/replace children.
+ * Failures are logged at Debug and ignored.
+ *
+ * @param {string} filePath - Absolute or relative path to a file.
+ * Side effects: may chmod the file to remove write bits.
+ */
+const makeReadOnly = async (filePath) => {
+	try {
+		const stats = await fs.stat(filePath);
+		if (stats.isDirectory()) {
+			return;
+		}
+		await fs.chmod(filePath, stats.mode & ~0o222);
+	} catch (e) {
+		logger.Debug(`[pull] Could not set read-only on ${filePath}: ${e.message}`);
+	}
+};
+
+/**
+ * Recursively merge `srcDir` into `destDir`. Existing destination files are made writable,
+ * overwritten, then marked read-only again so the next pull can still replace them.
+ *
+ * @param {string} srcDir - Source `.agents` tree under a module.
+ * @param {string} destDir - Destination project-root `.agents` directory.
+ * @param {string} moduleName - Module name (for log messages).
+ * @returns {Promise<number>} Number of files written.
+ * Side effects: creates dirs; writes/overwrites files under destDir; may chmod files.
+ */
+const copyAgentsTree = async (srcDir, destDir, moduleName) => {
+	await fs.ensureDir(destDir);
+	const entries = await fs.readdir(srcDir);
+	let fileCount = 0;
+	for (let i = 0; i < entries.length; i++) {
+		const name = entries[i];
+		const srcPath = path.join(srcDir, name);
+		const destPath = path.join(destDir, name);
+		const stats = await fs.stat(srcPath);
+		if (stats.isDirectory()) {
+			logger.Info(`[pull] .agents: merging directory "${name}/" from module "${moduleName}"`);
+			fileCount += await copyAgentsTree(srcPath, destPath, moduleName);
+		} else {
+			await makeWritable(destPath);
+			await fs.copy(srcPath, destPath, { overwrite: true });
+			await makeReadOnly(destPath);
+			const displayPath = destPath.replace(/\\/g, '/').replace(/^\.\//, '');
+			logger.Info(`[pull] .agents: wrote ./${displayPath} (from module "${moduleName}")`);
+			fileCount++;
+		}
+	}
+	return fileCount;
+};
+
+/**
+ * For each pulled module, if `modules/<name>/public/assets/.agents/` exists, merge its
+ * contents into the project-root `./.agents/` directory (overwrite on conflict).
+ * When at least one `SKILL.md` is present under `./.agents`, also scaffolds IDE discovery
+ * folders (Cursor, Claude, Windsurf, Copilot) pointing at the shared skills tree.
+ *
+ * @param {string[]} moduleNames - Module machine names that were pulled this run.
+ * @returns {Promise<{modulesWithAgents: number, totalFiles: number, skillCount: number}>}
+ * Side effects: may create `./.agents` and write/overwrite files under it; may create IDE
+ * root folders/symlinks; updates pullSpinner text.
+ */
+const mergeModuleAgentsToRoot = async (moduleNames) => {
+	logger.Info(`[pull] Step: merging modules/*/public/assets/${AGENTS_ROOT} → ./${AGENTS_ROOT}`);
+	pullSpinner.text = `Merging ${AGENTS_ROOT} files`;
+
+	const result = { modulesWithAgents: 0, totalFiles: 0, skillCount: 0 };
+
+	if (!moduleNames || moduleNames.length === 0) {
+		logger.Info(`[pull] No modules to scan for ${AGENTS_ROOT} — skip`);
+		return result;
+	}
+
+	for (let i = 0; i < moduleNames.length; i++) {
+		const moduleName = moduleNames[i];
+		const agentsSrc = path.join('.', dir.MODULES, moduleName, 'public', 'assets', AGENTS_ROOT);
+		const agentsSrcDisplay = agentsSrc.replace(/\\/g, '/');
+		logger.Info(`[pull] Checking for ${agentsSrcDisplay}`);
+
+		if (!(await fs.pathExists(agentsSrc))) {
+			logger.Info(`[pull] Module "${moduleName}" — no ${AGENTS_ROOT} directory found`);
+			continue;
+		}
+
+		const srcStat = await fs.stat(agentsSrc);
+		if (!srcStat.isDirectory()) {
+			logger.Info(`[pull] Module "${moduleName}" — ${AGENTS_ROOT} exists but is not a directory; skip`);
+			continue;
+		}
+
+		logger.Info(`[pull] Module "${moduleName}" — found ${AGENTS_ROOT}; merging into ./${AGENTS_ROOT}`);
+		const count = await copyAgentsTree(agentsSrc, `./${AGENTS_ROOT}`, moduleName);
+		result.modulesWithAgents++;
+		result.totalFiles += count;
+		logger.Info(`[pull] Module "${moduleName}" — merged ${count} file(s) into ./${AGENTS_ROOT}`);
+	}
+
+	logger.Info(
+		`[pull] ${AGENTS_ROOT} merge complete: ${result.modulesWithAgents} module(s) contributed, ${result.totalFiles} file(s) written to ./${AGENTS_ROOT}`
+	);
+
+	result.skillCount = await countSkillMarkdownFiles(`./${AGENTS_ROOT}`);
+	logger.Info(`[pull] Found ${result.skillCount} SKILL.md file(s) under ./${AGENTS_ROOT}`);
+
+	if (result.skillCount > 0) {
+		await ensureAgentIdeScaffolding();
+	} else {
+		logger.Info('[pull] No skills found — skipping IDE discovery scaffolding');
+	}
+
+	return result;
+};
+
+/**
+ * Recursively count `SKILL.md` files under a directory (follows real dirs, not via symlink walk of link targets beyond lstat dirs).
+ *
+ * @param {string} rootDir - Directory to scan.
+ * @returns {Promise<number>} Number of SKILL.md files found.
+ * Side effects: none.
+ */
+const countSkillMarkdownFiles = async (rootDir) => {
+	if (!(await fs.pathExists(rootDir))) {
+		return 0;
+	}
+	let count = 0;
+	const walk = async (current) => {
+		const entries = await fs.readdir(current);
+		for (let i = 0; i < entries.length; i++) {
+			const fullPath = path.join(current, entries[i]);
+			const stats = await fs.lstat(fullPath);
+			if (stats.isDirectory()) {
+				await walk(fullPath);
+			} else if (stats.isFile() && entries[i] === 'SKILL.md') {
+				count++;
+			}
+		}
+	};
+	await walk(rootDir);
+	return count;
+};
+
+/**
+ * Ensure `linkPath` is a directory symlink/junction pointing at `targetPath`
+ * (source of truth under `.agents/skills`). Cross-platform: junction on Windows, dir symlink elsewhere.
+ *
+ * @param {string} linkPath - Relative path for the discovery folder (e.g. `.cursor/skills`).
+ * @param {string} targetPath - Relative path to the shared skills tree (e.g. `.agents/skills`).
+ * Side effects: may remove an existing link/dir at linkPath; creates parent dirs; creates symlink/junction.
+ */
+const ensureSkillsDirLink = async (linkPath, targetPath) => {
+	const linkAbs = path.resolve(linkPath);
+	const targetAbs = path.resolve(targetPath);
+
+	logger.Info(`[pull] Ensuring skills link: ${linkPath} → ${targetPath}`);
+	await fs.ensureDir(path.dirname(linkAbs));
+	await fs.ensureDir(targetAbs);
+
+	if (await fs.pathExists(linkAbs)) {
+		const linkStat = await fs.lstat(linkAbs);
+		if (linkStat.isSymbolicLink()) {
+			let currentTarget = await fs.readlink(linkAbs);
+			if (!path.isAbsolute(currentTarget)) {
+				currentTarget = path.resolve(path.dirname(linkAbs), currentTarget);
+			}
+			if (path.resolve(currentTarget) === targetAbs) {
+				logger.Info(`[pull] Skills link already correct: ${linkPath}`);
+				return;
+			}
+			logger.Info(`[pull] Replacing outdated skills link at ${linkPath}`);
+			await fs.remove(linkAbs);
+		} else {
+			logger.Info(`[pull] Replacing existing path at ${linkPath} with link to shared ${targetPath}`);
+			await fs.remove(linkAbs);
+		}
+	}
+
+	const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+	const linkTarget = process.platform === 'win32'
+		? targetAbs
+		: path.relative(path.dirname(linkAbs), targetAbs) || '.';
+	await fs.symlink(linkTarget, linkAbs, linkType);
+	logger.Info(`[pull] Created ${linkType} ${linkPath} → ${targetPath}`);
+};
+
+/**
+ * Write a managed text file (overwrite). Used for IDE pointer rules that tell agents
+ * how to find `./.agents` when native discovery is missing.
+ *
+ * @param {string} filePath - Relative path to write.
+ * @param {string} contents - File body.
+ * Side effects: creates parent dirs; writes/overwrites the file; may chmod read-only after write.
+ */
+const writeManagedAgentFile = async (filePath, contents) => {
+	await fs.ensureDir(path.dirname(filePath));
+	await makeWritable(filePath);
+	await fs.writeFile(filePath, contents, 'utf8');
+	await makeReadOnly(filePath);
+	logger.Info(`[pull] Wrote ${filePath.replace(/\\/g, '/')}`);
+};
+
+/** Cursor always-on rule — mirrors Siteglide/Siteglide-AI-Skills `.cursor/rules/setup_siteglide_skills.mdc`. */
+const CURSOR_SETUP_RULE = `---
+alwaysApply: true
+---
+Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents directory for skills on startup and add matching skills in your .cursor/skills directory using symlinks.
+`;
+
+/** Claude project instructions — mirrors Siteglide/Siteglide-AI-Skills `.claude/CLAUDE.md`. */
+const CLAUDE_SETUP_MD = `# Setup Siteglide Skills
+
+Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents/skills/siteglide/ directory for skills on startup and use a single bash command to copy that to your ./.claude/skills/ directory. Then reload your plugins if needed (to import those new skills).
+`;
+
+/** Windsurf always-on rule pointing at the shared `.agents` tree. */
+const WINDSURF_SETUP_RULE = `---
+trigger: always_on
+---
+Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents directory for skills on startup and add matching skills in your .windsurf/skills directory using symlinks (or rely on ./.windsurf/skills if it already links to ./.agents/skills).
+`;
+
+/** Copilot custom instructions pointing at the shared `.agents` tree. */
+const COPILOT_INSTRUCTIONS_MD = `<!-- Managed by siteglide-cli pull — source of truth is ./.agents/skills -->
+If agent skills are not already available, use the skills under ./.agents/skills/ (also linked from ./.github/skills/). Prefer those over inventing Siteglide/platformOS workflows from memory.
+`;
+
+/**
+ * When skills exist under `./.agents`, create IDE root folders so Cursor, Claude, Windsurf,
+ * and GitHub Copilot can discover them. Skills stay in `./.agents/skills` (source of truth);
+ * platform folders get a symlink/junction to that tree plus a small pointer rule/instructions
+ * file matching https://github.com/Siteglide/Siteglide-AI-Skills
+ *
+ * Side effects: creates `.cursor`, `.claude`, `.windsurf`, `.github` paths; writes managed
+ * pointer files; creates/replaces skills directory links; updates pullSpinner text.
+ */
+const ensureAgentIdeScaffolding = async () => {
+	logger.Info('[pull] Step: scaffolding IDE skill discovery folders (cursor, claude, windsurf, copilot)');
+	pullSpinner.text = 'Setting up IDE skill folders';
+
+	const skillsTarget = path.join(AGENTS_ROOT, 'skills');
+	await fs.ensureDir(`./${skillsTarget}`);
+
+	// Cursor — rule (as in Siteglide-AI-Skills) + skills link for native .cursor/skills discovery
+	logger.Info('[pull] Scaffolding .cursor/');
+	await writeManagedAgentFile(
+		path.join('.cursor', 'rules', 'setup_siteglide_skills.mdc'),
+		CURSOR_SETUP_RULE
+	);
+	await ensureSkillsDirLink(path.join('.cursor', 'skills'), skillsTarget);
+
+	// Claude — CLAUDE.md pointer + skills link (Claude discovers .claude/skills)
+	logger.Info('[pull] Scaffolding .claude/');
+	await writeManagedAgentFile(path.join('.claude', 'CLAUDE.md'), CLAUDE_SETUP_MD);
+	await ensureSkillsDirLink(path.join('.claude', 'skills'), skillsTarget);
+
+	// Windsurf — rule + skills link (Cascade discovers .windsurf/skills; also reads .agents/skills)
+	logger.Info('[pull] Scaffolding .windsurf/');
+	await writeManagedAgentFile(
+		path.join('.windsurf', 'rules', 'setup_siteglide_skills.md'),
+		WINDSURF_SETUP_RULE
+	);
+	await ensureSkillsDirLink(path.join('.windsurf', 'skills'), skillsTarget);
+
+	// Copilot — instructions under .github + skills link (.github/skills is Copilot's project path)
+	logger.Info('[pull] Scaffolding .github/ (Copilot)');
+	await writeManagedAgentFile(
+		path.join('.github', 'copilot-instructions.md'),
+		COPILOT_INSTRUCTIONS_MD
+	);
+	await ensureSkillsDirLink(path.join('.github', 'skills'), skillsTarget);
+
+	logger.Info('[pull] IDE skill discovery scaffolding complete');
 };
 
 /**
@@ -293,7 +594,7 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into marketplace_builder and module public files into modules/. Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
+	.description('Pull site files into marketplace_builder and module public files into modules/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds .cursor/.claude/.windsurf/.github discovery folders linked to ./.agents/skills. Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
@@ -360,6 +661,9 @@ program
 					} else {
 						logger.Info('[pull] Skipping assets step');
 					}
+
+					// After module zips (and assets that may land under modules/) are on disk
+					await mergeModuleAgentsToRoot(modulesToPull);
 
 					await tidyUpAfterPull();
 
