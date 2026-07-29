@@ -14,8 +14,11 @@ const program = require('commander'),
 	unzip = require('./lib/unzip'),
 	path = require('path'),
 	dir = require('./lib/directories'),
-	{ ensureMcpRegistered } = require('./lib/ai'),
-	{ migrateMarketplaceBuilderToApp } = require('./lib/migrateAppDirectory');
+	{ ensureMcpRegistered, ensureMcpIdeRules } = require('./lib/ai'),
+	{
+		migrateMarketplaceBuilderToApp,
+		resolveSiteAppRoot
+	} = require('./lib/migrateAppDirectory');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 
@@ -275,12 +278,17 @@ const CURSOR_SETUP_RULE = `---
 alwaysApply: true
 ---
 Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents directory for skills on startup and add matching skills in your .cursor/skills directory using symlinks.
+Also follow ./.cursor/rules/setup_siteglide_mcp.mdc for Siteglide MCP (never read .siteglide-config; use envs_list).
 `;
 
 /** Claude project instructions — mirrors Siteglide/Siteglide-AI-Skills `.claude/CLAUDE.md`. */
 const CLAUDE_SETUP_MD = `# Setup Siteglide Skills
 
 Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents/skills/siteglide/ directory for skills on startup and use a single bash command to copy that to your ./.claude/skills/ directory. Then reload your plugins if needed (to import those new skills).
+
+## Siteglide MCP
+
+See ./.claude/siteglide-mcp.md. Prefer Siteglide MCP tools. NEVER read .siteglide-config — use envs_list for environment names.
 `;
 
 /** Windsurf always-on rule pointing at the shared `.agents` tree. */
@@ -288,11 +296,13 @@ const WINDSURF_SETUP_RULE = `---
 trigger: always_on
 ---
 Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents directory for skills on startup and add matching skills in your .windsurf/skills directory using symlinks (or rely on ./.windsurf/skills if it already links to ./.agents/skills).
+Also follow ./.windsurf/rules/setup_siteglide_mcp.md for Siteglide MCP (never read .siteglide-config; use envs_list).
 `;
 
 /** Copilot custom instructions pointing at the shared `.agents` tree. */
 const COPILOT_INSTRUCTIONS_MD = `<!-- Managed by siteglide-cli pull — source of truth is ./.agents/skills -->
 If agent skills are not already available, use the skills under ./.agents/skills/ (also linked from ./.github/skills/). Prefer those over inventing Siteglide/platformOS workflows from memory.
+Also see ./.github/siteglide-mcp.md: prefer Siteglide MCP tools; NEVER read .siteglide-config — use envs_list for environment names.
 `;
 
 /**
@@ -387,31 +397,33 @@ const moveModulesToRoot = async (fromRoot) => {
 };
 
 /**
- * Download the main site backup zip and convert it into local `app/`.
+ * Download the main site backup zip and convert it into the local site root (`app/` or
+ * `marketplace_builder/` if the temporary rename confirm was declined).
  * Calls Siteglide-API `/cli/backup` then `/cli/backupStatus/:id` (no module_name).
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
- * Side effects: writes/overwrites `./app`; may merge into `./modules`;
+ * @param {string} [siteRoot] - Relative site folder (`app` or `marketplace_builder`).
+ * Side effects: writes/overwrites that folder; may merge into `./modules`;
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
-const pullSiteZip = async (gateway) => {
-	logger.Info('[pull] Step: downloading main site zip');
-	const filename = `${dir.APP}.zip`;
+const pullSiteZip = async (gateway, siteRoot = dir.APP) => {
+	logger.Info(`[pull] Step: downloading main site zip → ${siteRoot}/`);
+	const filename = `${siteRoot}.zip`;
 	pullSpinner.text = 'Pulling site files';
 	const pullTask = await gateway.pullZip();
 	logger.Debug(`[pull] Site backup started (id: ${pullTask.id})`);
 	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
 	logger.Debug(`[pull] Site backup ready (status: ${readyTask.status}) — downloading zip`);
 	await downloadFile(readyTask.zip_file.url, filename);
-	await unzip(filename, dir.APP);
-	await copyChildren(`./${dir.APP}/app`, `./${dir.APP}`);
+	await unzip(filename, siteRoot);
+	await copyChildren(`./${siteRoot}/app`, `./${siteRoot}`);
 	await fs.remove(`./${filename}`);
-	await moveModulesToRoot(dir.APP);
-	if (await fs.pathExists(`./${dir.APP}/asset_manifest.json`)) {
-		await fs.remove(`./${dir.APP}/asset_manifest.json`);
+	await moveModulesToRoot(siteRoot);
+	if (await fs.pathExists(`./${siteRoot}/asset_manifest.json`)) {
+		await fs.remove(`./${siteRoot}/asset_manifest.json`);
 	}
-	await fs.remove(`./${dir.APP}/app`);
-	await cleanupEmptyDirs(dir.APP);
+	await fs.remove(`./${siteRoot}/app`);
+	await cleanupEmptyDirs(siteRoot);
 	logger.Info('[pull] Site files pulled');
 };
 
@@ -526,13 +538,14 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
 /**
  * Fetch the asset file list from Siteglide-API `/cli/pull` and download matching text/binary assets
  * by physical_file_path. Paths under `modules/` are written to `./modules/...`; everything else
- * goes under `./app/...` so this step does not recreate `app/modules`.
+ * goes under the site root (`app/` or `marketplace_builder/`) so this step does not recreate nested modules.
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
- * Side effects: creates dirs and writes/overwrites asset files under `./app` or `./modules`;
+ * @param {string} [siteRoot] - Relative site folder for non-module assets.
+ * Side effects: creates dirs and writes/overwrites asset files under the site root or `./modules`;
  * updates `pullSpinner` text; downloads each asset from its remote_url.
  */
-const pullAssets = async (gateway) => {
+const pullAssets = async (gateway, siteRoot = dir.APP) => {
 	pullSpinner.text = 'Pulling assets';
 	const response = await gateway.pull();
 	const asset_files = [];
@@ -578,7 +591,7 @@ const pullAssets = async (gateway) => {
 			return;
 		}
 		const isModuleAsset = physicalPath === dir.MODULES || physicalPath.indexOf(dir.MODULES + '/') === 0;
-		const root = isModuleAsset ? dir.MODULES : dir.APP;
+		const root = isModuleAsset ? dir.MODULES : siteRoot;
 		const relativePath = isModuleAsset
 			? physicalPath.slice(dir.MODULES.length).replace(/^\//, '')
 			: physicalPath;
@@ -675,7 +688,7 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into app/ and module public files into modules/. Migrates marketplace_builder/ → app/ when needed (git mv in a git repo). Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
+	.description('Pull site files into app/ and module public files into modules/. Migrates marketplace_builder/ → app/ when needed (filesystem rename + staged exact path rewrite in a git repo). Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
@@ -706,7 +719,10 @@ program
 				try {
 					// Must run before any unzip/download creates ./app (otherwise both
 					// marketplace_builder/ and app/ appear and migration is skipped).
-					await migrateMarketplaceBuilderToApp();
+					// TEMPORARY: prompts before rename — remove confirm later.
+					const migrateResult = await migrateMarketplaceBuilderToApp();
+					const siteRoot = await resolveSiteAppRoot();
+					logger.Info(`[pull] Site files root: ${siteRoot}/`);
 
 					pullSpinner.start();
 					if (moduleFilter) {
@@ -742,12 +758,12 @@ program
 						logger.Info(`[pull] Will pull ${modulesToPull.length} module(s): ${modulesToPull.join(', ')}`);
 					}
 
-					await pullSiteZip(gateway);
+					await pullSiteZip(gateway, siteRoot);
 
 					await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency);
 
 					if (!ignoreAssets) {
-						await pullAssets(gateway);
+						await pullAssets(gateway, siteRoot);
 					} else {
 						logger.Info('[pull] Skipping assets step');
 					}
@@ -757,10 +773,16 @@ program
 
 					pullSpinner.text = 'Checking IDE MCP registration';
 					ensureMcpRegistered();
+					ensureMcpIdeRules();
 
 					await tidyUpAfterPull();
 
 					logger.Info('[pull] All steps finished');
+					if (migrateResult === 'renamed-fs') {
+						logger.Info(
+							'[pull] Tip: if you use git, stage/commit the marketplace_builder/ → app/ rename when ready'
+						);
+					}
 					pullSpinner.succeed('Pulled files');
 				} catch (e) {
 					logger.Debug(e);

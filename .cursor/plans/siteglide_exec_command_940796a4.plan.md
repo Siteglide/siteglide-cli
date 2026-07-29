@@ -1,6 +1,6 @@
 ---
 name: siteglide MCP desktop
-overview: Scaffold Siteglide-MCP---Experimental (compose platformOS validate_code + Siteglide rules/ops + marketplace_builder path bridge) and wire siteglide-cli ai init + thin mcp/supervisor launchers. Stdio first; HTTP/SSE/Docker deferred. CLI exec intentionally not shipped (ops live in MCP only).
+overview: Siteglide MCP desktop (stdio) + pull-time MCP registration + marketplace_builder→app migrate (FS rename + staged path rewrite; commit to record renames). test-rename harness removed.
 todos:
   - id: lib-exec
     content: "CANCELLED: siteglide-cli exec — ops live in MCP graphql_exec/liquid_exec instead"
@@ -31,6 +31,12 @@ todos:
     status: completed
   - id: http-docker-later
     content: "DEFERRED: HTTP/SSE + Docker for browser agents"
+    status: cancelled
+  - id: win-git-rename-index
+    content: "Fix migrate+pull git UX: stage exact path rewrite before unzip; then stage app/ content mods (avoid D/A churn)"
+    status: completed
+  - id: test-rename-cmd
+    content: "REMOVED: siteglide-cli test-rename harness (rename works; commit records renames)"
     status: cancelled
 isProject: false
 ---
@@ -233,6 +239,35 @@ Depend on / invoke MCP package; `ai init`; thin `mcp` / `supervisor` bins
 
 ### 3 — (later)
 HTTP/SSE, Dockerfile, web agent BFF auth; drop bridge when upstream marketplace_builder support is enough
+
+## Next — Windows git index after `marketplace_builder` → `app`
+
+**Symptom:** After pull migrate on Windows, git shows ~10k changed files (mass delete + add) instead of renames.
+
+### Research takeaways (why “just git mv harder” is the wrong goal)
+
+Git does **not** store renames. It stores snapshots; `git status` / `git diff` *detect* renames by pairing deletes with adds ([torek / SO](https://stackoverflow.com/questions/60185482/git-mv-did-not-flag-every-file-as-renamed-several-are-deleted-added), [Dynamics blog](https://community.dynamics.com/blogs/post/?postid=24c0d875-2cc4-45d1-996a-a56a753eaca2)):
+
+- **Exact renames** (identical blob hash): linear, fast, works for thousands of files — `git mv` and `mv` + `git add -A` are equivalent for history.
+- **Inexact renames** (path moved *and* content changed): quadratic; skipped when pair count exceeds `diff.renameLimit` / `status.renameLimit` (default historically ~1000). Then status shows raw `D`/`A` for the whole tree — matches the ~10k churn symptom.
+- Mixing a directory rename with a full site zip overwrite in one unstaged/staged blob is exactly the inexact-rename trap: hashes no longer match, limit kicks in, UI looks broken.
+- Windows `fatal: bad source` on `git mv *` is usually shell globbing ([git-for-windows#3250](https://github.com/git-for-windows/git/issues/3250)); our code already uses `execFile` + `git.exe` without globs. Remaining `git mv` failures are secondary — FS rename is fine if the **index timing** is right ([git-for-windows#1750](https://github.com/git-for-windows/git/issues/1750): Explorer move needs `git add -A` to sync index).
+
+### Chosen approach (concrete)
+
+In [`lib/migrateAppDirectory.js`](d:\git\siteglide-cli\lib\migrateAppDirectory.js) + [`siteglide-cli-pull.js`](d:\git\siteglide-cli\siteglide-cli-pull.js):
+
+1. **Diagnose once on a real Windows site** (migrate-only pause or debug flag): after disk rename + index update, *before* unzip, run `git -c status.renameLimit=0 status --short` / `git diff --cached --name-status -M100%`. Expect mostly `R100%`. If not, fix staging first.
+2. **Prefer FS rename + immediate index sync** (keep `git mv` as optional fast path only): `fs.move(marketplace_builder, app)` then `git add -A -- app marketplace_builder` while on-disk content still matches HEAD blobs → stages **exact** renames into the index.
+3. **Then** download/unzip into `app/` (existing pull). Do **not** re-run a combined `git add -A` over both old and new roots after content rewrite in a way that re-pairs D/A across the rename; after unzip only stage under `app/` (`git add -A -- app`) so post-pull churn is **modifications** (and new files) under `app/`, with the path rewrite already recorded.
+4. **Log clearly** after migrate: rename staged; any large remaining status after pull is site content sync under `app/`, not a failed folder move.
+5. **Verify**: migrate-only → `R` lines; full pull → no mass `D marketplace_builder` + `A app` for the same relative paths; Cursor/git status should not look like 10k delete+add of the whole tree.
+
+Do **not** rely on raising global `renameLimit` as the primary fix (helps display of inexact pairs, does not fix mixing rename+content). Do **not** require a mid-pull commit from the CLI (user commits when ready; commit is when rename detection is clearest in history/UIs).
+
+### Removed — `siteglide-cli test-rename`
+
+Harness and Jest migrate fixture removed once rename staging was confirmed; keep FS rename + staged path rewrite in pull only.
 
 ## Out of scope (this pass)
 

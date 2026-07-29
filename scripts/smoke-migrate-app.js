@@ -9,12 +9,12 @@ const { migrateMarketplaceBuilderToApp } = require('../lib/migrateAppDirectory')
 	await fs.mkdir(path.join(root, 'marketplace_builder'));
 	await fs.writeFile(path.join(root, 'marketplace_builder', 'x.txt'), 'ok');
 
-	const result = await migrateMarketplaceBuilderToApp({ cwd: root });
+	const result = await migrateMarketplaceBuilderToApp({ cwd: root, skipConfirm: true });
 	assert.equal(result, 'renamed-fs');
 	assert.equal(await fs.pathExists(path.join(root, 'app', 'x.txt')), true);
 	assert.equal(await fs.pathExists(path.join(root, 'marketplace_builder')), false);
 
-	const skip = await migrateMarketplaceBuilderToApp({ cwd: root });
+	const skip = await migrateMarketplaceBuilderToApp({ cwd: root, skipConfirm: true });
 	assert.equal(skip, 'skipped-missing');
 
 	await fs.remove(root);

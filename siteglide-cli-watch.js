@@ -12,19 +12,24 @@ const program = require('commander'),
 	templates = require('./lib/templates'),
 	settings = require('./lib/settings'),
 	livereload = require('livereload'),
-	directories = require('./lib/directories'),
+	dir = require('./lib/directories'),
+	{ assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory'),
 	presignDirectory = require('./lib/presignUrl').presignDirectory,
 	manifestGenerateForAssets = require('./lib/assets/generateManifest').manifestGenerateForAssets,
 	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
 	version = require('./package.json').version,
 	{ cloneDeep, debounce } = require('lodash');
 
-const WATCH_DIRECTORIES = ['marketplace_builder','modules'];
-const getWatchDirectories = () => WATCH_DIRECTORIES.filter(fs.existsSync);
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
-const filePathUnixified = filePath => filePath.replace(/\\/g, '/').replace('marketplace_builder/', '');
+const filePathUnixified = filePath =>
+	filePath
+		.replace(/\\/g, '/')
+		.replace(new RegExp(`^${dir.APP}/`), '')
+		.replace(new RegExp(`^${dir.LEGACY_APP}/`), '');
 let counter = 0;
+let siteRoot = null;
+
 const isEmpty = filePath => {
 	let isEmpty;
 	try {
@@ -46,14 +51,25 @@ const isEmpty = filePath => {
 const shouldBeSynced = (filePath) => {
 	return extensionAllowed(filePath) && isNotHidden(filePath) && isNotEmptyYML(filePath) && isNotInNodeModules(filePath);
 };
-const isAssetsPath = (path) => path.startsWith('marketplace_builder/assets') || path.startsWith('marketplace_builder\\assets');
+const isAssetsPath = (filePath) => {
+	const normalized = filePath.replace(/\\/g, '/');
+	return siteRoot && normalized.startsWith(`${siteRoot}/assets`);
+};
 let manifestFilesToAdd = [];
+
+const displayPath = (filePath) => {
+	const normalized = filePath.replace(/\\/g, '/');
+	if (siteRoot && normalized.startsWith(`${siteRoot}/`)) {
+		return normalized.slice(siteRoot.length + 1);
+	}
+	return normalized;
+};
 
 const extensionAllowed = filePath => {
 	var allowed = watchFilesExtensions.includes(ext(filePath).toLowerCase());
 	if (!allowed) {
 		if(filename(filePath)!=='.DS_Store'){
-			logger.Warn(`[Sync] Ignored: ${filePath.slice(20)} - File extension is not allowed`, {
+			logger.Warn(`[Sync] Ignored: ${displayPath(filePath)} - File extension is not allowed`, {
 				exit: false
 			});
 		}
@@ -66,7 +82,7 @@ const isNotHidden = filePath => {
 
 	if (isHidden) {
 		if(filename(filePath)!=='.DS_Store'){
-			logger.Warn(`[Sync] Ignored: ${filePath.slice(20)} - Hidden file`);
+			logger.Warn(`[Sync] Ignored: ${displayPath(filePath)} - Hidden file`);
 		}
 	}
 	return !isHidden;
@@ -74,7 +90,7 @@ const isNotHidden = filePath => {
 
 const isNotEmptyYML = filePath => {
 	if (ext(filePath) === 'yml' && isEmpty(filePath)) {
-		logger.Warn(`[Sync] Ignored: ${filePath.slice(20)} - Empty YML file`);
+		logger.Warn(`[Sync] Ignored: ${displayPath(filePath)} - Empty YML file`);
 		return false;
 	}
 
@@ -174,14 +190,19 @@ const pushFile = (gateway, syncedFilePath) => {
 	});
 };
 
+const isModule19CustomCss = (syncedFilePath) => {
+	const normalized = syncedFilePath.replace(/\\/g, '/');
+	const legacyCustom =
+		normalized === `${dir.LEGACY_APP}/assets/css/modules/module_19/_custom-variables.scss` ||
+		normalized === `${dir.LEGACY_APP}/assets/css/modules/module_19/_custom.scss`;
+	const appCustom =
+		normalized === `${dir.APP}/assets/css/modules/module_19/_custom-variables.scss` ||
+		normalized === `${dir.APP}/assets/css/modules/module_19/_custom.scss`;
+	return legacyCustom || appCustom;
+};
+
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
-	if (
-		(isAssetsPath(syncedFilePath))&&
-		(
-			(syncedFilePath!=='marketplace_builder/assets/css/modules/module_19/_custom-variables.scss')&&
-			(syncedFilePath!=='marketplace_builder/assets/css/modules/module_19/_custom.scss')
-		)
-	){
+	if (isAssetsPath(syncedFilePath) && !isModule19CustomCss(syncedFilePath)) {
 		syncedFilePath = syncedFilePath.replace(/\\/g, '/');
 		sendAsset(gateway, syncedFilePath);
 		return Promise.resolve(true);
@@ -206,16 +227,17 @@ const manifestAddAsset = (path) => manifestFilesToAdd.push(path);
 const sendAsset = async (gateway, filePath) => {
 	try {
 		const data = cloneDeep(directUploadData);
-		const fileSubdir = filePath.startsWith('marketplace_builder/assets')
-			? path.dirname(filePath).replace('marketplace_builder/assets','')
-			: '/' + path.dirname(filePath).replace('/public/assets', '');
+		const normalized = filePath.replace(/\\/g, '/');
+		const fileSubdir = normalized.startsWith(`${siteRoot}/assets`)
+			? path.dirname(normalized).replace(`${siteRoot}/assets`, '')
+			: '/' + path.dirname(normalized).replace('/public/assets', '');
 		const key = data.fields.key.replace('assets/${filename}', `assets${fileSubdir}/\${filename}`);
 		data.fields.key = key;
 		logger.Debug(data);
 		await uploadFileFormData(filePath, data);
 		manifestAddAsset(filePath);
 		manifestSend(gateway);
-		logger.Success(`[Sync] Uploaded: ${filePath.slice(20)}`);
+		logger.Success(`[Sync] Uploaded: ${displayPath(filePath)}`);
 		counter = 0;
 	} catch (e) {
 		logger.Debug(e);
@@ -229,7 +251,7 @@ const sendAsset = async (gateway, filePath) => {
 				sendAsset(gateway,filePath);
 			})
 		}else{
-			logger.Error(`[Sync] Error: ${filePath.slice(20)} - Failed to sync`);
+			logger.Error(`[Sync] Error: ${displayPath(filePath)} - Failed to sync`);
 		}
 	}
 };
@@ -254,14 +276,25 @@ checkParams(program);
 const gateway = new Gateway(program.opts());
 
 gateway.ping().then(async () => {
-	await fetchDirectUploadData(gateway);
-	const directories = getWatchDirectories();
-
-	if (directories.length === 0) {
-		logger.Error('marketplace_builder has to exist! Please make sure you have the correct folder structure.');
+	siteRoot = assertExclusiveSiteAppRoot();
+	const watchDirectories = [];
+	if (siteRoot) {
+		watchDirectories.push(siteRoot);
+	}
+	if (fs.existsSync(dir.MODULES)) {
+		watchDirectories.push(dir.MODULES);
 	}
 
+	if (watchDirectories.length === 0) {
+		logger.Error(
+			`${dir.APP}/ or ${dir.LEGACY_APP}/ has to exist! Please make sure you have the correct folder structure.`
+		);
+	}
+
+	await fetchDirectUploadData(gateway);
+
 	logger.Info(`Enabled sync to: ${program.opts().url}`);
+	logger.Info(`[Sync] Watching: ${watchDirectories.join(', ')}`);
 
 	let liveReloadServer;
   if (program.opts().livereload) {
@@ -270,17 +303,20 @@ gateway.ping().then(async () => {
       delay: 2000
     });
 
-    let liveReloadDirectories = [];
-    liveReloadDirectories.push(process.cwd(), 'marketplace_builder');
-    liveReloadDirectories.push(process.cwd(), 'app');
-    liveReloadDirectories.push(process.cwd(), 'modules');
+    let liveReloadDirectories = [process.cwd()];
+    if (siteRoot) {
+      liveReloadDirectories.push(siteRoot);
+    }
+    if (fs.existsSync(dir.MODULES)) {
+      liveReloadDirectories.push(dir.MODULES);
+    }
 
     liveReloadServer.watch(liveReloadDirectories);
 
     logger.Info('LiveReload Enabled');
   }
 
-	chokidar.watch(directories, {
+	chokidar.watch(watchDirectories, {
 		awaitWriteFinish: {
 			stabilityThreshold: 100,
 			pollInterval: 25
