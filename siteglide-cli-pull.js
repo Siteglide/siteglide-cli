@@ -16,7 +16,6 @@ const program = require('commander'),
 	dir = require('./lib/directories'),
 	{ ensureMcpRegistered, ensureMcpIdeRules } = require('./lib/ai'),
 	{
-		migrateMarketplaceBuilderToApp,
 		resolveSiteAppRoot
 	} = require('./lib/migrateAppDirectory');
 
@@ -397,12 +396,11 @@ const moveModulesToRoot = async (fromRoot) => {
 };
 
 /**
- * Download the main site backup zip and convert it into the local site root (`app/` or
- * `marketplace_builder/` if the temporary rename confirm was declined).
+ * Download the main site backup zip and convert it into the local site root (`app/`).
  * Calls Siteglide-API `/cli/backup` then `/cli/backupStatus/:id` (no module_name).
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
- * @param {string} [siteRoot] - Relative site folder (`app` or `marketplace_builder`).
+ * @param {string} [siteRoot] - Relative site folder (`app` or, rarely, `marketplace_builder`).
  * Side effects: writes/overwrites that folder; may merge into `./modules`;
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
@@ -434,13 +432,11 @@ const pullSiteZip = async (gateway, siteRoot = dir.APP) => {
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
  * @param {string} moduleName - Installed module machine name to pull.
- * @param {number} index - 1-based position in the current pull queue (for logs).
- * @param {number} total - Total modules in the current pull queue (for logs).
  * Side effects: writes/overwrites files under `./modules`; updates `pullSpinner` text;
  * uses then deletes a temp zip and `.tmp/pull-<moduleName>` work directory.
  */
-const pullModuleZip = async (gateway, moduleName, index, total) => {
-	logger.Info(`[pull] Module ${moduleName} (${index}/${total})`);
+const pullModuleZip = async (gateway, moduleName) => {
+	logger.Info(`[pull] Starting module ${moduleName}`);
 	const filename = `${dir.MODULES}-${moduleName}.zip`;
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
 	const pullTask = await gateway.pullZip({ module_name: moduleName });
@@ -470,7 +466,6 @@ const pullModuleZip = async (gateway, moduleName, index, total) => {
 	if (await fs.pathExists(`./${workDir}`)) {
 		await fs.remove(`./${workDir}`);
 	}
-	logger.Info(`[pull] Module "${moduleName}" done`);
 };
 
 /**
@@ -526,9 +521,10 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
 	pullSpinner.text = `Pulling modules (up to ${limit} at a time)`;
 
 	let completed = 0;
-	await mapLimit(modulesToPull, limit, async (moduleName, index) => {
-		await pullModuleZip(gateway, moduleName, index + 1, total);
+	await mapLimit(modulesToPull, limit, async (moduleName) => {
+		await pullModuleZip(gateway, moduleName);
 		completed += 1;
+		logger.Info(`[pull] Module "${moduleName}" done (${completed}/${total})`);
 		pullSpinner.text = `Pulling modules (${completed}/${total} done, up to ${limit} at a time)`;
 	});
 
@@ -688,7 +684,7 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into app/ and module public files into modules/. Migrates marketplace_builder/ → app/ when needed (filesystem rename + staged exact path rewrite in a git repo). Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
@@ -717,10 +713,6 @@ program
 		return Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
 				try {
-					// Must run before any unzip/download creates ./app (otherwise both
-					// marketplace_builder/ and app/ appear and migration is skipped).
-					// TEMPORARY: prompts before rename — remove confirm later.
-					const migrateResult = await migrateMarketplaceBuilderToApp();
 					const siteRoot = await resolveSiteAppRoot();
 					logger.Info(`[pull] Site files root: ${siteRoot}/`);
 
@@ -778,11 +770,6 @@ program
 					await tidyUpAfterPull();
 
 					logger.Info('[pull] All steps finished');
-					if (migrateResult === 'renamed-fs') {
-						logger.Info(
-							'[pull] Tip: if you use git, stage/commit the marketplace_builder/ → app/ rename when ready'
-						);
-					}
 					pullSpinner.succeed('Pulled files');
 				} catch (e) {
 					logger.Debug(e);

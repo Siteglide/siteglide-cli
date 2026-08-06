@@ -137,6 +137,12 @@ Then confirm:
   where siteglide-cli-test   (Windows) or which siteglide-cli-test (Mac/Linux)
 
 Do NOT install over or uninstall the normal siteglide-cli package.
+Do NOT create or edit mcp.json by hand — pull writes IDE MCP config.
+
+When the user is ready (site folder open, environment already added if needed), run a first pull from that site, e.g.:
+  siteglide-cli-test pull staging
+
+After pull finishes, tell the user to enable the Siteglide test MCP server in their AI tool settings (e.g. Cursor: Settings → Tools & MCP → enable siteglide-test) and reload the window if tools do not appear.
 \`\`\`
 
 ## Manual install (PowerShell)
@@ -150,14 +156,23 @@ npm install -g .
 siteglide-cli-test --version
 \`\`\`
 
-## Try it on a Siteglide site
+## First pull (registers MCP in the site project)
+
+When you are ready — in a Siteglide site folder that already has an environment (e.g. via \`siteglide-cli-test add\`):
 
 \`\`\`powershell
 cd path\\to\\your-site
 siteglide-cli-test pull staging
 \`\`\`
 
-Then in Cursor: **Settings → Tools & MCP** → enable **siteglide-test** → reload the window.
+Pull writes \`.cursor/mcp.json\` (and other IDE configs) pointing at the installed CLI. Do not create \`mcp.json\` by hand.
+
+## Enable MCP in your AI tool
+
+After pull finishes, turn the server on in settings, then reload if needed:
+
+- **Cursor:** Settings → Tools & MCP → enable **siteglide-test** → reload the window
+- **Other tools:** enable the **siteglide-test** MCP server in that product's MCP settings
 
 Commands use the \`siteglide-cli-test\` prefix, e.g.:
 
@@ -183,6 +198,9 @@ Your normal \`siteglide-cli\` is unchanged.
 3. Run: cd ../siteglide-cli-test && npm install && npm install -g .
 4. Confirm \`siteglide-cli-test --version\` works.
 5. Do not remove or overwrite the normal siteglide-cli package.
+6. Do not create or edit mcp.json by hand — pull writes IDE MCP config.
+7. When I am ready (site folder open; environment added if needed), run a first pull from that site, e.g. siteglide-cli-test pull staging.
+8. After pull finishes, prompt me to enable the Siteglide test MCP server in my AI tool settings (e.g. Cursor: Settings → Tools & MCP → enable siteglide-test) and reload the window if tools do not appear.
 
 This is a test build; commands are siteglide-cli-test (not siteglide-cli).
 `;
