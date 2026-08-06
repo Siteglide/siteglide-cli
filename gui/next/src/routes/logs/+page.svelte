@@ -1,0 +1,434 @@
+<!-- ================================================================== -->
+<script>
+
+// imports
+// ------------------------------------------------------------------------
+import { tick, afterUpdate, onMount, beforeUpdate } from 'svelte';
+import { fade } from 'svelte/transition';
+import { browser } from '$app/environment';
+import { state } from '$lib/state.js';
+import { logs } from '$lib/api/logs';
+
+import Icon from '$lib/ui/Icon.svelte';
+import Aside from '$lib/ui/Aside.svelte';
+import Diagnostic from '$lib/ui/Diagnostic.svelte';
+
+
+// properties
+// ------------------------------------------------------------------------
+// main content container (dom node)
+let container;
+// string used for filtering (string)
+let filter = '';
+// pinned logs (array of objects)
+let pinned = [];
+// if the pinned pannel should be visible (bool)
+let pinnedPanel;
+// interval for checking for new logs (interval)
+let newLogsInterval;
+
+
+onMount(() => {
+  load();
+  updatePinnedState();
+
+  newLogsInterval = setInterval(() => { if(browser && document.visibilityState !== 'hidden'){ load(); } }, 7500);
+  return () => clearInterval(newLogsInterval);
+});
+
+
+const load = async () => {
+  const last = $state.logs.logs?.at(-1)?.id ?? null;
+  const newLogs = await logs.get({ last: last });
+
+  // if already showing logs, just append the new ones
+  if(last){
+    if(newLogs.logs?.length){
+      $state.logs.logs = [...$state.logs.logs, ...newLogs.logs];
+
+      // store the times when logs were downloaded to mark new ones
+      $state.logs.downloaded_at.push(Date.now());
+      if($state.logs.downloaded_at.length > 2){
+        $state.logs.downloaded_at.splice(0, 1);
+      }
+    }
+  }
+  // if fresh start, create the logs object
+  else {
+    if(!$state.logs.logs){
+      $state.logs = newLogs;
+
+      if(!$state.logs.downloaded_at){
+        $state.logs.downloaded_at = [Date.now()];
+      }
+    }
+  }
+}
+
+// purpose:		adds a .hidden property to each log item if not matching the string
+// attributes:	string you want to filter the logs with (string)
+// ------------------------------------------------------------------------
+const isFiltered = (log) => {
+  if(log.hidden === true){
+    return true;
+  }
+
+  if(log.error_type.toLowerCase().indexOf(filter) === -1 && log.message.toLowerCase().indexOf(filter) === -1){
+    return true;
+  } else {
+    return false;
+  }
+};
+
+
+// purpose:		scroll to bottom on load and when new logs appear and the scrollbar position is on bottom
+// ------------------------------------------------------------------------
+let scrolled = false;
+
+beforeUpdate(() => {
+  if(browser){
+    const container = document.querySelector('.logs');
+
+    if(container && Math.abs(container.scrollHeight - container.scrollTop - container.clientHeight) < 10){
+      scrolled = false;
+    }
+  }
+});
+
+afterUpdate(async () => {
+  if(!scrolled){
+    await tick();
+    document.querySelector('footer').scrollIntoView();
+    if($state.logs.logs?.length){
+      scrolled = true;
+    }
+  }
+});
+
+
+// purpose:		  saves the log in localStorage for future use
+// attributes:	log data you want to save (object)
+// ------------------------------------------------------------------------
+const updatePinnedState = () => {
+  pinnedPanel = localStorage.pinnedPanel === 'true' ? true : false;
+  pinned = localStorage.pinnedLogs ? JSON.parse(localStorage.pinnedLogs) : [];
+};
+
+const pin = (log) => {
+  if(pinned.find(pin => pin.id === log.id)){
+    pinned = pinned.filter(pin => pin.id !== log.id);
+  } else {
+    pinned = [...pinned, log];
+  }
+  localStorage.pinnedLogs = JSON.stringify(pinned);
+};
+
+const togglePinnedPanel = () => {
+  if(pinnedPanel){
+    pinnedPanel = false;
+    localStorage.pinnedPanel = false;
+  } else {
+    pinnedPanel = true;
+    localStorage.pinnedPanel = true;
+  }
+};
+
+</script>
+
+
+<!-- ================================================================== -->
+<style>
+
+/* shared */
+.container {
+  height: 100%;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr min-content;
+}
+
+nav {
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  border-bottom: 1px solid var(--color-frame);
+  background-color: rgba(var(--color-rgb-background), .8);
+  backdrop-filter: blur(17px);
+  -webkit-backdrop-filter: blur(17px);
+}
+
+nav > div {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+
+/* logs navigation */
+.logs nav {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 10;
+}
+
+.logs nav input {
+  padding-inline-end: 2rem;
+}
+
+.clearFilter {
+  padding: .5rem;
+  position: relative;
+  left: -2.3rem;
+
+  cursor: pointer;
+}
+
+.clearFilter .label {
+  position: absolute;
+  left: -100vw;
+}
+
+.clearFilter:hover {
+  color: var(--color-interaction);
+}
+
+
+/* logs */
+.logs {
+  height: calc(100vh - 83px);
+  overflow: auto;
+  position: sticky;
+
+  flex-grow: 1;
+}
+
+table {
+  width: 100%;
+}
+
+  .fresh td {
+    background-color: var(--color-highlight);
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  td {
+    padding: 1rem;
+
+    border-block-end: 1px solid var(--color-frame);
+  }
+
+    td:not(:first-child):not(:last-child) {
+      padding-inline-start: 2rem;
+      padding-inline-end: 2rem;
+    }
+
+  .date {
+    width: 1px;
+    white-space: nowrap;
+  }
+
+    .date {
+      font-family: monospace;
+      font-size: 1rem;
+    }
+
+    .error time {
+      color: var(--color-danger);
+    }
+
+  .logs .message {
+    word-break: break-all;
+  }
+
+  .actions {
+    width: 1px;
+    vertical-align: top;
+  }
+
+  .actions div {
+    display: flex;
+    gap: .5em;
+  }
+
+  .actions .active.button {
+    opacity: 1;
+
+    color: var(--color-interaction);
+  }
+
+  .actions .button {
+    opacity: 0;
+
+    transition: all .1s linear;
+  }
+
+  tr:hover .actions button {
+    opacity: 1;
+  }
+
+
+/* footer */
+footer {
+  margin-block: 4rem;
+
+  text-align: center;
+  line-height: 1.5em;
+  color: var(--color-text-secondary);
+}
+
+
+/* pinned logs panel */
+.pins nav {
+  justify-content: flex-end;
+}
+
+.pins li + li {
+  margin-block-start: 2rem;
+  padding-block-start: 2rem;
+
+  border-block-start: 1px solid var(--color-frame);
+}
+
+.pins .date {
+  margin-block-end: .6em;
+  display: block;
+}
+
+.pins .info {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+
+  color: var(--color-text-secondary);
+}
+
+  .pins .info button {
+    transition: color .1s linear;
+  }
+
+  .pins .info button:hover {
+    background-color: transparent;
+    color: var(--color-danger);
+  }
+
+</style>
+
+
+
+<!-- ================================================================== -->
+<svelte:head>
+  <title>Logs{$state.online?.MPKIT_URL ? ': ' + $state.online.MPKIT_URL.replace('https://', '') : ''}</title>
+</svelte:head>
+
+
+<div class="container" bind:this={container}>
+
+  <section class="logs">
+
+    <nav>
+      <form>
+        <label for="filter">Filter:</label>
+        <input type="text" id="filter" bind:value={filter}>
+        {#if filter}
+          <button class="clearFilter" on:click={() => filter = ''}>
+            <span class="label">Clear filter</span>
+            <Icon icon="x" size=12 />
+          </button>
+        {/if}
+      </form>
+      <div>
+        <button type="button" class="button" on:click={() => $state.logs.logs.forEach((log, index) => $state.logs.logs[index].hidden = true) }>Clear screen</button>
+        <button type="button" title="Toggle pinned logs panel" class="button" on:click={togglePinnedPanel}>
+          <span class="label">Toggle pinned logs panel</span>
+          <Icon icon="pin" />
+        </button>
+      </div>
+    </nav>
+
+    {#if $state.logs.logs}
+      <table>
+        {#each $state.logs.logs as log}
+          <tr
+            class:hidden={filter && isFiltered(log) || log.hidden}
+            class:error={log.error_type.match(/error/i)}
+            class:fresh={log.downloaded_at > $state.logs.downloaded_at[0]}
+            in:fade|local={{ duration: 200 }}
+          >
+            <td class="date">
+              <time datetime={log.created_at}>
+                {(new Date(log.created_at)).toLocaleDateString(undefined, {})}
+                {(new Date(log.created_at)).toLocaleTimeString(undefined, {})}
+              </time>
+            </td>
+            <td class="message">
+              <Diagnostic {log} />
+            </td>
+            <td class="actions">
+              <div>
+                <button type="button" class="button" title="Copy message" on:click={(event) => navigator.clipboard.writeText(log.message).then(() => { event.target.classList.add('confirmation'); setTimeout(() => event.target.classList.remove('confirmation'), 1000); }) }>
+                  <span class="label">Copy message</span>
+                  <Icon icon="copy" />
+                </button>
+                <button type="button" class="button" title="Pin this log" class:active={pinned.find(pin => pin.id === log.id)} on:click|preventDefault={() => pin(log)}>
+                  <span class="label">Pin this log</span>
+                  <Icon icon="pin" />
+                </button>
+              </div>
+            </td>
+          </tr>
+        {/each}
+      </table>
+    {/if}
+
+    {#if !filter}
+      <footer>
+        No newer logs to show<br>Checking every 3 seconds
+      </footer>
+    {/if}
+
+  </section>
+
+
+  {#if pinnedPanel}
+    <Aside>
+
+      <div class="pins">
+
+        <nav class="asideNav">
+          <button type="button" class="button" on:click={() => { localStorage.pinnedLogs = []; pinned = []; }}>
+            Clear pinned logs
+          </button>
+        </nav>
+
+        {#if pinned}
+          <ul>
+            {#each pinned as log}
+              <li>
+                <div class="info">
+                  <time class="date" datetime={log.created_at}>
+                    {(new Date(log.created_at)).toLocaleDateString(undefined, {})}
+                    {(new Date(log.created_at)).toLocaleTimeString(undefined, {})}
+                  </time>
+                  <button type="button" title="Remove log from pinned panel" on:click={() => pin(log)}>
+                    <span class="label">Remove log from pinned panel</span>
+                    <Icon icon="trash" size="18" />
+                  </button>
+                </div>
+                <Diagnostic {log} />
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+      </div>
+
+    </Aside>
+  {/if}
+
+</div>

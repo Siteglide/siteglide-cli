@@ -12,3 +12,5 @@ exported.json
 data-imported.json
 /test_zip
 .vscode
+gui/next/.svelte-kit
+gui/next/node_modules
