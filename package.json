@@ -14,12 +14,14 @@
 	},
 	"homepage": "https://developers.siteglide.com/introducing-siteglide-cli",
 	"engines": {
-		"node": ">=12"
+		"node": ">=18"
 	},
 	"keywords": [
 		"Siteglide"
 	],
 	"dependencies": {
+		"@platformos/platformos-check-node": "^0.0.20",
+		"@platformos/platformos-common": "^0.0.18",
 		"@siteglide/siteglide-mcp": "file:../Siteglide-MCP---Experimental",
 		"archiver": "^5.3.0",
 		"archiver-promise": "^1.0.0",
@@ -64,6 +66,7 @@
 		"siteglide-cli": "./siteglide-cli.js",
 		"siteglide-cli-add": "./siteglide-cli-add.js",
 		"siteglide-cli-archive": "./siteglide-cli-archive.js",
+		"siteglide-cli-check": "./siteglide-cli-check.js",
 		"siteglide-cli-deploy": "./siteglide-cli-deploy.js",
 		"siteglide-cli-export": "./siteglide-cli-export.js",
 		"siteglide-cli-gui": "./siteglide-cli-gui.js",
