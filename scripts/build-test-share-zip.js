@@ -11,7 +11,12 @@ const CLI_ROOT = path.resolve(__dirname, '..');
 const MCP_ROOT = path.resolve(CLI_ROOT, '..', 'Siteglide-MCP---Experimental');
 const OUT_ROOT = path.resolve(CLI_ROOT, '..', 'siteglide-cli-workspace-notes', 'dist');
 const STAGE = path.join(OUT_ROOT, 'siteglide-cli-test-bundle');
-const ZIP_NAME = `siteglide-cli-test-${new Date().toISOString().slice(0, 10)}.zip`;
+const pad2 = (n) => String(n).padStart(2, '0');
+const zipStamp = (() => {
+	const d = new Date();
+	return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+})();
+const ZIP_NAME = `siteglide-cli-test-${zipStamp}.zip`;
 
 const CLI_SKIP = new Set([
 	'node_modules',
