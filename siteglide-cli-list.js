@@ -1,21 +1,39 @@
 #!/usr/bin/env node
 
-const logger = require('./lib/logger'),
-  files = require('./lib/assets/files');
+const program = require('commander'),
+	logger = require('./lib/logger'),
+	files = require('./lib/assets/files'),
+	{ listEnvironments } = require('./lib/envClassification'),
+	version = require('./package.json').version;
 
-const listEnvironments = () => {
-  const settings = Object(files.getConfig());
-  const list = Object.keys(settings);
+program
+	.version(version, '-v, --version')
+	.name('siteglide-cli list')
+	.usage('[options]')
+	.description('List environments from .siteglide-config. Use --details for host and staging/production classification (same rules as MCP envs_list).')
+	.option('-d --details', 'include host and classification (staging|production)')
+	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
+	.action((params) => {
+		process.env.CONFIG_FILE_PATH = params.configFile;
+		const settings = Object(files.getConfig());
+		const environments = listEnvironments(settings, { details: params.details });
 
-  if (list.length) {
-    logger.Info('Available environments: ');
-    for (const id in list) {
-      const env = list[id];
-      logger.Info(`- [${env}] ${settings[env].url}`, { hideTimestamp: true });
-    }
-  } else {
-    logger.Error('No environments registered yet, please see siteglide-cli add', { exit: false });
-  }
-};
+		if (!environments.length) {
+			logger.Error('No environments registered yet, please see siteglide-cli add', { exit: false });
+			return;
+		}
 
-listEnvironments();
+		logger.Info('Available environments: ');
+		for (const env of environments) {
+			if (params.details) {
+				logger.Info(
+					`- [${env.name}] ${env.url}  host=${env.host}  classification=${env.classification}`,
+					{ hideTimestamp: true }
+				);
+			} else {
+				logger.Info(`- [${env.name}] ${env.url}`, { hideTimestamp: true });
+			}
+		}
+	});
+
+program.parse(process.argv);

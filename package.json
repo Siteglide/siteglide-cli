@@ -72,6 +72,7 @@
 		"siteglide-cli-gui": "./siteglide-cli-gui.js",
 		"siteglide-cli-import": "./siteglide-cli-import.js",
 		"siteglide-cli-init": "./siteglide-cli-init.js",
+		"siteglide-cli-list": "./siteglide-cli-list.js",
 		"siteglide-cli-logs": "./siteglide-cli-logs.js",
 		"siteglide-cli-mcp": "./siteglide-cli-mcp.js",
 		"siteglide-cli-migrate": "./siteglide-cli-migrate.js",
