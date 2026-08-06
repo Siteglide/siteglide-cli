@@ -1,0 +1,103 @@
+/*
+  stores universally shared ulility classes and general page styling
+
+  main page
+  context sections
+  links
+  utilities
+  definition list
+*/
+
+
+
+/* main page
+============================================================================ */
+body {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: min-content 1fr;
+
+  background-color: var(--color-page);
+
+  text-rendering: optimizeLegibility;
+  font-family: var(--font-normal);
+  color: var(--color-text);
+}
+
+
+/* context sections
+============================================================================ */
+.content-context {
+  background-color: var(--color-context);
+
+  color: var(--color-text-inverted);
+}
+
+
+/* links
+============================================================================ */
+a {
+  transition-property: color, background-color;
+  transition-duration: .1s;
+  transition-timing-function: ease-in-out;
+}
+
+
+/* utilities
+============================================================================ */
+
+/* used to mark keyboard shortcuts */
+kbd {
+  padding: .4em .2em;
+
+  border-radius: .2em;
+  background-color: var(--color-middleground);
+
+  text-transform: uppercase;
+  line-height: .6em;
+  font-family: monospace;
+}
+
+
+/* definition list
+============================================================================ */
+.definitions {
+  display: grid;
+  grid-template-columns: auto auto;
+}
+
+.definitions dt,
+.definitions dd {
+  padding-block: .7rem;
+  display: flex;
+  align-items: center;
+}
+
+  .definitions dt:not(:last-of-type),
+  .definitions dd:not(:last-of-type) {
+    border-block-end: 1px solid var(--color-background);
+  }
+
+  .definitions dt {
+    padding-inline-end: 1em;
+
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+  }
+
+  .definitions dd {
+    min-width: 0;
+    display: flex;
+    justify-content: end;
+
+    word-wrap: break-word;
+    text-wrap: balance;
+  }
+
+  .definitions dd > * {
+    width: 100%;
+    display: block;
+
+    word-wrap: break-word;
+    text-align: end;
+  }

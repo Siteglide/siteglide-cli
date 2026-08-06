@@ -26,7 +26,7 @@ program
 	.command('list', 'List your current environments for the site')
 	.command('sync [environment]', 'update site on local file change')
 	.command('pull [environment]', 'get all files from site')
-	.command('gui [environment]', 'gui for GraphiQL and Liquid Evaluator')
+	.command('gui [environment]', 'gui for Admin, Logs, GraphiQL and Liquid Evaluator')
 	.command('logs [environment]', 'stream debugging logs from your website')
 	.command('init', 'create default folder structure for Siteglide Admin')
 	.command('deploy [environment]', 'upload all code to your site')

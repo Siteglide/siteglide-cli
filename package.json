@@ -4,7 +4,8 @@
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
-		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production"
+		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production",
+		"build-gui": "npm --prefix gui/next ci && npm --prefix gui/next run build"
 	},
 	"main": "./siteglide-cli.js",
 	"license": "MIT",
