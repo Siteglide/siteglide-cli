@@ -4,7 +4,8 @@
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
-		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production"
+		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production",
+		"build-gui": "npm --prefix gui/next ci && npm --prefix gui/next run build"
 	},
 	"main": "./siteglide-cli.js",
 	"license": "MIT",
@@ -21,6 +22,7 @@
 	"dependencies": {
 		"@platformos/platformos-check-node": "^0.0.20",
 		"@platformos/platformos-common": "^0.0.18",
+		"@siteglide/siteglide-mcp": "file:../Siteglide-MCP---Experimental",
 		"archiver": "^5.3.0",
 		"archiver-promise": "^1.0.0",
 		"async": "^3.2.3",
@@ -71,6 +73,7 @@
 		"siteglide-cli-import": "./siteglide-cli-import.js",
 		"siteglide-cli-init": "./siteglide-cli-init.js",
 		"siteglide-cli-logs": "./siteglide-cli-logs.js",
+		"siteglide-cli-mcp": "./siteglide-cli-mcp.js",
 		"siteglide-cli-migrate": "./siteglide-cli-migrate.js",
 		"siteglide-cli-modules": "./siteglide-cli-modules.js",
 		"siteglide-cli-pull": "./siteglide-cli-pull.js",

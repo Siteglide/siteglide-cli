@@ -26,7 +26,7 @@ program
 	.command('list', 'List your current environments for the site')
 	.command('sync [environment]', 'update site on local file change')
 	.command('pull [environment]', 'get all files from site')
-	.command('gui [environment]', 'gui for GraphiQL and Liquid Evaluator')
+	.command('gui [environment]', 'gui for Admin, Logs, GraphiQL and Liquid Evaluator')
 	.command('logs [environment]', 'stream debugging logs from your website')
 	.command('init', 'create default folder structure for Siteglide Admin')
 	.command('check [path]', 'check Liquid code quality with platformos-check linter')
@@ -34,6 +34,7 @@ program
 	.command('export [environment]', 'export the code, assets and data from your site')
 	.command('migrate [environment] --url [url]', 'Static site migration into siteglide')
 	.command('modules [environment]', 'list modules installed on the site')
+	.command('mcp', 'start Siteglide MCP server (stdio)')
 	// .command('import [environment]', 'import your data.json to bulk upload all data')
 	.parse(process.argv);
 
