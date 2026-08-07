@@ -1,5 +1,6 @@
 .siteglide-config
 .siteglide/alpha.json
+.siteglide/sync/
 node_modules
 /marketplace_builder
 .env

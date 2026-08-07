@@ -21,7 +21,8 @@ program
 		const env = Object.assign(process.env, {
 			SITEGLIDE_EMAIL: authData.email,
 			SITEGLIDE_TOKEN: authData.token,
-			SITEGLIDE_URL: authData.url
+			SITEGLIDE_URL: authData.url,
+			SITEGLIDE_ENV: environment
 		});
 		const options = [];
 		if(params.livereload){

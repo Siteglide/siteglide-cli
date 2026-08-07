@@ -424,7 +424,7 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
  * Calls Siteglide-API `/cli/backup` then `/cli/backupStatus/:id` (no module_name).
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
- * @param {string} [siteRoot] - Relative site folder (`app` or, rarely, `marketplace_builder`).
+ * @param {string} [siteRoot] - Relative site folder (`marketplace_builder` or existing `app`).
  * Side effects: writes/overwrites that folder; may merge into `./modules`;
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
@@ -558,7 +558,7 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignore
 /**
  * Fetch the asset file list from Siteglide-API `/cli/pull` and download matching text/binary assets
  * by physical_file_path. Paths under `modules/` are written to `./modules/...`; everything else
- * goes under the site root (`app/` or `marketplace_builder/`) so this step does not recreate nested modules.
+ * goes under the site root (`marketplace_builder/` or existing `app/`) so this step does not recreate nested modules.
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
  * @param {string} [siteRoot] - Relative site folder for non-module assets.

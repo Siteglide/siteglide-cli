@@ -17,6 +17,7 @@ const program = require('commander'),
 	presignDirectory = require('./lib/presignUrl').presignDirectory,
 	manifestGenerateForAssets = require('./lib/assets/generateManifest').manifestGenerateForAssets,
 	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
+	{ claimSyncStatus, clearSyncStatus, registerSyncStatusCleanup } = require('./lib/syncStatus'),
 	version = require('./package.json').version,
 	{ cloneDeep, debounce } = require('lodash');
 
@@ -273,6 +274,19 @@ program
 
 checkParams(program);
 
+const syncEnvironment = process.env.SITEGLIDE_ENV;
+if (syncEnvironment) {
+	const claim = claimSyncStatus({ environment: syncEnvironment });
+	if (!claim.ok) {
+		logger.Error(
+			`Sync for environment "${syncEnvironment}" is already running (pid ${claim.existingPid}) in this directory. Stop that sync before starting another.`
+		);
+	}
+	registerSyncStatusCleanup();
+} else {
+	logger.Warn('[Sync] SITEGLIDE_ENV not set; sync status registration skipped.');
+}
+
 const gateway = new Gateway(program.opts());
 
 gateway.ping().then(async () => {
@@ -327,4 +341,11 @@ gateway.ping().then(async () => {
 		.on('add', fp => shouldBeSynced(fp) && enqueue(fp))
 		.on('unlink', fp => shouldBeSynced(fp) && enqueueDelete(fp));
 
+}).catch((error) => {
+	try {
+		clearSyncStatus();
+	} catch {
+		// ignore
+	}
+	logger.Error(error);
 });
