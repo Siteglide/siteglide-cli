@@ -80,6 +80,7 @@
 		"siteglide-cli-modules": "./siteglide-cli-modules.js",
 		"siteglide-cli-pull": "./siteglide-cli-pull.js",
 		"siteglide-cli-push": "./siteglide-cli-push.js",
+		"siteglide-cli-remote-check": "./siteglide-cli-remote-check.js",
 		"siteglide-cli-server": "./siteglide-cli-server.js",
 		"siteglide-cli-sync": "./siteglide-cli-sync.js",
 		"siteglide-cli-watch": "./siteglide-cli-watch.js"

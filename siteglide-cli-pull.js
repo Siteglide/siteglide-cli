@@ -28,7 +28,13 @@ const program = require('commander'),
 		selectModulesToPull,
 		formatModuleNameForLog,
 		formatModuleListForLog
-	} = require('./lib/pullIgnoredModules');
+	} = require('./lib/pullIgnoredModules'),
+	{ writePullBaseline } = require('./lib/pullBaseline'),
+	{ clearConflictLog } = require('./lib/remoteCheckConflictLog'),
+	{ getGitReadiness } = require('./lib/git/readiness'),
+	{ isWorkingTreeDirty, stashPush, stashPop } = require('./lib/git/workingTree'),
+	{ commitAllSafe } = require('./lib/git/commit'),
+	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 
@@ -712,83 +718,156 @@ program
 			|| (envConcurrency > 0 ? envConcurrency : DEFAULT_MODULE_PULL_CONCURRENCY);
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
+		const assumeYes = process.env.SITEGLIDE_PULL_ASSUME_YES === '1';
+
+		const startPull = async function () {
+			let stashed = false;
+			let git = { repoInitialized: false };
+			try {
+				git = getGitReadiness();
+				if (!git.repoInitialized) {
+					// Soft tip only — do not block pull when git is missing.
+					logger.Info('[pull] Git is not initialized here. Ask your AI / Siteglide MCP to help set up git for safer workflows.');
+				} else {
+					const open = hasOpenGitConflicts();
+					if (open.open) {
+						logger.Error(`[pull] Refusing pull while ${open.reason}. Ask AI + MCP to help resolve conflict markers first.`);
+						process.exit(1);
+					}
+					if (isWorkingTreeDirty()) {
+						if (!process.stdin.isTTY || process.env.CI) {
+							logger.Error('[pull] Working tree is dirty. Commit or stash before pull (non-interactive).');
+							process.exit(1);
+						}
+						const choice = await Confirm(
+							'Working tree is dirty. Pull refuses to overwrite uncommitted work. (S)tash then pull / (N) cancel\n'
+						);
+						if (!/^s$/i.test(choice.trim())) {
+							logger.Error('[Cancelled] Pull not executed — clean or stash your working tree first.');
+							process.exit(1);
+						}
+						const stashMsg = await Confirm('Stash message:\n');
+						const stashRes = stashPush(stashMsg.trim() || `siteglide pull stash ${new Date().toISOString()}`);
+						if (!stashRes.ok) {
+							logger.Error(`[pull] Stash failed: ${stashRes.stderr || stashRes.stdout}`);
+							process.exit(1);
+						}
+						stashed = true;
+					}
+				}
+
+				const siteRoot = await resolveSiteAppRoot();
+				logger.Info(`[pull] Site files root: ${siteRoot}/`);
+
+				pullSpinner.start();
+				if (moduleFilter) {
+					logger.Info(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
+				}
+				if (ignoreAssets) {
+					logger.Info('[pull] --ignore-assets set; asset download step will be skipped');
+				}
+
+				pullSpinner.text = 'Fetching installed modules';
+				const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
+				if (pullModulesConfigCreated) {
+					logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} — edit pull_behaviour include/exclude to customize skipped modules (commit to git so the team stays in sync)`);
+				}
+				const modulesResponse = await gateway.listModules();
+				const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
+				logger.Debug(`[pull] list_modules returned ${installedModules.length} module(s)`);
+				if (installedModules.length > 0) {
+					installedModules.forEach((name, i) => {
+						logger.Debug(`\t${i + 1}. ${formatModuleNameForLog(name)}`, { hideTimestamp: true });
+					});
+				} else {
+					logger.Debug('[pull] Raw list_modules response keys: ' + Object.keys(modulesResponse || {}).join(', '));
+				}
+
+				const ignoredModules = resolvePullIgnoredModules(moduleFilter, effectiveIgnoredModules);
+				const moduleSelection = partitionPullIgnoredModules(installedModules, effectiveIgnoredModules);
+				const modulesToPull = selectModulesToPull(installedModules, moduleFilter, effectiveIgnoredModules);
+
+				if (moduleFilter && modulesToPull === null) {
+					pullSpinner.fail(`Module "${formatModuleNameForLog(moduleFilter)}" is not installed on this site`);
+					logger.Error(`[pull] Filter "${formatModuleNameForLog(moduleFilter)}" not found in installed modules`);
+					process.exit(1);
+				}
+
+				if (!moduleFilter && moduleSelection.ignored.length > 0) {
+					logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
+				}
+
+				if (modulesToPull.length === 0) {
+					logger.Info('[pull] No modules selected to pull');
+				} else {
+					logger.Info(`[pull] Will pull ${modulesToPull.length} module(s): ${formatModuleListForLog(modulesToPull).join(', ')}`);
+				}
+
+				await pullSiteZip(gateway, siteRoot, ignoredModules);
+
+				await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency, ignoredModules);
+
+				if (!ignoreAssets) {
+					await pullAssets(gateway, siteRoot, ignoredModules);
+				} else {
+					logger.Info('[pull] Skipping assets step');
+				}
+
+				await mergeModuleAgentsToRoot(modulesToPull);
+
+				pullSpinner.stop();
+				await ensureMcpOnPull();
+
+				await tidyUpAfterPull(ignoredModules);
+
+				// Record lastPulledAt and clear deploy path floors + conflict logs.
+				writePullBaseline(environment);
+				clearConflictLog(environment);
+
+				logger.Info('[pull] All steps finished');
+				pullSpinner.succeed('Pulled files');
+
+				if (git.repoInitialized && process.stdin.isTTY && !process.env.CI) {
+					const commitAns = await Confirm('Commit this pull to git? (Y/n)\n');
+					if (commitAns === 'Y') {
+						const msg = await Confirm('Commit message:\n');
+						const committed = commitAllSafe(msg.trim() || `siteglide pull ${environment} ${new Date().toISOString()}`);
+						if (!committed.ok) {
+							logger.Warn(`[pull] Commit skipped/failed: ${committed.stderr || committed.stdout}`, { exit: false });
+						} else {
+							logger.Info('[pull] Committed pull result');
+						}
+					}
+					if (stashed) {
+						const popAns = await Confirm('Stash pop your previous work now? (Y/n)\n');
+						if (popAns === 'Y') {
+							const pop = stashPop({ environment });
+							if (!pop.ok) {
+								logger.Warn(
+									`[pull] Stash pop conflicted. Resolve markers with AI + MCP. Log: ${pop.logPath}`,
+									{ exit: false }
+								);
+							} else {
+								logger.Info('[pull] Stash popped successfully');
+							}
+						}
+					}
+				}
+			} catch (e) {
+				logger.Debug(e);
+				pullSpinner.fail('Pull failed');
+				logger.Error(e.message || e);
+				process.exit(1);
+			}
+		};
+
+		if (assumeYes) {
+			return startPull();
+		}
 
 		return Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
 			if (response === 'Y') {
-				try {
-					const siteRoot = await resolveSiteAppRoot();
-					logger.Info(`[pull] Site files root: ${siteRoot}/`);
-
-					pullSpinner.start();
-					if (moduleFilter) {
-						logger.Info(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
-					}
-					if (ignoreAssets) {
-						logger.Info('[pull] --ignore-assets set; asset download step will be skipped');
-					}
-
-					pullSpinner.text = 'Fetching installed modules';
-					const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
-					if (pullModulesConfigCreated) {
-						logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} — edit pull_behaviour include/exclude to customize skipped modules (commit to git so the team stays in sync)`);
-					}
-					const modulesResponse = await gateway.listModules();
-					const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
-					logger.Debug(`[pull] list_modules returned ${installedModules.length} module(s)`);
-					if (installedModules.length > 0) {
-						installedModules.forEach((name, i) => {
-							logger.Debug(`\t${i + 1}. ${formatModuleNameForLog(name)}`, { hideTimestamp: true });
-						});
-					} else {
-						logger.Debug('[pull] Raw list_modules response keys: ' + Object.keys(modulesResponse || {}).join(', '));
-					}
-
-					const ignoredModules = resolvePullIgnoredModules(moduleFilter, effectiveIgnoredModules);
-					const moduleSelection = partitionPullIgnoredModules(installedModules, effectiveIgnoredModules);
-					const modulesToPull = selectModulesToPull(installedModules, moduleFilter, effectiveIgnoredModules);
-
-					if (moduleFilter && modulesToPull === null) {
-						pullSpinner.fail(`Module "${formatModuleNameForLog(moduleFilter)}" is not installed on this site`);
-						logger.Error(`[pull] Filter "${formatModuleNameForLog(moduleFilter)}" not found in installed modules`);
-						process.exit(1);
-					}
-
-					if (!moduleFilter && moduleSelection.ignored.length > 0) {
-						logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
-					}
-
-					if (modulesToPull.length === 0) {
-						logger.Info('[pull] No modules selected to pull');
-					} else {
-						logger.Info(`[pull] Will pull ${modulesToPull.length} module(s): ${formatModuleListForLog(modulesToPull).join(', ')}`);
-					}
-
-					await pullSiteZip(gateway, siteRoot, ignoredModules);
-
-					await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency, ignoredModules);
-
-					if (!ignoreAssets) {
-						await pullAssets(gateway, siteRoot, ignoredModules);
-					} else {
-						logger.Info('[pull] Skipping assets step');
-					}
-
-					// After module zips (and assets that may land under modules/) are on disk
-					await mergeModuleAgentsToRoot(modulesToPull);
-
-					pullSpinner.stop();
-					await ensureMcpOnPull();
-
-					await tidyUpAfterPull(ignoredModules);
-
-					logger.Info('[pull] All steps finished');
-					pullSpinner.succeed('Pulled files');
-				} catch (e) {
-					logger.Debug(e);
-					pullSpinner.fail('Pull failed');
-					logger.Error(e.message || e);
-					process.exit(1);
-				}
+				await startPull();
 			} else {
 				logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 			}

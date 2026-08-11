@@ -19,7 +19,12 @@ const program = require('commander'),
 	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
 	{ claimSyncStatus, clearSyncStatus, registerSyncStatusCleanup } = require('./lib/syncStatus'),
 	version = require('./package.json').version,
-	{ cloneDeep, debounce } = require('lodash');
+	{ cloneDeep, debounce } = require('lodash'),
+	{ checkFile, fetchRemoteFileMtime, toPhysicalApiPath } = require('./lib/remoteMtimeCheck'),
+	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
+	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
+	{ mergeFirstSyncFile, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
+	{ writeConflictLog } = require('./lib/remoteCheckConflictLog');
 
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
@@ -104,14 +109,130 @@ const isNotInNodeModules = filePath => {
 
 CONCURRENCY = 3;
 
+/** Serialize conflict prompts so other uploads can continue. */
+let confirmChain = Promise.resolve();
+const withConfirmLock = (fn) => {
+	const run = confirmChain.then(fn, fn);
+	confirmChain = run.catch(() => {});
+	return run;
+};
+
+const skipRemoteCheck = process.env.SITEGLIDE_SKIP_REMOTE_CHECK === '1';
+
+/**
+ * Before push/delete: refuse open git conflicts; check remote mtime unless skipped.
+ * Merge first stops sync for that file (and pauses further prompts via pause exit).
+ */
+const beforeSyncOp = async (syncedFilePath) => {
+	const environment = process.env.SITEGLIDE_ENV;
+	const open = hasOpenGitConflicts();
+	if (open.open) {
+		writeConflictLog(environment || 'unknown', {
+			command: 'sync',
+			reason: open.reason,
+			conflicts: (open.paths || []).map((p) => ({ path: p })),
+			consoleHint: 'Resolve conflict markers with AI + MCP before syncing.'
+		});
+		logger.Error(`[Sync] Refusing while ${open.reason}. Ask AI + MCP to help resolve conflicts.`, { exit: false });
+		return false;
+	}
+
+	if (skipRemoteCheck || !environment) {
+		return true;
+	}
+
+	const physicalPath = toPhysicalApiPath(syncedFilePath, siteRoot);
+	const remoteMeta = await fetchRemoteFileMtime(gateway, physicalPath);
+	if (remoteMeta.found && isSafeAfterMergeFirst(environment, physicalPath, remoteMeta.updatedAt)) {
+		return true;
+	}
+
+	const result = await checkFile({
+		gateway,
+		environment,
+		filePath: syncedFilePath,
+		siteRoot
+	});
+	if (result.ok) {
+		return true;
+	}
+
+	return withConfirmLock(async () => {
+		const decision = await promptRemoteConflict({
+			environment,
+			command: 'sync',
+			reason: result.reason,
+			conflicts: [{
+				path: result.physicalPath,
+				type: result.kind,
+				remoteUpdatedAt: result.remoteUpdatedAt,
+				effectiveBaselineAt: result.effectiveBaselineAt,
+				baselineSource: result.baselineSource
+			}]
+		});
+		if (decision === 'continue') {
+			return true;
+		}
+		if (decision === 'merge_first') {
+			const localPath = syncedFilePath.replace(/\\/g, '/');
+			const mf = await mergeFirstSyncFile({
+				gateway,
+				environment,
+				physicalPath: result.physicalPath,
+				localFilePath: localPath,
+				fetchRemoteContent: async (p) => {
+					const r = await fetchRemoteFileMtime(gateway, p);
+					if (!r.found || r.body == null) {
+						return null;
+					}
+					return { body: r.body, updatedAt: r.updatedAt };
+				}
+			});
+			if (!mf.ok) {
+				logger.Error(`[Sync] Merge first failed: ${mf.error}`, { exit: false });
+				return false;
+			}
+			logger.Warn(
+				'[Sync] Merge first started. Ask AI + MCP to resolve markers, finish the merge, then save again to sync.',
+				{ exit: false }
+			);
+			return false;
+		}
+		logger.Warn('[Sync] Paused due to remote conflict. Commit, pull, or Merge first, then save again.', { exit: false });
+		return false;
+	});
+};
+
 const queue = Queue((task, callback) => {
-	let push = pushFileDirectAssets
+	let push = pushFileDirectAssets;
 	switch (task.op) {
 		case 'push':
-			push(gateway, task.path).then(callback);
+			beforeSyncOp(task.path)
+				.then((ok) => {
+					if (!ok) {
+						callback();
+						return;
+					}
+					return push(gateway, task.path).then(callback);
+				})
+				.catch((err) => {
+					logger.Debug(err);
+					callback();
+				});
 			break;
 		case 'delete':
-			deleteFile(gateway, task.path).then(callback);
+			beforeSyncOp(task.path)
+				.then((ok) => {
+					if (!ok) {
+						callback();
+						return;
+					}
+					return deleteFile(gateway, task.path).then(callback);
+				})
+				.catch((err) => {
+					logger.Debug(err);
+					callback();
+				});
 			break;
 	}
 }, CONCURRENCY);

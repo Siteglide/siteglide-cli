@@ -114,9 +114,13 @@ const main = async () => {
 	);
 	await fs.writeFile(mainCli, mainSrc);
 
-	const installMd = `# Siteglide CLI TEST — install (for your boss / AI)
+	const installMd = `# Siteglide CLI TEST — install
+
+**Unpack anywhere → install globally → use \`siteglide-cli-test\` from your site folder.**
 
 This zip is a **preview** of Siteglide CLI + MCP. It installs as **\`siteglide-cli-test\`** so it does **not** replace your normal \`siteglide-cli\`.
+
+You can unzip to Desktop, Downloads, or any temp folder. After \`npm install -g .\`, you do **not** need to keep working from the unzipped folder. Reinstalling a newer test zip with \`npm install -g .\` **overwrites** the previous global test install (including its MCP).
 
 ## Requirements
 
@@ -129,7 +133,9 @@ This zip is a **preview** of Siteglide CLI + MCP. It installs as **\`siteglide-c
 Paste this into Cursor / ChatGPT after unzipping:
 
 \`\`\`
-Unzip this archive if needed. From the folder that contains INSTALL.md, run:
+Unpack this zip anywhere (location does not matter after install).
+
+From the folder that contains INSTALL.md:
 
   cd siteglide-mcp
   npm install
@@ -137,14 +143,17 @@ Unzip this archive if needed. From the folder that contains INSTALL.md, run:
   npm install
   npm install -g .
 
-Then confirm:
+Confirm:
   siteglide-cli-test --version
   where siteglide-cli-test   (Windows) or which siteglide-cli-test (Mac/Linux)
 
-Do NOT install over or uninstall the normal siteglide-cli package.
-Do NOT create or edit mcp.json by hand — pull writes IDE MCP config.
+CRITICAL:
+- Install globally (-g). Do not rely on running forever from the unpacked folder.
+- Do NOT install over or uninstall the normal siteglide-cli package.
+- Do NOT create or edit mcp.json by hand — pull always rewrites IDE MCP config to the globally installed siteglide-cli-test MCP launcher.
+- Installing a newer test build again with npm install -g . overwrites the previous global test CLI/MCP.
 
-When the user is ready (site folder open, environment already added if needed), run a first pull from that site, e.g.:
+When the user is ready (site folder open, environment already added if needed), run a first pull from that site using the GLOBAL binary:
   siteglide-cli-test pull staging
 
 After pull finishes, tell the user to enable the Siteglide test MCP server in their AI tool settings (e.g. Cursor: Settings → Tools & MCP → enable siteglide-test) and reload the window if tools do not appear.
@@ -153,7 +162,8 @@ After pull finishes, tell the user to enable the Siteglide test MCP server in th
 ## Manual install (PowerShell)
 
 \`\`\`powershell
-cd path\\to\\siteglide-cli-test-bundle\\siteglide-mcp
+# Unpack zip anywhere, then:
+cd path\\to\\unpacked\\siteglide-cli-test-bundle\\siteglide-mcp
 npm install
 cd ..\\siteglide-cli-test
 npm install
@@ -161,16 +171,16 @@ npm install -g .
 siteglide-cli-test --version
 \`\`\`
 
-## First pull (registers MCP in the site project)
+## First pull (registers global MCP in the site project)
 
-When you are ready — in a Siteglide site folder that already has an environment (e.g. via \`siteglide-cli-test add\`):
+In a Siteglide site folder (environment already added, e.g. via \`siteglide-cli-test add\`):
 
 \`\`\`powershell
 cd path\\to\\your-site
 siteglide-cli-test pull staging
 \`\`\`
 
-Pull writes \`.cursor/mcp.json\` (and other IDE configs) pointing at the installed CLI. Do not create \`mcp.json\` by hand.
+Pull always rewrites \`.cursor/mcp.json\` (and other IDE configs) so the **siteglide-test** server points at the **globally installed** test CLI MCP launcher (absolute node + script path under the global npm package). Do not hand-edit \`mcp.json\`.
 
 ## Enable MCP in your AI tool
 
@@ -182,6 +192,7 @@ After pull finishes, turn the server on in settings, then reload if needed:
 Commands use the \`siteglide-cli-test\` prefix, e.g.:
 
 - \`siteglide-cli-test pull staging\`
+- \`siteglide-cli-test deploy staging\`
 - \`siteglide-cli-test mcp\`
 - \`siteglide-cli-test-mcp\` (same MCP launcher Cursor uses)
 
@@ -198,14 +209,17 @@ Your normal \`siteglide-cli\` is unchanged.
 
 	const aiPrompt = `Please install this Siteglide CLI TEST preview for me.
 
-1. Open the folder that contains INSTALL.md (after unzipping if needed).
+Headline: Unpack anywhere → npm install -g → use siteglide-cli-test from my site folder.
+
+1. Open the folder that contains INSTALL.md (after unzipping if needed). Location does not matter long-term.
 2. Run: cd siteglide-mcp && npm install
 3. Run: cd ../siteglide-cli-test && npm install && npm install -g .
-4. Confirm \`siteglide-cli-test --version\` works.
+4. Confirm \`siteglide-cli-test --version\` works (global binary).
 5. Do not remove or overwrite the normal siteglide-cli package.
-6. Do not create or edit mcp.json by hand — pull writes IDE MCP config.
-7. When I am ready (site folder open; environment added if needed), run a first pull from that site, e.g. siteglide-cli-test pull staging.
-8. After pull finishes, prompt me to enable the Siteglide test MCP server in my AI tool settings (e.g. Cursor: Settings → Tools & MCP → enable siteglide-test) and reload the window if tools do not appear.
+6. Do not create or edit mcp.json by hand — pull always points MCP at the globally installed test launcher.
+7. Reinstalling a newer test zip with npm install -g . overwrites the previous global test CLI/MCP.
+8. When I am ready (site folder open; environment added if needed), run a first pull from that site using the global binary, e.g. siteglide-cli-test pull staging.
+9. After pull finishes, prompt me to enable the Siteglide test MCP server in my AI tool settings (e.g. Cursor: Settings → Tools & MCP → enable siteglide-test) and reload the window if tools do not appear.
 
 This is a test build; commands are siteglide-cli-test (not siteglide-cli).
 `;
