@@ -433,23 +433,45 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
 };
 
 /**
- * Download the main site backup zip and convert it into the local site root (`marketplace_builder/` or `app/`).
- * Calls Siteglide-API `/cli/backup` then `/cli/backupStatus/:id` (no module_name).
- *
- * @param {Gateway} gateway - Authenticated API client for the current environment.
- * @param {string} [siteRoot] - Relative site folder (`marketplace_builder` or existing `app`).
- * Side effects: writes/overwrites that folder; may merge into `./modules`;
- * updates `pullSpinner` text; downloads then deletes a temporary zip.
+ * Start a site or module backup job on the remote instance.
+ * @param {Gateway} gateway
+ * @param {{ module_name?: string }} [formData]
+ * @returns {Promise<{ id: string }>}
  */
-const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Step: downloading main site zip → ${siteRoot}/`);
-	const filename = `${siteRoot}.zip`;
-	pullSpinner.text = 'Pulling site files';
-	const pullTask = await gateway.pullZip();
-	logger.Debug(`[pull] Site backup started (id: ${pullTask.id})`);
-	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
-	logger.Debug(`[pull] Site backup ready (status: ${readyTask.status}) — downloading zip`);
+const requestBackup = async (gateway, formData = {}) => {
+	const pullTask = await gateway.pullZip(formData);
+	const label = formData.module_name
+		? `Module "${formatModuleNameForLog(formData.module_name)}"`
+		: 'Site';
+	logger.Debug(`[pull] ${label} backup started (id: ${pullTask.id})`);
+	return pullTask;
+};
+
+/**
+ * Poll until backup zip is ready to download.
+ * @param {Gateway} gateway
+ * @param {string} backupId
+ * @returns {Promise<object>}
+ */
+const waitForBackupReady = async (gateway, backupId) => {
+	return waitForStatus(() => gateway.pullZipStatus(backupId));
+};
+
+/**
+ * @param {object} readyTask
+ * @param {string} filename
+ */
+const downloadBackupZip = async (readyTask, filename) => {
 	await downloadFile(readyTask.zip_file.url, filename);
+};
+
+/**
+ * Write a downloaded site zip to the local site root.
+ * @param {string} filename
+ * @param {string} siteRoot
+ * @param {string[]} [ignoredModules]
+ */
+const extractSiteZip = async (filename, siteRoot, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	await unzip(filename, siteRoot);
 	await copyChildren(`./${siteRoot}/app`, `./${siteRoot}`);
 	await fs.remove(`./${filename}`);
@@ -459,28 +481,16 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
 	}
 	await fs.remove(`./${siteRoot}/app`);
 	await cleanupEmptyDirs(siteRoot);
-	logger.Success('[pull] Site files pulled');
 };
 
 /**
- * Download one module's public-files backup and merge it into `./modules/<moduleName>/`.
- * Calls Siteglide-API `/cli/backup` with `module_name`, then polls `/cli/backupStatus/:id`.
- * Does not clear `marketplace_builder`.
- *
- * @param {Gateway} gateway - Authenticated API client for the current environment.
- * @param {string} moduleName - Installed module machine name to pull.
- * Side effects: writes/overwrites files under `./modules`; updates `pullSpinner` text;
- * uses then deletes a temp zip and `.tmp/pull-<moduleName>` work directory.
+ * Write a downloaded module zip into `./modules/<moduleName>/`.
+ * @param {string} filename
+ * @param {string} moduleName
+ * @param {string[]} [ignoredModules]
  */
-const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Starting module ${formatModuleNameForLog(moduleName)}`);
-	const filename = `${dir.MODULES}-${moduleName}.zip`;
+const extractModuleZip = async (filename, moduleName, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
-	const pullTask = await gateway.pullZip({ module_name: moduleName });
-	logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" backup started (id: ${pullTask.id})`);
-	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
-	logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" backup ready (status: ${readyTask.status}) — downloading zip`);
-	await downloadFile(readyTask.zip_file.url, filename);
 	await fs.remove(workDir);
 	await unzip(filename, workDir);
 	await fs.remove(`./${filename}`);
@@ -492,7 +502,6 @@ const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_
 
 	await moveModulesToRoot(workDir, ignoredModules);
 
-	// Some module zips nest files as <moduleName>/... instead of modules/<moduleName>/...
 	const directModulePath = `./${workDir}/${moduleName}`;
 	if (await fs.pathExists(directModulePath)) {
 		logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" zip used direct layout; copying into ./${dir.MODULES}/${moduleName}`);
@@ -503,6 +512,50 @@ const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_
 	if (await fs.pathExists(`./${workDir}`)) {
 		await fs.remove(`./${workDir}`);
 	}
+};
+
+/**
+ * Request backup, poll, and download a module zip without writing to `./modules/`.
+ * @param {Gateway} gateway
+ * @param {string} moduleName
+ * @returns {Promise<{ moduleName: string, filename: string }>}
+ */
+const prefetchModuleBackup = async (gateway, moduleName) => {
+	const filename = `${dir.MODULES}-${moduleName}.zip`;
+	const pullTask = await requestBackup(gateway, { module_name: moduleName });
+	const readyTask = await waitForBackupReady(gateway, pullTask.id);
+	logger.Debug(`[pull] Module "${moduleName}" backup ready (status: ${readyTask.status}) — downloading zip`);
+	await downloadBackupZip(readyTask, filename);
+	return { moduleName, filename };
+};
+
+/**
+ * Full site pull: backup through local site root extract.
+ * @param {Gateway} gateway
+ * @param {string} [siteRoot]
+ */
+const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
+	logger.Info(`[pull] Step: downloading main site zip → ${siteRoot}/`);
+	const filename = `${siteRoot}.zip`;
+	pullSpinner.text = 'Pulling site files';
+	const pullTask = await requestBackup(gateway);
+	const readyTask = await waitForBackupReady(gateway, pullTask.id);
+	logger.Debug(`[pull] Site backup ready (status: ${readyTask.status}) — downloading zip`);
+	await downloadBackupZip(readyTask, filename);
+	await extractSiteZip(filename, siteRoot, ignoredModules);
+	logger.Success('[pull] Site files pulled');
+};
+
+/**
+ * Full module pull: backup through local `./modules/<name>/` extract.
+ * @param {Gateway} gateway
+ * @param {string} moduleName
+ * @param {string[]} [ignoredModules]
+ */
+const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
+	logger.Info(`[pull] Starting module ${formatModuleNameForLog(moduleName)}`);
+	const prefetched = await prefetchModuleBackup(gateway, moduleName);
+	await extractModuleZip(prefetched.filename, moduleName, ignoredModules);
 };
 
 /**
@@ -566,6 +619,86 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignore
 	});
 
 	logger.Success(`[pull] Pulled ${total} module(s)`);
+};
+
+/**
+ * Overlap site backup with the first concurrency-sized module batch; gate module disk
+ * writes until the site zip is fully extracted (avoids `./modules/` races).
+ *
+ * @param {Gateway} gateway
+ * @param {string} siteRoot
+ * @param {string[]} modulesToPull
+ * @param {number} concurrency
+ */
+const pullSiteAndModules = async (gateway, siteRoot, modulesToPull, concurrency, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
+	const limit = Math.max(1, concurrency);
+	const firstBatch = modulesToPull.slice(0, limit);
+	const restModules = modulesToPull.slice(limit);
+	const siteFilename = `${siteRoot}.zip`;
+
+	if (firstBatch.length === 0) {
+		await pullSiteZip(gateway, siteRoot, ignoredModules);
+		return;
+	}
+
+	logger.Info(
+		`[pull] Step: site zip → ${siteRoot}/ (prefetching ${firstBatch.length} module backup(s) in parallel)`
+	);
+	pullSpinner.text = 'Prefetching site and module backups';
+
+	const siteTaskPromise = requestBackup(gateway);
+	const moduleTaskPromises = firstBatch.map((moduleName) =>
+		requestBackup(gateway, { module_name: moduleName })
+	);
+	const [sitePullTask, ...modulePullTasks] = await Promise.all([
+		siteTaskPromise,
+		...moduleTaskPromises
+	]);
+
+	pullSpinner.text = 'Downloading site and module backups';
+	const siteDownloadPromise = waitForBackupReady(gateway, sitePullTask.id).then(async (readyTask) => {
+		logger.Debug(`[pull] Site backup ready (status: ${readyTask.status}) — downloading zip`);
+		await downloadBackupZip(readyTask, siteFilename);
+		return siteFilename;
+	});
+	const moduleDownloadPromises = modulePullTasks.map((pullTask, index) => {
+		const moduleName = firstBatch[index];
+		const filename = `${dir.MODULES}-${moduleName}.zip`;
+		return waitForBackupReady(gateway, pullTask.id).then(async (readyTask) => {
+			logger.Debug(`[pull] Module "${moduleName}" backup ready (status: ${readyTask.status}) — downloading zip`);
+			await downloadBackupZip(readyTask, filename);
+			return { moduleName, filename };
+		});
+	});
+
+	const [downloadedSiteZip, ...prefetchedModules] = await Promise.all([
+		siteDownloadPromise,
+		...moduleDownloadPromises
+	]);
+
+	pullSpinner.text = 'Writing site files';
+	await extractSiteZip(downloadedSiteZip, siteRoot, ignoredModules);
+	logger.Success('[pull] Site files pulled');
+
+	if (prefetchedModules.length > 0) {
+		let written = 0;
+		const prefetchTotal = prefetchedModules.length;
+		pullSpinner.text = `Writing prefetched modules (0/${prefetchTotal})`;
+		for (let i = 0; i < prefetchedModules.length; i++) {
+			const { moduleName, filename } = prefetchedModules[i];
+			logger.Info(`[pull] Writing module ${formatModuleNameForLog(moduleName)}`);
+			await extractModuleZip(filename, moduleName, ignoredModules);
+			written += 1;
+			logger.Success(`[pull] Module "${formatModuleNameForLog(moduleName)}" done (${written}/${prefetchTotal})`);
+			pullSpinner.text = `Writing prefetched modules (${written}/${prefetchTotal})`;
+		}
+	}
+
+	if (restModules.length > 0) {
+		await pullModulesInParallel(gateway, restModules, limit, ignoredModules);
+	} else if (modulesToPull.length > 0) {
+		logger.Success(`[pull] Pulled ${modulesToPull.length} module(s)`);
+	}
 };
 
 /**
@@ -705,15 +838,35 @@ const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) =>
 	logger.Success('[pull] Tidying up complete');
 };
 
+/**
+ * Build argv for a nested siteglide-cli-pull child process (merge-first).
+ * @param {string} environment
+ * @param {object} params - Commander params from parent pull
+ * @returns {string[]}
+ */
+const buildPullSpawnArgs = (environment, params) => {
+	const args = [environment, '-c', params.configFile];
+	if (params.ignoreAssets) {
+		args.push('-i');
+	}
+	if (params.module) {
+		args.push('-m', params.module);
+	}
+	if (params.concurrency) {
+		args.push('--concurrency', String(params.concurrency));
+	}
+	return args;
+};
+
 program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Site and first module batch prefetch in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
-	.option('-m --module <module>', 'Optional module name filter. Without this flag, all installed modules are pulled.')
+	.option('-m --module <module>', 'Optional module name filter. Without this flag, non-ignored installed modules are pulled.')
 	.option(
 		'--concurrency <number>',
 		`Max concurrent module pulls (default: ${DEFAULT_MODULE_PULL_CONCURRENCY}, or CONCURRENCY env)`,
@@ -752,14 +905,18 @@ program
 				wipMessage,
 				pullFn: async () => {
 					await new Promise((resolve, reject) => {
-						const child = spawn(command('siteglide-cli-pull'), [environment, '-c', params.configFile], {
-							stdio: 'inherit',
-							shell: true,
-							env: Object.assign({}, process.env, nestedCliEnv(), {
-								SITEGLIDE_PULL_ASSUME_YES: '1',
-								SITEGLIDE_PULL_SKIP_COMMIT_BASELINE: '1'
-							})
-						});
+						const child = spawn(
+							command('siteglide-cli-pull'),
+							buildPullSpawnArgs(environment, params),
+							{
+								stdio: 'inherit',
+								shell: true,
+								env: Object.assign({}, process.env, nestedCliEnv(), {
+									SITEGLIDE_PULL_ASSUME_YES: '1',
+									SITEGLIDE_PULL_SKIP_COMMIT_BASELINE: '1'
+								})
+							}
+						);
 						child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`pull exit ${code}`))));
 					});
 				}
@@ -937,9 +1094,7 @@ program
 					logger.Info(`[pull] Will pull ${modulesToPull.length} module(s): ${formatModuleListForLog(modulesToPull).join(', ')}`);
 				}
 
-				await pullSiteZip(gateway, siteRoot, ignoredModules);
-
-				await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency, ignoredModules);
+				await pullSiteAndModules(gateway, siteRoot, modulesToPull, modulePullConcurrency, ignoredModules);
 
 				if (!ignoreAssets) {
 					await pullAssets(gateway, siteRoot, ignoredModules);

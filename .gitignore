@@ -1,5 +1,5 @@
 .siteglide-config
-.siteglide/
+.siteglide/IDE/
 node_modules
 /marketplace_builder
 .env
