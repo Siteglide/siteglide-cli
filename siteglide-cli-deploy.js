@@ -29,7 +29,7 @@ const program = require('commander'),
 	{ commitAllSafe } = require('./lib/git/commit'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstDeploy, readMergeManifest } = require('./lib/git/mergeFirst'),
-	{ offerMergeConflictAiHelp } = require('./lib/aiPrompts'),
+	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
 	{ claimCommandLock, registerCommandLockCleanup, nestedCliEnv, logCommandLockRefusal } = require('./lib/commandLock');
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
@@ -208,6 +208,10 @@ program
 			});
 			if (!result.ok) {
 				logger.Error(`[deploy] Merge first failed: ${result.error}`);
+				await offerMergeFirstFailureHelp(result, {
+					environment,
+					command: 'deploy'
+				});
 				process.exit(1);
 			}
 			const conflicts = hasOpenGitConflicts();

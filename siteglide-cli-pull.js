@@ -37,7 +37,7 @@ const program = require('commander'),
 	{ commitAllSafe, hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
-	{ offerMergeConflictAiHelp } = require('./lib/aiPrompts'),
+	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
 	{ claimCommandLock, registerCommandLockCleanup, nestedCliEnv, logCommandLockRefusal } = require('./lib/commandLock'),
 	command = require('./lib/command'),
 	spawn = require('child_process').spawn;
@@ -765,6 +765,10 @@ program
 			});
 			if (!result.ok) {
 				logger.Error(`[pull] Merge failed: ${result.error}`);
+				await offerMergeFirstFailureHelp(result, {
+					environment,
+					command: 'pull'
+				});
 				process.exit(1);
 			}
 			const conflicts = hasOpenGitConflicts();

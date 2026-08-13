@@ -31,7 +31,7 @@ const program = require('commander'),
 		clearSyncCurrentConflict,
 		resolveSyncCurrentConflict
 	} = require('./lib/syncCurrentConflict'),
-	{ offerMergeConflictAiHelp } = require('./lib/aiPrompts');
+	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts');
 
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
@@ -288,6 +288,10 @@ const beforeSyncOp = async (syncedFilePath) => {
 			});
 			if (!mf.ok) {
 				logger.Error(`[Sync] Merge first failed: ${mf.error}`, { exit: false });
+				await offerMergeFirstFailureHelp(mf, {
+					environment,
+					command: 'sync'
+				});
 				clearSyncCurrentConflict();
 				return false;
 			}
