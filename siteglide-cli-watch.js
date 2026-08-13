@@ -355,7 +355,7 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 				);
 				await conflictGate.waitForGitClean();
 			} else {
-				logger.Success('[Sync] Merge completed with no conflict markers. Save the file again to sync.');
+				logger.Success('[Sync] Merge completed with no conflict markers. Re-checking wave for upload.');
 			}
 			clearSyncConflictRecords(environment);
 			return { action: 'merge_first' };
@@ -453,6 +453,28 @@ const uploadWaveEntriesAsLeader = async (entries) => {
 };
 
 /**
+ * Re-check a blocked wave after conflict resolution, then upload passing entries.
+ * @param {object[]} entries
+ * @param {object} [resolution]
+ * @returns {Promise<{ proceed: boolean, entries: object[] }>}
+ */
+const finishConflictWaveUpload = async (entries, resolution = {}) => {
+	const rechecked = await recheckWaveEntries(entries, resolution);
+	if (!rechecked.proceed) {
+		syncWaveLog(
+			`[Sync wave ${syncUploadWave.getCurrentWaveId()}] recheck still blocked after conflict resolution`
+		);
+		return rechecked;
+	}
+	const uploadCount = rechecked.entries.filter((entry) => checkAllowsUpload(entry.checkResult)).length;
+	syncWaveLog(
+		`[Sync wave ${syncUploadWave.getCurrentWaveId()}] uploading ${uploadCount} file(s) after conflict resolution`
+	);
+	await uploadWaveEntriesAsLeader(rechecked.entries);
+	return rechecked;
+};
+
+/**
  * Check → wave barrier → upload (or leader conflict resolution).
  * @param {{ path: string, op: string }} task
  * @param {Function} callback
@@ -518,6 +540,9 @@ const processSyncTask = async (task, callback) => {
 				if (isLeader) {
 					const gitEntry = decision.entries.find((entry) => checkHasGitBlock(entry.checkResult)) || decision.entries[0];
 					await handleGitBlockAsLeader(gitEntry.checkResult.gitOpen);
+					if (!syncStopping && !hasOpenGitConflicts().open) {
+						await finishConflictWaveUpload(decision.entries);
+					}
 				} else {
 					await conflictGate.waitForLeader();
 				}
@@ -529,10 +554,9 @@ const processSyncTask = async (task, callback) => {
 				if (resolution.action === 'cancel' || resolution.action === 'abort' || resolution.action === 'pause') {
 					stopSyncWatch('[Sync] Cancelling sync.');
 				} else if (resolution.action === 'continue' || resolution.action === 'skip') {
-					const rechecked = await recheckWaveEntries(decision.entries, resolution);
-					if (rechecked.proceed) {
-						await uploadWaveEntriesAsLeader(rechecked.entries);
-					}
+					await finishConflictWaveUpload(decision.entries, resolution);
+				} else if (resolution.action === 'merge_first') {
+					await finishConflictWaveUpload(decision.entries);
 				}
 			} else {
 				await conflictGate.waitForLeader();
