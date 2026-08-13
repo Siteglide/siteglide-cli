@@ -110,6 +110,14 @@ describe('syncConflictGate', () => {
 		const clean = await gate.waitForGitClean();
 		assert.equal(clean, false);
 	});
+
+	it('assertUploadAllowed throws while uploads are blocked', () => {
+		const gate = createGate();
+		gate.blockUploads();
+		assert.throws(() => gate.assertUploadAllowed(), /sync upload blocked/);
+		gate.allowUploads();
+		assert.doesNotThrow(() => gate.assertUploadAllowed());
+	});
 });
 
 describe('syncCurrentConflict status extensions', () => {
@@ -135,6 +143,20 @@ describe('syncCurrentConflict status extensions', () => {
 		const read = readSyncCurrentConflict(cwd);
 		assert.equal(read.syncPaused, true);
 		assert.equal(read.status, 'awaiting_user_decision');
+	});
+
+	it('writes wavePaths when provided', () => {
+		writeSyncCurrentConflict({
+			environment: 'staging',
+			reason: 'remote_newer',
+			path: 'views/pages/a.liquid',
+			localPath: 'app/views/pages/a.liquid',
+			wavePaths: ['views/pages/a.liquid', 'views/pages/b.liquid'],
+			cwd
+		});
+		const read = readSyncCurrentConflict(cwd);
+		assert.deepEqual(read.wavePaths, ['views/pages/a.liquid', 'views/pages/b.liquid']);
+		clearSyncCurrentConflict(cwd);
 	});
 
 	it('updates status to waiting_for_git_resolution', () => {
