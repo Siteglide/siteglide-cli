@@ -18,13 +18,20 @@ const program = require('commander'),
 	manifestGenerateForAssets = require('./lib/assets/generateManifest').manifestGenerateForAssets,
 	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
 	{ claimSyncStatus, clearSyncStatus, registerSyncStatusCleanup } = require('./lib/syncStatus'),
+	{ logCommandLockRefusal } = require('./lib/commandLock'),
 	version = require('./package.json').version,
 	{ cloneDeep, debounce } = require('lodash'),
 	{ checkFile, fetchRemoteFileMtime, toPhysicalApiPath } = require('./lib/remoteMtimeCheck'),
 	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstSyncFile, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
-	{ writeConflictLog } = require('./lib/remoteCheckConflictLog');
+	{ writeConflictLog } = require('./lib/remoteCheckConflictLog'),
+	{
+		writeSyncCurrentConflict,
+		clearSyncCurrentConflict,
+		resolveSyncCurrentConflict
+	} = require('./lib/syncCurrentConflict'),
+	{ offerMergeConflictAiHelp } = require('./lib/aiPrompts');
 
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
@@ -119,13 +126,46 @@ const withConfirmLock = (fn) => {
 
 const skipRemoteCheck = process.env.SITEGLIDE_SKIP_REMOTE_CHECK === '1';
 
+/** Once true, stop accepting work and exit the watch process. */
+let syncStopping = false;
+
+/** Offer merge-conflict AI prompt at most once while markers remain open. */
+let mergeConflictAiHelpOffered = false;
+
+/**
+ * Cancel sync watch: drop remaining queue work and exit the process.
+ * Sync status cleanup runs via registerSyncStatusCleanup on exit.
+ * @param {string} message
+ */
+const stopSyncWatch = (message) => {
+	if (syncStopping) {
+		return;
+	}
+	syncStopping = true;
+	clearSyncCurrentConflict();
+	logger.Warn(message, { exit: false });
+	try {
+		queue.kill();
+	} catch (err) {
+		logger.Debug(err);
+	}
+	process.exit(0);
+};
+
 /**
  * Before push/delete: refuse open git conflicts; check remote mtime unless skipped.
- * Merge first stops sync for that file (and pauses further prompts via pause exit).
+ * Merge first stops sync for that file; cancel (n) ends the whole watch process.
  */
 const beforeSyncOp = async (syncedFilePath) => {
+	if (syncStopping) {
+		return false;
+	}
+
 	const environment = process.env.SITEGLIDE_ENV;
 	const open = hasOpenGitConflicts();
+	if (!open.open) {
+		mergeConflictAiHelpOffered = false;
+	}
 	if (open.open) {
 		writeConflictLog(environment || 'unknown', {
 			command: 'sync',
@@ -133,8 +173,30 @@ const beforeSyncOp = async (syncedFilePath) => {
 			conflicts: (open.paths || []).map((p) => ({ path: p })),
 			consoleHint: 'Resolve conflict markers with AI + MCP before syncing.'
 		});
-		logger.Error(`[Sync] Refusing while ${open.reason}. Ask AI + MCP to help resolve conflicts.`, { exit: false });
-		return false;
+		return withConfirmLock(async () => {
+			if (syncStopping || !hasOpenGitConflicts().open) {
+				return false;
+			}
+			if (!mergeConflictAiHelpOffered) {
+				mergeConflictAiHelpOffered = true;
+				await offerMergeConflictAiHelp({
+					environment: environment || 'unknown',
+					command: 'sync',
+					warnMessage:
+						`[Sync] Refusing while ${open.reason}. Sync will skip files until conflict markers are resolved.`
+				});
+				logger.Warn(
+					'[Sync] When you are ready: resolve all conflicts, finish the merge commit, then save the file again to sync.',
+					{ exit: false }
+				);
+			} else {
+				logger.Error(
+					`[Sync] Refusing while ${open.reason}. Resolve conflict markers, then save again to sync.`,
+					{ exit: false }
+				);
+			}
+			return false;
+		});
 	}
 
 	if (skipRemoteCheck || !environment) {
@@ -154,26 +216,62 @@ const beforeSyncOp = async (syncedFilePath) => {
 		siteRoot
 	});
 	if (result.ok) {
+		clearSyncCurrentConflict();
 		return true;
 	}
 
+	if (syncStopping) {
+		return false;
+	}
+
+	const localPathUnix = syncedFilePath.replace(/\\/g, '/');
+	const conflictMeta = {
+		path: result.physicalPath,
+		localPath: localPathUnix,
+		type: result.kind,
+		remoteUpdatedAt: result.remoteUpdatedAt || remoteMeta.updatedAt || null,
+		effectiveBaselineAt: result.effectiveBaselineAt,
+		baselineSource: result.baselineSource
+	};
+	// Write before the interactive prompt so MCP/agents can see the conflict while
+	// the human is still deciding on the CLI.
+	writeSyncCurrentConflict({
+		environment,
+		reason: result.reason,
+		path: conflictMeta.path,
+		localPath: conflictMeta.localPath,
+		kind: conflictMeta.type,
+		remoteUpdatedAt: conflictMeta.remoteUpdatedAt,
+		effectiveBaselineAt: conflictMeta.effectiveBaselineAt,
+		baselineSource: conflictMeta.baselineSource
+	});
+
 	return withConfirmLock(async () => {
+		if (syncStopping) {
+			clearSyncCurrentConflict();
+			return false;
+		}
 		const decision = await promptRemoteConflict({
 			environment,
 			command: 'sync',
 			reason: result.reason,
-			conflicts: [{
-				path: result.physicalPath,
-				type: result.kind,
-				remoteUpdatedAt: result.remoteUpdatedAt,
-				effectiveBaselineAt: result.effectiveBaselineAt,
-				baselineSource: result.baselineSource
-			}]
+			conflicts: [conflictMeta]
 		});
 		if (decision === 'continue') {
+			resolveSyncCurrentConflict('continue');
 			return true;
 		}
+		if (decision === 'skip') {
+			resolveSyncCurrentConflict('skip');
+			const chalk = require('chalk');
+			const shown = (result.physicalPath || syncedFilePath || '').replace(/\\/g, '/');
+			logger.Error(`[Sync] Skipped file: ${shown}`, { exit: false });
+			// Also echo the bare path in red for visibility in the watch stream.
+			logger.Print(`${chalk.red.bold(shown)}\n`);
+			return false;
+		}
 		if (decision === 'merge_first') {
+			resolveSyncCurrentConflict('merge_first');
 			const localPath = syncedFilePath.replace(/\\/g, '/');
 			const mf = await mergeFirstSyncFile({
 				gateway,
@@ -190,26 +288,49 @@ const beforeSyncOp = async (syncedFilePath) => {
 			});
 			if (!mf.ok) {
 				logger.Error(`[Sync] Merge first failed: ${mf.error}`, { exit: false });
+				clearSyncCurrentConflict();
 				return false;
 			}
-			logger.Warn(
-				'[Sync] Merge first started. Ask AI + MCP to resolve markers, finish the merge, then save again to sync.',
-				{ exit: false }
-			);
+			const conflicts = hasOpenGitConflicts();
+			if (conflicts.open) {
+				mergeConflictAiHelpOffered = true;
+				await offerMergeConflictAiHelp({
+					environment,
+					command: 'sync',
+					warnMessage:
+						'[Sync] Merge left conflict markers in your working tree. This file was not synced.'
+				});
+				logger.Warn(
+					'[Sync] When you are ready: resolve all conflicts, finish the merge commit, then save the file again to sync.',
+					{ exit: false }
+				);
+			} else {
+				logger.Success('[Sync] Merge completed with no conflict markers. Save the file again to sync.');
+			}
+			clearSyncCurrentConflict();
 			return false;
 		}
-		logger.Warn('[Sync] Paused due to remote conflict. Commit, pull, or Merge first, then save again.', { exit: false });
+		if (decision === 'cancel' || decision === 'abort' || decision === 'pause') {
+			resolveSyncCurrentConflict(decision === 'pause' ? 'pause' : 'cancel');
+			stopSyncWatch('[Sync] Cancelling sync.');
+			return false;
+		}
+		clearSyncCurrentConflict();
 		return false;
 	});
 };
 
 const queue = Queue((task, callback) => {
 	let push = pushFileDirectAssets;
+	if (syncStopping) {
+		callback();
+		return;
+	}
 	switch (task.op) {
 		case 'push':
 			beforeSyncOp(task.path)
 				.then((ok) => {
-					if (!ok) {
+					if (!ok || syncStopping) {
 						callback();
 						return;
 					}
@@ -223,7 +344,7 @@ const queue = Queue((task, callback) => {
 		case 'delete':
 			beforeSyncOp(task.path)
 				.then((ok) => {
-					if (!ok) {
+					if (!ok || syncStopping) {
 						callback();
 						return;
 					}
@@ -399,6 +520,9 @@ const syncEnvironment = process.env.SITEGLIDE_ENV;
 if (syncEnvironment) {
 	const claim = claimSyncStatus({ environment: syncEnvironment });
 	if (!claim.ok) {
+		if (claim.headline || claim.helper) {
+			logCommandLockRefusal(claim);
+		}
 		logger.Error(
 			`Sync for environment "${syncEnvironment}" is already running (pid ${claim.existingPid}) in this directory. Stop that sync before starting another.`
 		);

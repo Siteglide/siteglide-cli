@@ -42,6 +42,31 @@ describe('pullBaseline', () => {
 		assert.equal(b.lastDeploy, undefined);
 	});
 
+	it('stores and preserves lastPullCommit', () => {
+		writePullBaseline('staging', {
+			cwd,
+			lastPulledAt: '2026-02-01T00:00:00.000Z',
+			lastPullCommit: 'abc123'
+		});
+		assert.equal(readPullBaseline('staging', cwd).lastPullCommit, 'abc123');
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-03-01T00:00:00.000Z' });
+		assert.equal(readPullBaseline('staging', cwd).lastPullCommit, 'abc123');
+		replaceDeployManifest('staging', {
+			cwd,
+			deployedAt: '2026-04-01T00:00:00.000Z',
+			paths: ['a.liquid']
+		});
+		assert.equal(readPullBaseline('staging', cwd).lastPullCommit, 'abc123');
+		advancePullBaseline('staging', '2026-05-01T00:00:00.000Z', cwd);
+		assert.equal(readPullBaseline('staging', cwd).lastPullCommit, 'abc123');
+		writePullBaseline('staging', {
+			cwd,
+			lastPulledAt: '2026-06-01T00:00:00.000Z',
+			lastPullCommit: null
+		});
+		assert.equal(readPullBaseline('staging', cwd).lastPullCommit, undefined);
+	});
+
 	it('effectiveBaseline uses deploy floor only for listed paths', () => {
 		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z' });
 		replaceDeployManifest('staging', {
@@ -161,5 +186,44 @@ describe('merge-first safe sync gate', () => {
 			false
 		);
 		clearMergeManifest('staging', cwd);
+	});
+});
+
+describe('projectPreferences', () => {
+	const {
+		ensureProjectPreferences,
+		readProjectPreferences,
+		projectPreferencesPath
+	} = require('../../lib/projectPreferences');
+	let cwd;
+
+	beforeEach(() => {
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-prefs-'));
+	});
+
+	afterEach(() => {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it('creates null defaults and does not clobber filled values', () => {
+		ensureProjectPreferences(cwd);
+		const first = readProjectPreferences(cwd);
+		assert.deepEqual(first.target_audience, {
+			role: null,
+			git: null,
+			siteglideCli: null
+		});
+		fs.writeFileSync(
+			projectPreferencesPath(cwd),
+			JSON.stringify({
+				target_audience: { role: 'designer', git: 'beginner', siteglideCli: null }
+			}, null, 2),
+			'utf8'
+		);
+		ensureProjectPreferences(cwd);
+		const second = readProjectPreferences(cwd);
+		assert.equal(second.target_audience.role, 'designer');
+		assert.equal(second.target_audience.git, 'beginner');
+		assert.equal(second.target_audience.siteglideCli, null);
 	});
 });

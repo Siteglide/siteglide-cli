@@ -3,8 +3,8 @@
 const program = require('commander'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	logger = require('./lib/logger'),
-	open = require('open'),
 	server = require('./siteglide-cli-server'),
+	{ openInSystemBrowser } = require('./lib/openInSystemBrowser'),
 	version = require('./package.json').version;
 
 program
@@ -15,7 +15,10 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-p --port <port>', 'port number', '3333')
-	.option('-o, --open', 'automatically opens your default browser')
+	.option(
+		'-o, --open',
+		'open the homepage in your system default browser (preferred over IDE in-editor browsers)'
+	)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
@@ -24,14 +27,21 @@ program
 			SITEGLIDE_TOKEN: authData.token,
 			SITEGLIDE_URL: authData.url,
 			SITEGLIDE_EMAIL: authData.email,
-			PORT: params.port
+			PORT: params.port,
+			SITEGLIDE_GUI_OPEN: params.open ? '1' : ''
 		});
 
 		try {
 			await server.start(process.env, 'gui');
 			if (params.open) {
 				setTimeout(async function () {
-					await open(`http://localhost:${params.port}/`);
+					const result = await openInSystemBrowser(`http://localhost:${params.port}/`);
+					if (!result.ok) {
+						logger.Warn(
+							`[gui] Could not open system browser automatically: ${result.error}. Open http://localhost:${params.port}/ manually.`,
+							{ exit: false }
+						);
+					}
 				}, 1000);
 			}
 		} catch (e) {

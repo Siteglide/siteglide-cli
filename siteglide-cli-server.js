@@ -81,13 +81,28 @@ const start = (env, command) => {
 	gateway.ping().then(async () => {
 		app.listen(port, function () {
 			logger.Debug(`Server is listening on ${port}`);
-			logger.Success(`Connected to ${env.SITEGLIDE_URL}`);
+			const chalk = require('chalk');
+			const { localTimeZoneLabel } = require('./lib/formatLocalDateTime');
+			const now = new Date();
+			const HHMMSS = now.toTimeString().split(' ')[0];
+			const tz = localTimeZoneLabel(now);
+			logger.Print(
+				chalk.blue(`[${HHMMSS} ${tz}] Connected to ${env.SITEGLIDE_URL}\n`)
+			);
 			if (command === 'gui') {
-				logger.Success(`Admin: http://localhost:${port}`);
+				logger.Success(`Start at the user-interface homepage here: http://localhost:${port}`);
 				logger.Success('---');
 				logger.Success(`Instance Logs: http://localhost:${port}/logs`);
 				logger.Success(`GraphiQL Editor: http://localhost:${port}/gui/graphql`);
 				logger.Success(`Liquid Evaluator: http://localhost:${port}/gui/liquid`);
+				if (env.SITEGLIDE_GUI_OPEN === '1') {
+					logger.Info('[gui] Opening the homepage in your system default browser…');
+				} else {
+					logger.Info(
+						'[gui] Tip: re-run with -o to open the homepage in your system browser. ' +
+						'Clicking links in some IDE terminals may open an in-editor browser instead.'
+					);
+				}
 			} else {
 				logger.Success(`GraphiQL Editor: http://localhost:${port}/gui/graphql`);
 				logger.Warn('The graphql command is now deprecated and will be removed in a future update. Please switch to the new gui command to use the GraphiQL Editor and Liquid Evaluator.');

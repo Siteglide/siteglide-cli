@@ -9,7 +9,7 @@ const program = require('commander'),
 	downloadFile = require('./lib/downloadFile'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	Gateway = require('./lib/proxy'),
-	Confirm = require('./lib/confirm'),
+	{ selectChoice, inputText, confirmYesNo } = require('./lib/prompts'),
 	getBinary = require('./lib/assets/getBinary'),
 	unzip = require('./lib/unzip'),
 	path = require('path'),
@@ -30,11 +30,17 @@ const program = require('commander'),
 		formatModuleListForLog
 	} = require('./lib/pullIgnoredModules'),
 	{ writePullBaseline } = require('./lib/pullBaseline'),
+	{ ensureProjectPreferences } = require('./lib/projectPreferences'),
 	{ clearConflictLog } = require('./lib/remoteCheckConflictLog'),
-	{ getGitReadiness } = require('./lib/git/readiness'),
-	{ isWorkingTreeDirty, stashPush, stashPop } = require('./lib/git/workingTree'),
-	{ commitAllSafe } = require('./lib/git/commit'),
-	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers');
+	{ getGitReadiness, logGitSetupHint, run: runGit } = require('./lib/git/readiness'),
+	{ isWorkingTreeDirty } = require('./lib/git/workingTree'),
+	{ commitAllSafe, hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
+	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
+	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
+	{ offerMergeConflictAiHelp } = require('./lib/aiPrompts'),
+	{ claimCommandLock, registerCommandLockCleanup, nestedCliEnv, logCommandLockRefusal } = require('./lib/commandLock'),
+	command = require('./lib/command'),
+	spawn = require('child_process').spawn;
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 
@@ -42,7 +48,7 @@ const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 const AGENTS_ROOT = '.agents';
 
 /** Default max concurrent module backup/download/extract jobs. */
-const DEFAULT_MODULE_PULL_CONCURRENCY = 3;
+const DEFAULT_MODULE_PULL_CONCURRENCY = 5;
 
 /**
  * Copy each child of `srcDir` into `destDir` (merge/overwrite).
@@ -452,7 +458,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
 	}
 	await fs.remove(`./${siteRoot}/app`);
 	await cleanupEmptyDirs(siteRoot);
-	logger.Info('[pull] Site files pulled');
+	logger.Success('[pull] Site files pulled');
 };
 
 /**
@@ -554,11 +560,11 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignore
 	await mapLimit(modulesToPull, limit, async (moduleName) => {
 		await pullModuleZip(gateway, moduleName, ignoredModules);
 		completed += 1;
-		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" done (${completed}/${total})`);
+		logger.Success(`[pull] Module "${formatModuleNameForLog(moduleName)}" done (${completed}/${total})`);
 		pullSpinner.text = `Pulling modules (${completed}/${total} done, up to ${limit} at a time)`;
 	});
 
-	logger.Info(`[pull] Pulled ${total} module(s)`);
+	logger.Success(`[pull] Pulled ${total} module(s)`);
 };
 
 /**
@@ -609,8 +615,14 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 	}));
 	let moduleAssetCount = 0;
 	let wroteCount = 0;
+	let skippedEmptyPath = 0;
 	asset_files.forEach(file => {
 		const physicalPath = file.data.physical_file_path.replace(/\\/g, '/');
+		if (physicalPath.indexOf('//') > -1) {
+			skippedEmptyPath++;
+			logger.Info(`[pull] Skipping asset with empty folder in path: ${physicalPath}`);
+			return;
+		}
 		const isModuleAsset = physicalPath === dir.MODULES || physicalPath.indexOf(dir.MODULES + '/') === 0;
 		const root = isModuleAsset ? dir.MODULES : siteRoot;
 		const relativePath = isModuleAsset
@@ -632,7 +644,10 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 		fs.writeFileSync(fullPath, file.data.body, logger.Error);
 		wroteCount++;
 	});
-	logger.Info(`[pull] Assets: wrote ${wroteCount} file(s) (${moduleAssetCount} under modules)`);
+	if (skippedEmptyPath > 0) {
+		logger.Info(`[pull] Assets: skipped ${skippedEmptyPath} file(s) with empty folder in path`);
+	}
+	logger.Success(`[pull] Assets: wrote ${wroteCount} file(s) (${moduleAssetCount} under modules)`);
 };
 
 /**
@@ -686,7 +701,7 @@ const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) =>
 			await cleanupEmptyDirs(appRoot);
 		}
 	}
-	logger.Info('[pull] Tidying up complete');
+	logger.Success('[pull] Tidying up complete');
 };
 
 program
@@ -711,6 +726,15 @@ program
 	)
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
+
+		const lock = claimCommandLock('pull', { environment });
+		if (!lock.ok) {
+			logCommandLockRefusal(lock);
+		}
+		if (!lock.nested) {
+			registerCommandLockCleanup();
+		}
+
 		const ignoreAssets = params.ignoreAssets;
 		const moduleFilter = params.module;
 		const envConcurrency = parseInt(process.env.CONCURRENCY, 10);
@@ -720,15 +744,90 @@ program
 		const gateway = new Gateway(authData);
 		const assumeYes = process.env.SITEGLIDE_PULL_ASSUME_YES === '1';
 
+		const runMergeFirstPull = async (wipMessage) => {
+			logger.Info('[pull] Merge: committing local work if needed, pulling on a temporary branch, then merging back.');
+			const result = await mergeFirstPull({
+				environment,
+				wipMessage,
+				pullFn: async () => {
+					await new Promise((resolve, reject) => {
+						const child = spawn(command('siteglide-cli-pull'), [environment, '-c', params.configFile], {
+							stdio: 'inherit',
+							shell: true,
+							env: Object.assign({}, process.env, nestedCliEnv(), {
+								SITEGLIDE_PULL_ASSUME_YES: '1',
+								SITEGLIDE_PULL_SKIP_COMMIT_BASELINE: '1'
+							})
+						});
+						child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`pull exit ${code}`))));
+					});
+				}
+			});
+			if (!result.ok) {
+				logger.Error(`[pull] Merge failed: ${result.error}`);
+				process.exit(1);
+			}
+			const conflicts = hasOpenGitConflicts();
+			if (conflicts.open) {
+				await offerMergeConflictAiHelp({
+					environment,
+					command: 'pull',
+					warnMessage:
+						'[pull] Merge started. Ask AI + MCP to resolve conflict markers if any, finish the merge commit, then continue.'
+				});
+			} else {
+				logger.Success('[pull] Merge completed with no conflict markers.');
+			}
+			process.exit(0);
+		};
+
+		/**
+		 * After a successful pull: write lastPulledAt, and when appropriate record
+		 * lastPullCommit (auto-commit dirty tree so a SHA always exists).
+		 */
+		const recordPullBaseline = () => {
+			const skipCommitBaseline = process.env.SITEGLIDE_PULL_SKIP_COMMIT_BASELINE === '1';
+			const isPartialModulePull = Boolean(moduleFilter);
+
+			if (skipCommitBaseline || isPartialModulePull) {
+				// Timestamp only — preserve existing lastPullCommit (do not set from temp/partial tree).
+				writePullBaseline(environment);
+				return;
+			}
+
+			const gitReady = getGitReadiness();
+			if (!gitReady.repoInitialized) {
+				writePullBaseline(environment);
+				return;
+			}
+
+			if (hasStagedOrUnstagedChanges()) {
+				const shortDate = new Date().toISOString().slice(0, 10);
+				const defaultMsg = `Snapshot after pulling from ${environment} environment ${shortDate}`;
+				const committed = commitAllSafe(defaultMsg);
+				if (!committed.ok && !/nothing to commit/i.test(`${committed.stdout} ${committed.stderr}`)) {
+					logger.Warn(`[pull] Could not auto-commit pull snapshot: ${committed.stderr || committed.stdout}`, { exit: false });
+					writePullBaseline(environment);
+					return;
+				}
+				logger.Info('[pull] Auto-committed pull snapshot for merge-first baseline');
+			} else {
+				logger.Success('[pull] Working tree is clean — files on the site exactly matched your local files. Nothing to commit.');
+			}
+
+			const head = runGit('git', ['rev-parse', 'HEAD']);
+			if (head.ok && head.stdout) {
+				writePullBaseline(environment, { lastPullCommit: head.stdout });
+			} else {
+				writePullBaseline(environment);
+			}
+		};
+
 		const startPull = async function () {
-			let stashed = false;
 			let git = { repoInitialized: false };
 			try {
 				git = getGitReadiness();
-				if (!git.repoInitialized) {
-					// Soft tip only — do not block pull when git is missing.
-					logger.Info('[pull] Git is not initialized here. Ask your AI / Siteglide MCP to help set up git for safer workflows.');
-				} else {
+				if (git.repoInitialized) {
 					const open = hasOpenGitConflicts();
 					if (open.open) {
 						logger.Error(`[pull] Refusing pull while ${open.reason}. Ask AI + MCP to help resolve conflict markers first.`);
@@ -736,23 +835,52 @@ program
 					}
 					if (isWorkingTreeDirty()) {
 						if (!process.stdin.isTTY || process.env.CI) {
-							logger.Error('[pull] Working tree is dirty. Commit or stash before pull (non-interactive).');
+							logger.Error('[pull] Working tree is dirty. Commit your work, then pull again (non-interactive).');
 							process.exit(1);
 						}
-						const choice = await Confirm(
-							'Working tree is dirty. Pull refuses to overwrite uncommitted work. (S)tash then pull / (N) cancel\n'
-						);
-						if (!/^s$/i.test(choice.trim())) {
-							logger.Error('[Cancelled] Pull not executed — clean or stash your working tree first.');
+						const chalk = require('chalk');
+						const message = chalk.yellow.bold('Commit your working tree before pulling.') +
+							' How shall we proceed?';
+						const ans = await selectChoice(message, [
+							{
+								name: 'Commit, pull and merge',
+								value: 'merge',
+								description:
+									'Commit changes now, pull on a new branch, then merge back. Conflicts stay in files for manual or AI resolution.'
+							},
+							{
+								name: 'Commit and pull',
+								value: 'commit_pull',
+								description:
+									'Commit your current work first (so it is recoverable from history), then continue with a normal pull.'
+							},
+							{
+								name: 'Cancel pull',
+								value: 'cancel'
+							}
+						]);
+						if (!ans || ans === 'cancel') {
+							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
 							process.exit(1);
 						}
-						const stashMsg = await Confirm('Stash message:\n');
-						const stashRes = stashPush(stashMsg.trim() || `siteglide pull stash ${new Date().toISOString()}`);
-						if (!stashRes.ok) {
-							logger.Error(`[pull] Stash failed: ${stashRes.stderr || stashRes.stdout}`);
+						const shortDate = new Date().toISOString().slice(0, 10);
+						const defaultBeforeMsg = `Snapshot before pulling from ${environment} environment ${shortDate}`;
+						const msg = await inputText('Commit message for your current work', { default: defaultBeforeMsg });
+						if (msg == null) {
+							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
 							process.exit(1);
 						}
-						stashed = true;
+						const wipMessage = msg.trim() || defaultBeforeMsg;
+						if (ans === 'merge') {
+							await runMergeFirstPull(wipMessage);
+						}
+						const committed = commitAllSafe(wipMessage);
+						if (!committed.ok && !/nothing to commit/i.test(`${committed.stdout} ${committed.stderr}`)) {
+							logger.Error(`[pull] Commit failed: ${committed.stderr || committed.stdout}`);
+							process.exit(1);
+						}
+						logger.Info('[pull] Committed current work — continuing with a normal pull.');
+						// Fall through to the normal pull path (working tree should now be clean).
 					}
 				}
 
@@ -820,39 +948,13 @@ program
 
 				await tidyUpAfterPull(ignoredModules);
 
-				// Record lastPulledAt and clear deploy path floors + conflict logs.
-				writePullBaseline(environment);
+				// Record lastPulledAt (+ lastPullCommit when git + full pull), clear conflict logs.
+				recordPullBaseline();
 				clearConflictLog(environment);
+				ensureProjectPreferences();
 
-				logger.Info('[pull] All steps finished');
+				logger.Success('[pull] All steps finished');
 				pullSpinner.succeed('Pulled files');
-
-				if (git.repoInitialized && process.stdin.isTTY && !process.env.CI) {
-					const commitAns = await Confirm('Commit this pull to git? (Y/n)\n');
-					if (commitAns === 'Y') {
-						const msg = await Confirm('Commit message:\n');
-						const committed = commitAllSafe(msg.trim() || `siteglide pull ${environment} ${new Date().toISOString()}`);
-						if (!committed.ok) {
-							logger.Warn(`[pull] Commit skipped/failed: ${committed.stderr || committed.stdout}`, { exit: false });
-						} else {
-							logger.Info('[pull] Committed pull result');
-						}
-					}
-					if (stashed) {
-						const popAns = await Confirm('Stash pop your previous work now? (Y/n)\n');
-						if (popAns === 'Y') {
-							const pop = stashPop({ environment });
-							if (!pop.ok) {
-								logger.Warn(
-									`[pull] Stash pop conflicted. Resolve markers with AI + MCP. Log: ${pop.logPath}`,
-									{ exit: false }
-								);
-							} else {
-								logger.Info('[pull] Stash popped successfully');
-							}
-						}
-					}
-				}
 			} catch (e) {
 				logger.Debug(e);
 				pullSpinner.fail('Pull failed');
@@ -865,13 +967,62 @@ program
 			return startPull();
 		}
 
-		return Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
-			if (response === 'Y') {
+		return (async () => {
+			const git = getGitReadiness();
+
+			// Tip before any confirm when git is not set up.
+			if (!git.repoInitialized) {
+				await logGitSetupHint(git);
+			}
+
+			// Dirty tree: skip the generic overwrite confirm; go straight to merge/cancel.
+			if (git.repoInitialized && isWorkingTreeDirty()) {
+				await startPull();
+				return;
+			}
+
+			if (git.repoInitialized) {
+				const answer = await selectChoice(
+					'Are you sure you would like to pull? This will overwrite your local files immediately. ' +
+					'However, your work is completely committed to git, meaning you can always check the history or revert later.',
+					[
+						{
+							name: 'Merge',
+							value: 'merge',
+							description:
+								'Pull changes to a new branch and then merge that branch with this one. Conflicts stay in files for manual or AI resolution.'
+						},
+						{
+							name: 'Continue with the pull as normal',
+							value: 'continue'
+						},
+						{
+							name: 'Cancel pull',
+							value: 'cancel'
+						}
+					]
+				);
+				if (!answer || answer === 'cancel') {
+					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+					return;
+				}
+				if (answer === 'merge') {
+					await runMergeFirstPull();
+					return;
+				}
+				await startPull();
+				return;
+			}
+
+			const response = await confirmYesNo(
+				'Are you sure you would like to pull? This will overwrite your local files immediately!'
+			);
+			if (response) {
 				await startPull();
 			} else {
 				logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 			}
-		});
+		})();
 	});
 
 program.parse(process.argv);

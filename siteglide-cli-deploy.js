@@ -21,14 +21,16 @@ const program = require('commander'),
 	version = require('./package.json').version,
 	{ classifyEnvironment } = require('./lib/envClassification'),
 	{ collectDeployPreConflicts, collectDeployPostLeftovers } = require('./lib/remoteMtimeCheck'),
-	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
+	{ promptDeployConfirm } = require('./lib/remoteConflictPrompt'),
 	{ replaceDeployManifest, advancePullBaseline, writePullBaseline } = require('./lib/pullBaseline'),
 	{ collectDeployManifestPaths } = require('./lib/deployManifestPaths'),
 	{ clearConflictLog, writeConflictLog } = require('./lib/remoteCheckConflictLog'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
 	{ commitAllSafe } = require('./lib/git/commit'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
-	{ mergeFirstDeploy, readMergeManifest } = require('./lib/git/mergeFirst');
+	{ mergeFirstDeploy, readMergeManifest } = require('./lib/git/mergeFirst'),
+	{ offerMergeConflictAiHelp } = require('./lib/aiPrompts'),
+	{ claimCommandLock, registerCommandLockCleanup, nestedCliEnv, logCommandLockRefusal } = require('./lib/commandLock');
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
 
@@ -121,6 +123,27 @@ program
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;
 
+		const lock = claimCommandLock('deploy', { environment });
+		if (!lock.ok) {
+			logCommandLockRefusal(lock);
+		}
+		if (!lock.nested) {
+			registerCommandLockCleanup();
+		}
+
+		if (!params.withAssets) {
+			const chalk = require('chalk');
+			const { localTimeZoneLabel } = require('./lib/formatLocalDateTime');
+			const now = new Date();
+			const HHMMSS = now.toTimeString().split(' ')[0];
+			const tz = localTimeZoneLabel(now);
+			logger.Print(
+				chalk.blue(
+					`[${HHMMSS} ${tz}] [deploy] Assets like JS and CSS will not be deployed unless you use the -w / --with-assets flag.\n`
+				)
+			);
+		}
+
 		const authData = fetchAuthData(environment, program);
 		assertExclusiveSiteAppRoot();
 
@@ -156,95 +179,103 @@ program
 		}
 
 		const gateway = new Gateway(authData);
+		let pre = { ok: true, conflicts: [] };
 		if (!params.skipRemoteCheck) {
-			const pre = await collectDeployPreConflicts(gateway, environment);
-			if (!pre.ok) {
-				const decision = await promptRemoteConflict({
-					environment,
-					command: 'deploy',
-					reason: pre.reason || 'deploy_pre',
-					conflicts: pre.conflicts,
-					skipRemoteCheck: false
-				});
-				if (decision === 'merge_first') {
-					logger.Info('[deploy] Merge first: full pull on a temporary branch, then merge (AI can resolve conflicts).');
-					const result = await mergeFirstDeploy({
-						environment,
-						pullFn: async () => {
-							await new Promise((resolve, reject) => {
-								const child = spawn(command('siteglide-cli-pull'), [environment, '-c', params.configFile], {
-									stdio: 'inherit',
-									shell: true,
-									env: Object.assign({}, process.env, { SITEGLIDE_PULL_ASSUME_YES: '1' })
-								});
-								child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`pull exit ${code}`))));
-							});
-						}
-					});
-					if (!result.ok) {
-						logger.Error(`[deploy] Merge first failed: ${result.error}`);
-						process.exit(1);
-					}
-					logger.Warn(
-						'[deploy] Merge started. Ask AI + MCP to resolve conflict markers, finish the merge commit, then re-run deploy.',
-						{ exit: false }
-					);
-					process.exit(0);
-				}
-				if (decision !== 'continue') {
-					logger.Error('[Cancelled] Deploy stopped due to remote conflicts.');
-					process.exit(1);
-				}
-			}
+			pre = await collectDeployPreConflicts(gateway, environment);
 		}
 
-		Confirm(`Are you sure you would like to deploy to ${authData.url}? (Y/n)\n`).then(function (response) {
-			if (response === 'Y') {
-				const env = Object.assign(process.env, {
-					SITEGLIDE_EMAIL: authData.email,
-					SITEGLIDE_TOKEN: authData.token,
-					SITEGLIDE_URL: authData.url,
-					SITEGLIDE_ENV: environment
-				});
-
-				Promise.all([deploy(env, authData, params)])
-					.then(async () => {
-						const deployedAt = new Date().toISOString();
-						const paths = collectDeployManifestPaths({ withAssets: params.withAssets });
-						replaceDeployManifest(environment, { deployedAt, paths });
-						clearConflictLog(environment);
-
-						const post = await collectDeployPostLeftovers(gateway, environment, deployedAt);
-						if (!post.leftovers.length) {
-							advancePullBaseline(environment, deployedAt);
-							logger.Info('[deploy] No untracked remote leftovers — advanced last-pull baseline.');
-						} else if (process.stdin.isTTY && !process.env.CI) {
-							writeConflictLog(environment, {
-								command: 'deploy_post',
-								reason: 'deploy_post_untracked',
-								conflicts: post.leftovers,
-								consoleHint: 'Remote files exist that were not in this deploy.'
-							});
-							const pullNow = await Confirm(
-								'After your latest deploy there are still a few files on the site which are not tracked locally, pull now to track them? (Y/n)\n'
-							);
-							if (pullNow === 'Y') {
-								await new Promise((resolve) => {
-									const child = spawn(command('siteglide-cli-pull'), [environment, '-c', params.configFile], {
-										stdio: 'inherit',
-										shell: true
-									});
-									child.on('close', () => resolve());
-								});
-							}
-						}
-						process.exit(0);
-					})
-					.catch(() => process.exit(1));
-			} else {
-				logger.Error('[Cancelled] Deploy command not executed, no files have been updated.');
-			}
+		let decision = await promptDeployConfirm({
+			environment,
+			url: authData.url,
+			preCheck: pre,
+			skipRemoteCheck: Boolean(params.skipRemoteCheck)
 		});
+
+		if (decision === 'merge_first') {
+			logger.Info('[deploy] Merge first: full pull on a temporary branch, then merge (AI can resolve conflicts).');
+			const result = await mergeFirstDeploy({
+				environment,
+				pullFn: async () => {
+					await new Promise((resolve, reject) => {
+						const child = spawn(command('siteglide-cli-pull'), [environment, '-c', params.configFile], {
+							stdio: 'inherit',
+							shell: true,
+							env: Object.assign({}, process.env, nestedCliEnv(), { SITEGLIDE_PULL_ASSUME_YES: '1' })
+						});
+						child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`pull exit ${code}`))));
+					});
+				}
+			});
+			if (!result.ok) {
+				logger.Error(`[deploy] Merge first failed: ${result.error}`);
+				process.exit(1);
+			}
+			const conflicts = hasOpenGitConflicts();
+			if (conflicts.open) {
+				await offerMergeConflictAiHelp({
+					environment,
+					command: 'deploy',
+					warnMessage:
+						'[deploy] Merge left conflict markers in your working tree. Deploy was not started.'
+				});
+				logger.Warn(
+					'[deploy] When you are ready: resolve all conflicts, finish the merge commit, then re-run deploy yourself. Nothing will deploy until you do.',
+					{ exit: false }
+				);
+				process.exit(0);
+			}
+			logger.Success('[deploy] Merge completed with no conflict markers. Continuing deploy…');
+			decision = 'continue';
+		}
+
+		if (decision !== 'continue') {
+			logger.Error('[Cancelled] Deploy command not executed, no files have been updated.');
+			process.exit(1);
+		}
+
+		const env = Object.assign(process.env, {
+			SITEGLIDE_EMAIL: authData.email,
+			SITEGLIDE_TOKEN: authData.token,
+			SITEGLIDE_URL: authData.url,
+			SITEGLIDE_ENV: environment
+		});
+
+		try {
+			await Promise.all([deploy(env, authData, params)]);
+			const deployedAt = new Date().toISOString();
+			const paths = collectDeployManifestPaths({ withAssets: params.withAssets });
+			replaceDeployManifest(environment, { deployedAt, paths });
+			clearConflictLog(environment);
+
+			const post = await collectDeployPostLeftovers(gateway, environment, deployedAt);
+			if (!post.leftovers.length) {
+				advancePullBaseline(environment, deployedAt);
+				logger.Info('[deploy] No untracked remote leftovers — advanced last-pull baseline.');
+			} else if (process.stdin.isTTY && !process.env.CI) {
+				writeConflictLog(environment, {
+					command: 'deploy_post',
+					reason: 'deploy_post_untracked',
+					conflicts: post.leftovers,
+					consoleHint: 'Remote files exist that were not in this deploy.'
+				});
+				const pullNow = await Confirm(
+					'After your latest deploy there are still a few files on the site which are not tracked locally, pull now to track them? (Y/n)\n'
+				);
+				if (pullNow === 'Y') {
+					await new Promise((resolve) => {
+						const child = spawn(command('siteglide-cli-pull'), [environment, '-c', params.configFile], {
+							stdio: 'inherit',
+							shell: true,
+							env: Object.assign({}, process.env, nestedCliEnv())
+						});
+						child.on('close', () => resolve());
+					});
+				}
+			}
+			process.exit(0);
+		} catch {
+			process.exit(1);
+		}
 	});
 
 program.parse(process.argv);
