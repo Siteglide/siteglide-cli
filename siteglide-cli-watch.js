@@ -31,6 +31,8 @@ const program = require('commander'),
 	{
 		writeSyncCurrentConflict,
 		clearSyncCurrentConflict,
+		clearSyncConflictRecords,
+		clearSyncConflictForPath,
 		resolveSyncCurrentConflict,
 		updateSyncCurrentConflictStatus
 	} = require('./lib/syncCurrentConflict'),
@@ -144,7 +146,12 @@ let mergeConflictAiHelpOffered = false;
 let conflictGate;
 
 /** Check/upload wave coordinator — one in-flight wave at a time. */
-let syncUploadWave = createSyncUploadWave();
+const syncWaveLog = (message) => {
+	if (process.env.DEBUG || process.env.SITEGLIDE_SYNC_WAVE_DEBUG) {
+		logger.Debug(message);
+	}
+};
+let syncUploadWave = createSyncUploadWave({ log: syncWaveLog });
 
 /**
  * Cancel sync watch: drop remaining queue work and exit the process.
@@ -164,6 +171,15 @@ const stopSyncWatch = (message) => {
 		logger.Debug(err);
 	}
 	process.exit(0);
+};
+
+const noteRemoteCheckPassed = (syncedFilePath, physicalPath) => {
+	const environment = process.env.SITEGLIDE_ENV;
+	if (!environment) {
+		return;
+	}
+	clearSyncConflictForPath(environment, physicalPath);
+	clearSyncConflictForPath(environment, syncedFilePath);
 };
 
 /**
@@ -198,6 +214,7 @@ const beforeSyncOpCheck = async (syncedFilePath) => {
 	const physicalPath = toPhysicalApiPath(syncedFilePath, siteRoot);
 	const remoteMeta = await fetchRemoteFileMtime(gateway, physicalPath);
 	if (remoteMeta.found && isSafeAfterMergeFirst(environment, physicalPath, remoteMeta.updatedAt)) {
+		noteRemoteCheckPassed(syncedFilePath, physicalPath);
 		return { proceed: true };
 	}
 
@@ -209,7 +226,7 @@ const beforeSyncOpCheck = async (syncedFilePath) => {
 		remoteMeta
 	});
 	if (result.ok) {
-		clearSyncCurrentConflict();
+		noteRemoteCheckPassed(syncedFilePath, result.physicalPath || physicalPath);
 		return { proceed: true };
 	}
 
@@ -285,7 +302,7 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 
 	if (decision === 'continue') {
 		resolveSyncCurrentConflict('continue');
-		clearSyncCurrentConflict();
+		clearSyncConflictRecords(environment);
 		return { action: 'continue', forcePath: primaryConflict.path };
 	}
 	if (decision === 'skip') {
@@ -294,7 +311,7 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 		const shown = (conflictMeta.path || primaryConflict.path || '').replace(/\\/g, '/');
 		logger.Error(`[Sync] Skipped file: ${shown}`, { exit: false });
 		logger.Print(`${chalk.red.bold(shown)}\n`);
-		clearSyncCurrentConflict();
+		clearSyncConflictRecords(environment);
 		return { action: 'skip', skipPath: primaryConflict.path };
 	}
 	if (decision === 'merge_first') {
@@ -320,7 +337,7 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 					environment,
 					command: 'sync'
 				});
-				clearSyncCurrentConflict();
+				clearSyncConflictRecords(environment);
 				return { action: 'merge_first_failed' };
 			}
 			const conflicts = hasOpenGitConflicts();
@@ -340,7 +357,7 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 			} else {
 				logger.Success('[Sync] Merge completed with no conflict markers. Save the file again to sync.');
 			}
-			clearSyncCurrentConflict();
+			clearSyncConflictRecords(environment);
 			return { action: 'merge_first' };
 		} finally {
 			syncFileWatcher.resume();
@@ -348,9 +365,10 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 	}
 	if (decision === 'cancel' || decision === 'abort' || decision === 'pause') {
 		resolveSyncCurrentConflict(decision === 'pause' ? 'pause' : 'cancel');
+		clearSyncConflictRecords(environment);
 		return { action: decision === 'pause' ? 'pause' : 'cancel' };
 	}
-	clearSyncCurrentConflict();
+	clearSyncConflictRecords(environment);
 	return { action: 'unknown' };
 };
 
@@ -469,15 +487,22 @@ const processSyncTask = async (task, callback) => {
 			}
 		}
 
-		syncUploadWave.joinWave();
+		syncWaveLog(`[Sync wave] task start ${displayPath(task.path)} op=${task.op}`);
+		await syncUploadWave.joinWave();
 		const checkResult = await beforeSyncOpCheck(task.path);
 		syncUploadWave.reportCheck(task.path, task.op, checkResult);
 		const decision = await syncUploadWave.awaitWaveDecision();
+		syncWaveLog(
+			`[Sync wave ${syncUploadWave.getCurrentWaveId()}] decision proceed=${decision.proceed} path=${displayPath(task.path)}`
+		);
 
 		if (decision.proceed) {
 			const entry = syncUploadWave.getEntry(task.path, task.op);
 			if (entry && checkAllowsUpload(entry.checkResult)) {
+				syncWaveLog(`[Sync wave ${syncUploadWave.getCurrentWaveId()}] uploading ${displayPath(task.path)}`);
 				await performSyncOp(task);
+			} else {
+				syncWaveLog(`[Sync wave ${syncUploadWave.getCurrentWaveId()}] skip upload ${displayPath(task.path)}`);
 			}
 			syncUploadWave.finishWave();
 			callback();
@@ -522,7 +547,13 @@ const processSyncTask = async (task, callback) => {
 
 		callback();
 	} catch (err) {
+		logger.Warn(`[Sync] Task failed for ${displayPath(task.path)}: ${err.message}`, { exit: false });
 		logger.Debug(err);
+		try {
+			syncUploadWave.finishWave();
+		} catch (finishErr) {
+			logger.Debug(finishErr);
+		}
 		callback();
 	}
 };

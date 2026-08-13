@@ -7,11 +7,14 @@ const os = require('os');
 const {
 	writeSyncCurrentConflict,
 	clearSyncCurrentConflict,
+	clearSyncConflictRecords,
+	clearSyncConflictForPath,
 	resolveSyncCurrentConflict,
 	readSyncCurrentConflict,
 	conflictMatchesPath,
 	syncCurrentConflictPath
 } = require('../../lib/syncCurrentConflict');
+const { writeConflictLog, readConflictLog } = require('../../lib/remoteCheckConflictLog');
 
 describe('syncCurrentConflict', () => {
 	let cwd;
@@ -85,5 +88,80 @@ describe('syncCurrentConflict', () => {
 		assert.equal(conflictMatchesPath(conflict, 'app/views/pages/a.liquid'), true);
 		assert.equal(conflictMatchesPath(conflict, 'app\\views\\pages\\a.liquid'), true);
 		assert.equal(conflictMatchesPath(conflict, 'views/pages/other.liquid'), false);
+	});
+
+	it('clearSyncConflictRecords removes current-conflict and remote-check log', () => {
+		writeSyncCurrentConflict({
+			environment: 'production',
+			reason: 'remote_newer',
+			path: 'views/pages/a.liquid',
+			localPath: 'app/views/pages/a.liquid',
+			cwd
+		});
+		writeConflictLog('production', {
+			command: 'sync',
+			reason: 'remote_newer',
+			awaitingUserDecision: true,
+			path: 'views/pages/a.liquid',
+			localPath: 'app/views/pages/a.liquid'
+		}, cwd);
+
+		clearSyncConflictRecords('production', cwd);
+
+		assert.equal(readSyncCurrentConflict(cwd), null);
+		assert.equal(readConflictLog('production', cwd), null);
+	});
+
+	it('clearSyncConflictForPath clears matching records after check passes', () => {
+		writeSyncCurrentConflict({
+			environment: 'production',
+			reason: 'remote_newer',
+			path: 'modules/foo/public/views/pages/apprentices/update.liquid',
+			localPath: 'modules/foo/public/views/pages/apprentices/update.liquid',
+			cwd
+		});
+		writeConflictLog('production', {
+			command: 'sync',
+			reason: 'remote_newer',
+			awaitingUserDecision: true,
+			path: 'modules/foo/public/views/pages/apprentices/update.liquid',
+			localPath: 'modules/foo/public/views/pages/apprentices/update.liquid'
+		}, cwd);
+
+		const cleared = clearSyncConflictForPath(
+			'production',
+			'modules/foo/public/views/pages/apprentices/update.liquid',
+			cwd
+		);
+
+		assert.equal(cleared, true);
+		assert.equal(readSyncCurrentConflict(cwd), null);
+		assert.equal(readConflictLog('production', cwd), null);
+	});
+
+	it('merge_first marks remote-check log merge_in_progress', () => {
+		writeSyncCurrentConflict({
+			environment: 'production',
+			reason: 'remote_newer',
+			path: 'views/pages/a.liquid',
+			localPath: 'app/views/pages/a.liquid',
+			cwd
+		});
+		writeConflictLog('production', {
+			command: 'sync',
+			reason: 'remote_newer',
+			awaitingUserDecision: true,
+			path: 'views/pages/a.liquid',
+			localPath: 'app/views/pages/a.liquid'
+		}, cwd);
+
+		resolveSyncCurrentConflict('merge_first', cwd);
+
+		const current = readSyncCurrentConflict(cwd);
+		const log = readConflictLog('production', cwd);
+		assert.equal(current.status, 'merge_in_progress');
+		assert.equal(current.awaitingUserDecision, false);
+		assert.equal(log.status, 'merge_in_progress');
+		assert.equal(log.awaitingUserDecision, false);
 	});
 });

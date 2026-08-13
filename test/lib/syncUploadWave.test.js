@@ -11,9 +11,9 @@ describe('syncUploadWave', () => {
 	it('seals with proceed true when all checks pass', async () => {
 		const wave = createSyncUploadWave();
 
-		wave.joinWave();
-		wave.joinWave();
-		wave.joinWave();
+		await wave.joinWave();
+		await wave.joinWave();
+		await wave.joinWave();
 
 		wave.reportCheck('app/a.liquid', 'push', { proceed: true });
 		wave.reportCheck('app/b.liquid', 'push', { proceed: true });
@@ -29,8 +29,8 @@ describe('syncUploadWave', () => {
 	it('seals with proceed false when any check has remote conflict', async () => {
 		const wave = createSyncUploadWave();
 
-		wave.joinWave();
-		wave.joinWave();
+		await wave.joinWave();
+		await wave.joinWave();
 
 		wave.reportCheck('app/a.liquid', 'push', { proceed: true });
 		const pending = wave.awaitWaveDecision();
@@ -49,8 +49,8 @@ describe('syncUploadWave', () => {
 	it('closes wave after each worker calls finishWave', async () => {
 		const wave = createSyncUploadWave();
 
-		wave.joinWave();
-		wave.joinWave();
+		await wave.joinWave();
+		await wave.joinWave();
 		wave.reportCheck('app/a.liquid', 'push', { proceed: true });
 		wave.reportCheck('app/b.liquid', 'push', { proceed: true });
 		await wave.awaitWaveDecision();
@@ -65,8 +65,8 @@ describe('syncUploadWave', () => {
 		const wave = createSyncUploadWave();
 		let uploadAttempted = false;
 
-		wave.joinWave();
-		wave.joinWave();
+		await wave.joinWave();
+		await wave.joinWave();
 
 		wave.reportCheck('app/conflict.liquid', 'push', {
 			proceed: false,
@@ -85,5 +85,44 @@ describe('syncUploadWave', () => {
 		assert.equal(decision.proceed, false);
 		assert.equal(uploadAttempted, false);
 		assert.equal(checkHasRemoteConflict(decision.primaryConflict.checkResult), true);
+	});
+
+	it('late join waits for prior wave to close before opening a new wave', async () => {
+		const wave = createSyncUploadWave();
+
+		await wave.joinWave();
+		wave.reportCheck('app/a.liquid', 'push', { proceed: true });
+		await wave.awaitWaveDecision();
+
+		const firstWaveId = wave.getCurrentWaveId();
+		const lateJoin = wave.joinWave();
+
+		wave.finishWave();
+		await lateJoin;
+
+		assert.equal(wave.getCurrentWaveId(), firstWaveId + 1);
+		assert.equal(wave.getCurrentWave().phase, 'checking');
+		assert.equal(wave.getCurrentWave().inFlightChecks, 1);
+	});
+
+	it('blocked wave closes only after all workers finish', async () => {
+		const wave = createSyncUploadWave();
+
+		await wave.joinWave();
+		await wave.joinWave();
+		wave.reportCheck('app/a.liquid', 'push', {
+			proceed: false,
+			remoteConflict: true,
+			meta: { path: 'views/pages/a.liquid' }
+		});
+		wave.reportCheck('app/b.liquid', 'push', { proceed: true });
+		await wave.awaitWaveDecision();
+
+		wave.markConflictResolving();
+		wave.finishWave();
+		assert.equal(wave.getCurrentWave().phase, 'resolving');
+
+		wave.finishWave();
+		assert.equal(wave.getCurrentWave().phase, 'closed');
 	});
 });
