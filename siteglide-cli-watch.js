@@ -31,7 +31,8 @@ const program = require('commander'),
 		clearSyncCurrentConflict,
 		resolveSyncCurrentConflict
 	} = require('./lib/syncCurrentConflict'),
-	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts');
+	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ recordSyncPath, syncedAtFromAssetFileMtime } = require('./lib/pullBaseline');
 
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
@@ -42,6 +43,17 @@ const filePathUnixified = filePath =>
 		.replace(new RegExp(`^${dir.APP}/`), '');
 let counter = 0;
 let siteRoot = null;
+
+const noteSyncUploadSuccess = (syncedFilePath, syncedAt) => {
+	if (!siteRoot || !process.env.SITEGLIDE_ENV) {
+		return;
+	}
+	recordSyncPath(
+		process.env.SITEGLIDE_ENV,
+		toPhysicalApiPath(syncedFilePath, siteRoot),
+		{ syncedAt }
+	);
+};
 
 const isEmpty = filePath => {
 	let isEmpty;
@@ -428,6 +440,7 @@ const pushFile = (gateway, syncedFilePath) => {
 			logger.Error(error_msg, { exit: false });
 		}else{
 			logger.Success(`[Sync] Uploaded: ${filePath}`);
+			noteSyncUploadSuccess(syncedFilePath);
 
 			if(body.refresh_index){
 				logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
@@ -485,6 +498,7 @@ const sendAsset = async (gateway, filePath) => {
 		manifestAddAsset(filePath);
 		manifestSend(gateway);
 		logger.Success(`[Sync] Uploaded: ${displayPath(filePath)}`);
+		noteSyncUploadSuccess(filePath, syncedAtFromAssetFileMtime(filePath));
 		counter = 0;
 	} catch (e) {
 		logger.Debug(e);

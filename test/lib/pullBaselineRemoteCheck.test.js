@@ -8,7 +8,9 @@ const {
 	readPullBaseline,
 	replaceDeployManifest,
 	advancePullBaseline,
-	effectiveBaseline
+	effectiveBaseline,
+	recordSyncPath,
+	flushPendingSyncRecords
 } = require('../../lib/pullBaseline');
 const {
 	writeConflictLog,
@@ -93,6 +95,103 @@ describe('pullBaseline', () => {
 		const b = readPullBaseline('staging', cwd);
 		assert.equal(b.lastPulledAt, '2026-04-01T00:00:00.000Z');
 		assert.equal(b.lastDeploy, undefined);
+	});
+
+	it('recordSyncPath stores per-path syncedAt in lastSync', () => {
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z' });
+		recordSyncPath('staging', 'views/pages/home.liquid', {
+			cwd,
+			syncedAt: '2026-06-01T12:00:00.000Z',
+			immediate: true
+		});
+		const b = readPullBaseline('staging', cwd);
+		assert.deepEqual(b.lastSync, {
+			paths: {
+				'views/pages/home.liquid': '2026-06-01T12:00:00.000Z'
+			}
+		});
+	});
+
+	it('effectiveBaseline prefers sync floor when newer than pull', () => {
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z' });
+		recordSyncPath('staging', 'views/pages/home.liquid', {
+			cwd,
+			syncedAt: '2026-06-01T12:00:00.000Z',
+			immediate: true
+		});
+		const baseline = effectiveBaseline('staging', 'views/pages/home.liquid', cwd);
+		assert.deepEqual(baseline, {
+			at: '2026-06-01T12:00:00.000Z',
+			source: 'sync'
+		});
+	});
+
+	it('writePullBaseline and advancePullBaseline clear lastSync', () => {
+		recordSyncPath('staging', 'views/pages/home.liquid', {
+			cwd,
+			syncedAt: '2026-06-01T12:00:00.000Z',
+			immediate: true
+		});
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-07-01T00:00:00.000Z' });
+		assert.equal(readPullBaseline('staging', cwd).lastSync, undefined);
+		recordSyncPath('staging', 'views/pages/other.liquid', {
+			cwd,
+			syncedAt: '2026-06-02T12:00:00.000Z',
+			immediate: true
+		});
+		advancePullBaseline('staging', '2026-08-01T00:00:00.000Z', cwd);
+		assert.equal(readPullBaseline('staging', cwd).lastSync, undefined);
+	});
+
+	it('effectiveBaseline picks newest of deploy and sync floors', () => {
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z' });
+		replaceDeployManifest('staging', {
+			cwd,
+			deployedAt: '2026-03-01T00:00:00.000Z',
+			paths: ['views/pages/home.liquid']
+		});
+		recordSyncPath('staging', 'views/pages/home.liquid', {
+			cwd,
+			syncedAt: '2026-06-01T12:00:00.000Z',
+			immediate: true
+		});
+		const baseline = effectiveBaseline('staging', 'views/pages/home.liquid', cwd);
+		assert.deepEqual(baseline, {
+			at: '2026-06-01T12:00:00.000Z',
+			source: 'sync'
+		});
+	});
+
+	it('replaceDeployManifest preserves lastSync paths', () => {
+		recordSyncPath('staging', 'views/pages/home.liquid', {
+			cwd,
+			syncedAt: '2026-06-01T12:00:00.000Z',
+			immediate: true
+		});
+		replaceDeployManifest('staging', {
+			cwd,
+			deployedAt: '2026-07-01T00:00:00.000Z',
+			paths: ['views/pages/other.liquid']
+		});
+		assert.deepEqual(readPullBaseline('staging', cwd).lastSync, {
+			paths: {
+				'views/pages/home.liquid': '2026-06-01T12:00:00.000Z'
+			}
+		});
+	});
+
+	it('flushPendingSyncRecords writes debounced batch', () => {
+		recordSyncPath('staging', 'views/pages/a.liquid', {
+			cwd,
+			syncedAt: '2026-06-01T12:00:00.000Z'
+		});
+		assert.equal(readPullBaseline('staging', cwd), null);
+		flushPendingSyncRecords();
+		assert.deepEqual(readPullBaseline('staging', cwd).lastSync, {
+			paths: {
+				'views/pages/a.liquid': '2026-06-01T12:00:00.000Z'
+			}
+		});
 	});
 });
 
