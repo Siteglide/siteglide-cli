@@ -40,6 +40,7 @@ describe('syncCurrentConflict', () => {
 		const read = readSyncCurrentConflict(cwd);
 		assert.equal(read.status, 'awaiting_user_decision');
 		assert.equal(read.awaitingUserDecision, true);
+		assert.equal(read.syncPaused, true);
 		assert.equal(read.path, 'views/pages/a.liquid');
 		assert.equal(read.localPath, 'app/views/pages/a.liquid');
 		assert.ok(read.localMtimeAtDetect);

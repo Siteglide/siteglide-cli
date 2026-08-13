@@ -33,6 +33,7 @@ const program = require('commander'),
 	{ ensureProjectPreferences } = require('./lib/projectPreferences'),
 	{ clearConflictLog } = require('./lib/remoteCheckConflictLog'),
 	{ getGitReadiness, logGitSetupHint, run: runGit } = require('./lib/git/readiness'),
+	{ ensureSiteglideGitignored } = require('./lib/git/siteglideGitignore'),
 	{ isWorkingTreeDirty } = require('./lib/git/workingTree'),
 	{ commitAllSafe, hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
@@ -837,6 +838,7 @@ program
 						logger.Error(`[pull] Refusing pull while ${open.reason}. Ask AI + MCP to help resolve conflict markers first.`);
 						process.exit(1);
 					}
+					await ensureSiteglideGitignored();
 					if (isWorkingTreeDirty()) {
 						if (!process.stdin.isTTY || process.env.CI) {
 							logger.Error('[pull] Working tree is dirty. Commit your work, then pull again (non-interactive).');

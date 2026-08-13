@@ -29,8 +29,10 @@ const program = require('commander'),
 	{
 		writeSyncCurrentConflict,
 		clearSyncCurrentConflict,
-		resolveSyncCurrentConflict
+		resolveSyncCurrentConflict,
+		updateSyncCurrentConflictStatus
 	} = require('./lib/syncCurrentConflict'),
+	{ createSyncConflictGate } = require('./lib/syncConflictGate'),
 	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
 	{ recordSyncPath, syncedAtFromAssetFileMtime } = require('./lib/pullBaseline');
 
@@ -128,14 +130,6 @@ const isNotInNodeModules = filePath => {
 
 CONCURRENCY = 3;
 
-/** Serialize conflict prompts so other uploads can continue. */
-let confirmChain = Promise.resolve();
-const withConfirmLock = (fn) => {
-	const run = confirmChain.then(fn, fn);
-	confirmChain = run.catch(() => {});
-	return run;
-};
-
 const skipRemoteCheck = process.env.SITEGLIDE_SKIP_REMOTE_CHECK === '1';
 
 /** Once true, stop accepting work and exit the watch process. */
@@ -143,6 +137,9 @@ let syncStopping = false;
 
 /** Offer merge-conflict AI prompt at most once while markers remain open. */
 let mergeConflictAiHelpOffered = false;
+
+/** Pause/resume gate — initialized after queue is created. */
+let conflictGate;
 
 /**
  * Cancel sync watch: drop remaining queue work and exit the process.
@@ -166,11 +163,18 @@ const stopSyncWatch = (message) => {
 
 /**
  * Before push/delete: refuse open git conflicts; check remote mtime unless skipped.
- * Merge first stops sync for that file; cancel (n) ends the whole watch process.
+ * First conflict pauses the queue until resolved; merge-first waits for git clean.
  */
 const beforeSyncOp = async (syncedFilePath) => {
 	if (syncStopping) {
 		return false;
+	}
+
+	if (conflictGate && conflictGate.isPaused() && !conflictGate.isActiveLeader()) {
+		await conflictGate.waitForLeader();
+		if (syncStopping) {
+			return false;
+		}
 	}
 
 	const environment = process.env.SITEGLIDE_ENV;
@@ -185,7 +189,12 @@ const beforeSyncOp = async (syncedFilePath) => {
 			conflicts: (open.paths || []).map((p) => ({ path: p })),
 			consoleHint: 'Resolve conflict markers with AI + MCP before syncing.'
 		});
-		return withConfirmLock(async () => {
+		const { isLeader } = conflictGate.enterConflictMode();
+		if (!isLeader) {
+			await conflictGate.waitForLeader();
+			return false;
+		}
+		try {
 			if (syncStopping || !hasOpenGitConflicts().open) {
 				return false;
 			}
@@ -195,20 +204,20 @@ const beforeSyncOp = async (syncedFilePath) => {
 					environment: environment || 'unknown',
 					command: 'sync',
 					warnMessage:
-						`[Sync] Refusing while ${open.reason}. Sync will skip files until conflict markers are resolved.`
+						`[Sync] Refusing while ${open.reason}. Sync is paused until conflict markers are resolved.`
 				});
 				logger.Warn(
 					'[Sync] When you are ready: resolve all conflicts, finish the merge commit, then save the file again to sync.',
 					{ exit: false }
 				);
-			} else {
-				logger.Error(
-					`[Sync] Refusing while ${open.reason}. Resolve conflict markers, then save again to sync.`,
-					{ exit: false }
-				);
 			}
+			await conflictGate.waitForGitClean();
 			return false;
-		});
+		} finally {
+			if (!syncStopping) {
+				conflictGate.exitConflictMode();
+			}
+		}
 	}
 
 	if (skipRemoteCheck || !environment) {
@@ -245,6 +254,26 @@ const beforeSyncOp = async (syncedFilePath) => {
 		effectiveBaselineAt: result.effectiveBaselineAt,
 		baselineSource: result.baselineSource
 	};
+
+	const { isLeader } = conflictGate.enterConflictMode();
+	if (!isLeader) {
+		await conflictGate.waitForLeader();
+		if (syncStopping) {
+			return false;
+		}
+		const recheck = await checkFile({
+			gateway,
+			environment,
+			filePath: syncedFilePath,
+			siteRoot
+		});
+		if (recheck.ok) {
+			clearSyncCurrentConflict();
+			return true;
+		}
+		return beforeSyncOp(syncedFilePath);
+	}
+
 	// Write before the interactive prompt so MCP/agents can see the conflict while
 	// the human is still deciding on the CLI.
 	writeSyncCurrentConflict({
@@ -255,10 +284,11 @@ const beforeSyncOp = async (syncedFilePath) => {
 		kind: conflictMeta.type,
 		remoteUpdatedAt: conflictMeta.remoteUpdatedAt,
 		effectiveBaselineAt: conflictMeta.effectiveBaselineAt,
-		baselineSource: conflictMeta.baselineSource
+		baselineSource: conflictMeta.baselineSource,
+		syncPaused: true
 	});
 
-	return withConfirmLock(async () => {
+	try {
 		if (syncStopping) {
 			clearSyncCurrentConflict();
 			return false;
@@ -278,7 +308,6 @@ const beforeSyncOp = async (syncedFilePath) => {
 			const chalk = require('chalk');
 			const shown = (result.physicalPath || syncedFilePath || '').replace(/\\/g, '/');
 			logger.Error(`[Sync] Skipped file: ${shown}`, { exit: false });
-			// Also echo the bare path in red for visibility in the watch stream.
 			logger.Print(`${chalk.red.bold(shown)}\n`);
 			return false;
 		}
@@ -320,6 +349,7 @@ const beforeSyncOp = async (syncedFilePath) => {
 					'[Sync] When you are ready: resolve all conflicts, finish the merge commit, then save the file again to sync.',
 					{ exit: false }
 				);
+				await conflictGate.waitForGitClean();
 			} else {
 				logger.Success('[Sync] Merge completed with no conflict markers. Save the file again to sync.');
 			}
@@ -333,7 +363,11 @@ const beforeSyncOp = async (syncedFilePath) => {
 		}
 		clearSyncCurrentConflict();
 		return false;
-	});
+	} finally {
+		if (!syncStopping) {
+			conflictGate.exitConflictMode();
+		}
+	}
 };
 
 const queue = Queue((task, callback) => {
@@ -373,6 +407,20 @@ const queue = Queue((task, callback) => {
 			break;
 	}
 }, CONCURRENCY);
+
+conflictGate = createSyncConflictGate({
+	queue,
+	logger,
+	hasOpenGitConflicts,
+	pollIntervalMs: 3000,
+	isSyncStopping: () => syncStopping,
+	onUpdateConflictStatus: (payload) => {
+		updateSyncCurrentConflictStatus({
+			status: payload.status,
+			syncPaused: payload.syncPaused
+		}, payload.cwd);
+	}
+});
 
 const enqueue = filePath => queue.push({ path: filePath, op: 'push' }, () => { });
 const enqueueDelete = (filePath) => queue.push({ path: filePath, op: 'delete' }, () => { });
