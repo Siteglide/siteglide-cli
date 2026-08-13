@@ -286,6 +286,37 @@ describe('merge-first safe sync gate', () => {
 		);
 		clearMergeManifest('staging', cwd);
 	});
+
+	it('allows any path after sync_full_pull snapshot when remote unchanged', () => {
+		writeMergeManifest(
+			'staging',
+			{
+				mode: 'sync_full_pull',
+				remoteSnapshotAt: '2026-05-01T12:00:00.000Z',
+				pulledAt: '2026-05-01T12:00:00.000Z'
+			},
+			cwd
+		);
+		assert.equal(
+			isSafeAfterMergeFirst(
+				'staging',
+				'views/pages/other.liquid',
+				'2026-05-01T12:00:00.000Z',
+				cwd
+			),
+			true
+		);
+		assert.equal(
+			isSafeAfterMergeFirst(
+				'staging',
+				'views/pages/other.liquid',
+				'2026-05-02T12:00:00.000Z',
+				cwd
+			),
+			false
+		);
+		clearMergeManifest('staging', cwd);
+	});
 });
 
 describe('projectPreferences', () => {

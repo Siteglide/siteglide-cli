@@ -30,7 +30,8 @@ const program = require('commander'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstDeploy, readMergeManifest } = require('./lib/git/mergeFirst'),
 	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
-	{ claimCommandLock, registerCommandLockCleanup, nestedCliEnv, logCommandLockRefusal } = require('./lib/commandLock');
+	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull');
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
 
@@ -196,13 +197,9 @@ program
 			const result = await mergeFirstDeploy({
 				environment,
 				pullFn: async () => {
-					await new Promise((resolve, reject) => {
-						const child = spawn(command('siteglide-cli-pull'), [environment, '-c', params.configFile], {
-							stdio: 'inherit',
-							shell: true,
-							env: Object.assign({}, process.env, nestedCliEnv(), { SITEGLIDE_PULL_ASSUME_YES: '1' })
-						});
-						child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`pull exit ${code}`))));
+					await spawnNestedPull({
+						environment,
+						configFile: params.configFile
 					});
 				}
 			});

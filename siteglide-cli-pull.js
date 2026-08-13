@@ -39,9 +39,8 @@ const program = require('commander'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
 	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
-	{ claimCommandLock, registerCommandLockCleanup, nestedCliEnv, logCommandLockRefusal } = require('./lib/commandLock'),
-	command = require('./lib/command'),
-	spawn = require('child_process').spawn;
+	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 
@@ -838,26 +837,6 @@ const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) =>
 	logger.Success('[pull] Tidying up complete');
 };
 
-/**
- * Build argv for a nested siteglide-cli-pull child process (merge-first).
- * @param {string} environment
- * @param {object} params - Commander params from parent pull
- * @returns {string[]}
- */
-const buildPullSpawnArgs = (environment, params) => {
-	const args = [environment, '-c', params.configFile];
-	if (params.ignoreAssets) {
-		args.push('-i');
-	}
-	if (params.module) {
-		args.push('-m', params.module);
-	}
-	if (params.concurrency) {
-		args.push('--concurrency', String(params.concurrency));
-	}
-	return args;
-};
-
 program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
@@ -867,6 +846,11 @@ program
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
 	.option('-m --module <module>', 'Optional module name filter. Without this flag, non-ignored installed modules are pulled.')
+	.option(
+		'--merge-first-sync',
+		'Internal: lightweight pull for sync merge-first (site, modules, assets only)',
+		false
+	)
 	.option(
 		'--concurrency <number>',
 		`Max concurrent module pulls (default: ${DEFAULT_MODULE_PULL_CONCURRENCY}, or CONCURRENCY env)`,
@@ -897,6 +881,7 @@ program
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
 		const assumeYes = process.env.SITEGLIDE_PULL_ASSUME_YES === '1';
+		const mergeFirstSync = params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1';
 
 		const runMergeFirstPull = async (wipMessage) => {
 			logger.Info('[pull] Merge: committing local work if needed, pulling on a temporary branch, then merging back.');
@@ -904,20 +889,13 @@ program
 				environment,
 				wipMessage,
 				pullFn: async () => {
-					await new Promise((resolve, reject) => {
-						const child = spawn(
-							command('siteglide-cli-pull'),
-							buildPullSpawnArgs(environment, params),
-							{
-								stdio: 'inherit',
-								shell: true,
-								env: Object.assign({}, process.env, nestedCliEnv(), {
-									SITEGLIDE_PULL_ASSUME_YES: '1',
-									SITEGLIDE_PULL_SKIP_COMMIT_BASELINE: '1'
-								})
-							}
-						);
-						child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`pull exit ${code}`))));
+					await spawnNestedPull({
+						environment,
+						configFile: params.configFile,
+						ignoreAssets: params.ignoreAssets,
+						module: params.module,
+						concurrency: params.concurrency,
+						skipCommitBaseline: true
 					});
 				}
 			});
@@ -995,8 +973,10 @@ program
 						logger.Error(`[pull] Refusing pull while ${open.reason}. Ask AI + MCP to help resolve conflict markers first.`);
 						process.exit(1);
 					}
-					await ensureSiteglideGitignored();
-					if (isWorkingTreeDirty()) {
+					if (!mergeFirstSync) {
+						await ensureSiteglideGitignored();
+					}
+					if (!mergeFirstSync && isWorkingTreeDirty()) {
 						if (!process.stdin.isTTY || process.env.CI) {
 							logger.Error('[pull] Working tree is dirty. Commit your work, then pull again (non-interactive).');
 							process.exit(1);
@@ -1102,17 +1082,23 @@ program
 					logger.Info('[pull] Skipping assets step');
 				}
 
-				await mergeModuleAgentsToRoot(modulesToPull);
+				if (!mergeFirstSync) {
+					await mergeModuleAgentsToRoot(modulesToPull);
 
-				pullSpinner.stop();
-				await ensureMcpOnPull();
+					pullSpinner.stop();
+					await ensureMcpOnPull();
+				} else {
+					logger.Debug('[pull] Merge-first sync mode: skipping MCP and .agents scaffolding');
+				}
 
 				await tidyUpAfterPull(ignoredModules);
 
 				// Record lastPulledAt (+ lastPullCommit when git + full pull), clear conflict logs.
 				recordPullBaseline();
-				clearConflictLog(environment);
-				ensureProjectPreferences();
+				if (!mergeFirstSync) {
+					clearConflictLog(environment);
+					ensureProjectPreferences();
+				}
 
 				logger.Success('[pull] All steps finished');
 				pullSpinner.succeed('Pulled files');

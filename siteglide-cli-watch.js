@@ -4,7 +4,6 @@ const program = require('commander'),
 	Gateway = require('./lib/proxy'),
 	fs = require('fs'),
 	path = require('path'),
-	chokidar = require('chokidar'),
 	Queue = require('async/queue'),
 	logger = require('./lib/logger'),
 	validate = require('./lib/validators'),
@@ -24,7 +23,9 @@ const program = require('commander'),
 	{ checkFile, fetchRemoteFileMtime, toPhysicalApiPath } = require('./lib/remoteMtimeCheck'),
 	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
-	{ mergeFirstSyncFile, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
+	{ mergeFirstSyncPull, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	syncFileWatcher = require('./lib/sync/syncFileWatcher'),
 	{ writeConflictLog } = require('./lib/remoteCheckConflictLog'),
 	{
 		writeSyncCurrentConflict,
@@ -234,7 +235,8 @@ const beforeSyncOp = async (syncedFilePath) => {
 		gateway,
 		environment,
 		filePath: syncedFilePath,
-		siteRoot
+		siteRoot,
+		remoteMeta
 	});
 	if (result.ok) {
 		clearSyncCurrentConflict();
@@ -313,48 +315,52 @@ const beforeSyncOp = async (syncedFilePath) => {
 		}
 		if (decision === 'merge_first') {
 			resolveSyncCurrentConflict('merge_first');
-			const localPath = syncedFilePath.replace(/\\/g, '/');
-			const mf = await mergeFirstSyncFile({
-				gateway,
-				environment,
-				physicalPath: result.physicalPath,
-				localFilePath: localPath,
-				fetchRemoteContent: async (p) => {
-					const r = await fetchRemoteFileMtime(gateway, p);
-					if (!r.found || r.body == null) {
-						return null;
-					}
-					return { body: r.body, updatedAt: r.updatedAt };
-				}
-			});
-			if (!mf.ok) {
-				logger.Error(`[Sync] Merge first failed: ${mf.error}`, { exit: false });
-				await offerMergeFirstFailureHelp(mf, {
+			syncFileWatcher.pause();
+			try {
+				const conflictPath = (result.physicalPath || '').replace(/\\/g, '/');
+				const mf = await mergeFirstSyncPull({
 					environment,
-					command: 'sync'
+					wipMessage: `siteglide: WIP before merge-first sync (${conflictPath})`,
+					pullFn: async () => {
+						await spawnNestedPull({
+							environment,
+							configFile: process.env.CONFIG_FILE_PATH || '.siteglide-config',
+							mergeFirstSync: true,
+							skipCommitBaseline: true
+						});
+					}
 				});
+				if (!mf.ok) {
+					logger.Error(`[Sync] Merge first failed: ${mf.error}`, { exit: false });
+					await offerMergeFirstFailureHelp(mf, {
+						environment,
+						command: 'sync'
+					});
+					clearSyncCurrentConflict();
+					return false;
+				}
+				const conflicts = hasOpenGitConflicts();
+				if (conflicts.open) {
+					mergeConflictAiHelpOffered = true;
+					await offerMergeConflictAiHelp({
+						environment,
+						command: 'sync',
+						warnMessage:
+							'[Sync] Merge left conflict markers in your working tree. This file was not synced.'
+					});
+					logger.Warn(
+						'[Sync] When you are ready: resolve all conflicts, finish the merge commit, then save the file again to sync.',
+						{ exit: false }
+					);
+					await conflictGate.waitForGitClean();
+				} else {
+					logger.Success('[Sync] Merge completed with no conflict markers. Save the file again to sync.');
+				}
 				clearSyncCurrentConflict();
 				return false;
+			} finally {
+				syncFileWatcher.resume();
 			}
-			const conflicts = hasOpenGitConflicts();
-			if (conflicts.open) {
-				mergeConflictAiHelpOffered = true;
-				await offerMergeConflictAiHelp({
-					environment,
-					command: 'sync',
-					warnMessage:
-						'[Sync] Merge left conflict markers in your working tree. This file was not synced.'
-				});
-				logger.Warn(
-					'[Sync] When you are ready: resolve all conflicts, finish the merge commit, then save the file again to sync.',
-					{ exit: false }
-				);
-				await conflictGate.waitForGitClean();
-			} else {
-				logger.Success('[Sync] Merge completed with no conflict markers. Save the file again to sync.');
-			}
-			clearSyncCurrentConflict();
-			return false;
 		}
 		if (decision === 'cancel' || decision === 'abort' || decision === 'pause') {
 			resolveSyncCurrentConflict(decision === 'pause' ? 'pause' : 'cancel');
@@ -641,16 +647,31 @@ gateway.ping().then(async () => {
     logger.Info('LiveReload Enabled');
   }
 
-	chokidar.watch(watchDirectories, {
-		awaitWriteFinish: {
-			stabilityThreshold: 100,
-			pollInterval: 25
+	syncFileWatcher.attach({
+		directories: watchDirectories,
+		options: {
+			awaitWriteFinish: {
+				stabilityThreshold: 100,
+				pollInterval: 25
+			},
+			ignoreInitial: true
 		},
-		ignoreInitial: true
-	})
-		.on('change', fp => shouldBeSynced(fp) && enqueue(fp))
-		.on('add', fp => shouldBeSynced(fp) && enqueue(fp))
-		.on('unlink', fp => shouldBeSynced(fp) && enqueueDelete(fp));
+		onChange: (fp) => {
+			if (shouldBeSynced(fp)) {
+				enqueue(fp);
+			}
+		},
+		onAdd: (fp) => {
+			if (shouldBeSynced(fp)) {
+				enqueue(fp);
+			}
+		},
+		onUnlink: (fp) => {
+			if (shouldBeSynced(fp)) {
+				enqueueDelete(fp);
+			}
+		}
+	});
 
 }).catch((error) => {
 	try {
