@@ -9,7 +9,7 @@ todos:
     content: "CANCELLED: siteglide-cli exec bins"
     status: cancelled
   - id: mcp-repo
-    content: Scaffold Siteglide-MCP---Experimental (compose upstream supervisor + Siteglide rules + ops tools; stdio entrypoints)
+    content: Scaffold Siteglide-MCP (compose upstream supervisor + Siteglide rules + ops tools; stdio entrypoints)
     status: completed
   - id: layout-bridge
     content: "CANCELLED: MCP path bridge — replaced by pull migrate marketplace_builder → app (platformOS advice)"
@@ -45,9 +45,9 @@ isProject: false
 
 ## MCP home (locked)
 
-All Siteglide MCP implementation lives in [`d:\git\Siteglide-MCP---Experimental`](d:\git\Siteglide-MCP---Experimental) — not inside the CLI package tree.
+All Siteglide MCP implementation lives in [`d:\git\Siteglide-MCP`](d:\git\Siteglide-MCP) — not inside the CLI package tree.
 
-| Keep in `siteglide-cli` | Put in `Siteglide-MCP---Experimental` |
+| Keep in `siteglide-cli` | Put in `Siteglide-MCP` |
 | --- | --- |
 | `ai init` (writes config pointing at MCP bins) | Composed supervisor (`validate_code` + Siteglide rules) |
 | Thin wrapper bins that call / spawn the MCP package | Operational MCP tools (`envs_list`, `graphql_exec`, `liquid_exec`, `logs_fetch`) |
@@ -82,7 +82,7 @@ flowchart LR
 
 ## Scope
 
-1. **`Siteglide-MCP---Experimental`** — compose upstream check engine + Siteglide rules + ops tools + layout bridge
+1. **`Siteglide-MCP`** — compose upstream check engine + Siteglide rules + ops tools + layout bridge
 2. **`siteglide-cli ai init`** — register MCP bins
 3. **Thin CLI wrappers** for `mcp` / `supervisor`
 
@@ -103,7 +103,7 @@ Upstream embedding API:
 - `registerValidateCode(server, context)`
 - `ValidateCodeResult` types
 
-In `Siteglide-MCP---Experimental`:
+In `Siteglide-MCP`:
 
 1. Detect layout; if needed, create **temp overlay bridge** → `bridgedProjectDir`
 2. `startServer` / lint against bridged dir (rewrite `file_path` for agents using `marketplace_builder/...`)
@@ -115,7 +115,7 @@ In `Siteglide-MCP---Experimental`:
 flowchart TB
   cliAi["siteglide-cli ai init"]
   cliAi --> bins["siteglide-cli-mcp / siteglide-cli-supervisor"]
-  bins --> pkg["Siteglide-MCP---Experimental"]
+  bins --> pkg["Siteglide-MCP"]
   pkg --> bridge["layout bridge if needed"]
   bridge --> start["startServer upstream"]
   pkg --> sg["registerSiteglideTools"]
@@ -126,7 +126,7 @@ flowchart TB
 ### Layout (in MCP repo)
 
 ```
-Siteglide-MCP---Experimental/
+Siteglide-MCP/
   src/supervisor/compose.js    # bridge + startServer + registerSiteglideTools
   src/layout/
     detect.js                  # app | marketplace_builder | null
@@ -210,7 +210,7 @@ Prefer public lint API from the supervisor package (`runLint` / equivalent) behi
 
 ## Decisions (locked)
 
-### MCP (`Siteglide-MCP---Experimental`)
+### MCP (`Siteglide-MCP`)
 - Compose upstream check engine + Siteglide rules
 - Ops MVP: `envs_list`, `graphql_exec`, `liquid_exec`, `logs_fetch`
 - **Layout bridge:** temp overlay when only `marketplace_builder/` (cross-platform junctions/symlinks)
@@ -231,7 +231,7 @@ Prefer public lint API from the supervisor package (`runLint` / equivalent) behi
 
 ## Phases
 
-### 1 — scaffold `Siteglide-MCP---Experimental`
+### 1 — scaffold `Siteglide-MCP`
 Compose supervisor + layout bridge + Siteglide guide/rules tool + ops MVP + stdio entries
 
 ### 2 — wire CLI

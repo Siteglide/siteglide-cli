@@ -17,7 +17,16 @@ const program = require('commander'),
 	{ ensureMcpOnPull } = require('./lib/mcpAlpha'),
 	{
 		resolveSiteAppRoot
-	} = require('./lib/migrateAppDirectory');
+	} = require('./lib/migrateAppDirectory'),
+	{
+		DEFAULT_PULL_IGNORED_MODULES,
+		PULL_MODULES_CONFIG_RELATIVE_PATH,
+		isPullIgnoredModule,
+		preparePullModulesConfig,
+		partitionPullIgnoredModules,
+		resolvePullIgnoredModules,
+		selectModulesToPull
+	} = require('./lib/pullIgnoredModules');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 
@@ -384,14 +393,27 @@ const cleanupEmptyDirs = async (root) => {
  * Side effects: creates `./modules` if needed; copies module files into it (overwrites); deletes `${fromRoot}/modules`.
  * No-op if `${fromRoot}/modules` does not exist.
  */
-const moveModulesToRoot = async (fromRoot) => {
+const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	const modulesPath = `./${fromRoot}/modules`;
 	if (!(await fs.pathExists(modulesPath))) {
 		return;
 	}
 	logger.Debug(`[pull] Moving ./${fromRoot}/modules → ./${dir.MODULES}`);
 	await fs.ensureDir(`./${dir.MODULES}`);
-	await fs.copy(modulesPath, `./${dir.MODULES}`, { overwrite: true });
+	const entries = await fs.readdir(modulesPath);
+	for (let i = 0; i < entries.length; i++) {
+		const moduleName = entries[i];
+		const srcPath = path.join(modulesPath, moduleName);
+		const stats = await fs.stat(srcPath);
+		if (!stats.isDirectory()) {
+			continue;
+		}
+		if (isPullIgnoredModule(moduleName, ignoredModules)) {
+			logger.Debug(`[pull] Skipping default-ignored module "${moduleName}" from ./${fromRoot}/modules`);
+			continue;
+		}
+		await fs.copy(srcPath, path.join(`./${dir.MODULES}`, moduleName), { overwrite: true });
+	}
 	await fs.remove(modulesPath);
 };
 
@@ -404,7 +426,7 @@ const moveModulesToRoot = async (fromRoot) => {
  * Side effects: writes/overwrites that folder; may merge into `./modules`;
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
-const pullSiteZip = async (gateway, siteRoot = dir.APP) => {
+const pullSiteZip = async (gateway, siteRoot = dir.APP, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	logger.Info(`[pull] Step: downloading main site zip → ${siteRoot}/`);
 	const filename = `${siteRoot}.zip`;
 	pullSpinner.text = 'Pulling site files';
@@ -416,7 +438,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.APP) => {
 	await unzip(filename, siteRoot);
 	await copyChildren(`./${siteRoot}/app`, `./${siteRoot}`);
 	await fs.remove(`./${filename}`);
-	await moveModulesToRoot(siteRoot);
+	await moveModulesToRoot(siteRoot, ignoredModules);
 	if (await fs.pathExists(`./${siteRoot}/asset_manifest.json`)) {
 		await fs.remove(`./${siteRoot}/asset_manifest.json`);
 	}
@@ -435,7 +457,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.APP) => {
  * Side effects: writes/overwrites files under `./modules`; updates `pullSpinner` text;
  * uses then deletes a temp zip and `.tmp/pull-<moduleName>` work directory.
  */
-const pullModuleZip = async (gateway, moduleName) => {
+const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	logger.Info(`[pull] Starting module ${moduleName}`);
 	const filename = `${dir.MODULES}-${moduleName}.zip`;
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
@@ -453,7 +475,7 @@ const pullModuleZip = async (gateway, moduleName) => {
 		await fs.remove(`./${workDir}/app`);
 	}
 
-	await moveModulesToRoot(workDir);
+	await moveModulesToRoot(workDir, ignoredModules);
 
 	// Some module zips nest files as <moduleName>/... instead of modules/<moduleName>/...
 	const directModulePath = `./${workDir}/${moduleName}`;
@@ -510,7 +532,7 @@ const mapLimit = async (items, limit, iterator) => {
  * @param {number} concurrency - Max concurrent module pulls.
  * Side effects: same as `pullModuleZip` for each module; updates pullSpinner text.
  */
-const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
+const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	const total = modulesToPull.length;
 	if (total === 0) {
 		return;
@@ -522,7 +544,7 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
 
 	let completed = 0;
 	await mapLimit(modulesToPull, limit, async (moduleName) => {
-		await pullModuleZip(gateway, moduleName);
+		await pullModuleZip(gateway, moduleName, ignoredModules);
 		completed += 1;
 		logger.Info(`[pull] Module "${moduleName}" done (${completed}/${total})`);
 		pullSpinner.text = `Pulling modules (${completed}/${total} done, up to ${limit} at a time)`;
@@ -541,7 +563,7 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency) => {
  * Side effects: creates dirs and writes/overwrites asset files under the site root or `./modules`;
  * updates `pullSpinner` text; downloads each asset from its remote_url.
  */
-const pullAssets = async (gateway, siteRoot = dir.APP) => {
+const pullAssets = async (gateway, siteRoot = dir.APP, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	pullSpinner.text = 'Pulling assets';
 	const response = await gateway.pull();
 	const asset_files = [];
@@ -562,6 +584,7 @@ const pullAssets = async (gateway, siteRoot = dir.APP) => {
 				(urlToTest.indexOf('.svg') > -1) ||
 				(urlToTest.indexOf('.map') > -1) ||
 				(urlToTest.indexOf('.json') > -1) ||
+				(urlToTest.indexOf('.md') > -1) ||
 				(urlToTest.indexOf('.htm') > -1)
 			) {
 				await getBinary(file.data.remote_url, time).then(body => {
@@ -595,6 +618,11 @@ const pullAssets = async (gateway, siteRoot = dir.APP) => {
 			return;
 		}
 		if (isModuleAsset) {
+			const moduleName = relativePath.split('/')[0];
+			if (isPullIgnoredModule(moduleName, ignoredModules)) {
+				logger.Debug(`[pull] Skipping asset for default-ignored module "${moduleName}": ${physicalPath}`);
+				return;
+			}
 			moduleAssetCount++;
 		}
 		const fullPath = path.join(root, relativePath);
@@ -616,7 +644,7 @@ const pullAssets = async (gateway, siteRoot = dir.APP) => {
  * then deletes that nested folder, removes empty dirs under `app`;
  * updates `pullSpinner` text and writes tidying-up logs.
  */
-const tidyUpAfterPull = async () => {
+const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	logger.Info('[pull] Step: tidying up local files');
 	pullSpinner.text = 'Tidying up...';
 
@@ -649,7 +677,7 @@ const tidyUpAfterPull = async () => {
 		const appRoot = appRoots[i];
 		const nestedModules = `./${appRoot}/modules`;
 		if (await fs.pathExists(nestedModules)) {
-			await moveModulesToRoot(appRoot);
+			await moveModulesToRoot(appRoot, ignoredModules);
 		}
 		if (await fs.pathExists(nestedModules)) {
 			await fs.remove(nestedModules);
@@ -662,29 +690,11 @@ const tidyUpAfterPull = async () => {
 	logger.Info('[pull] Tidying up complete');
 };
 
-/**
- * Decide which installed modules to pull for this run.
- *
- * @param {string[]} installedModules - Module names returned by `/cli/list_modules`.
- * @param {string|undefined} moduleFilter - Optional `-m` value; when set, only that module is selected.
- * @returns {string[]|null} Modules to pull, or `null` if `moduleFilter` is set but not installed.
- * Side effects: none.
- */
-const selectModules = (installedModules, moduleFilter) => {
-	if (!moduleFilter) {
-		return installedModules;
-	}
-	if (installedModules.indexOf(moduleFilter) === -1) {
-		return null;
-	}
-	return [moduleFilter];
-};
-
 program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default pulls all installed modules; use -m to filter to one module.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide-modules/pull.json (include/exclude). Use -m to pull one module including ignored ones.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
@@ -725,6 +735,10 @@ program
 					}
 
 					pullSpinner.text = 'Fetching installed modules';
+					const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
+					if (pullModulesConfigCreated) {
+						logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} — edit include/exclude to customize skipped modules (commit to git so the team stays in sync)`);
+					}
 					const modulesResponse = await gateway.listModules();
 					const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
 					logger.Debug(`[pull] list_modules returned ${installedModules.length} module(s)`);
@@ -736,12 +750,18 @@ program
 						logger.Debug('[pull] Raw list_modules response keys: ' + Object.keys(modulesResponse || {}).join(', '));
 					}
 
-					const modulesToPull = selectModules(installedModules, moduleFilter);
+					const ignoredModules = resolvePullIgnoredModules(moduleFilter, effectiveIgnoredModules);
+					const moduleSelection = partitionPullIgnoredModules(installedModules, effectiveIgnoredModules);
+					const modulesToPull = selectModulesToPull(installedModules, moduleFilter, effectiveIgnoredModules);
 
 					if (moduleFilter && modulesToPull === null) {
 						pullSpinner.fail(`Module "${moduleFilter}" is not installed on this site`);
 						logger.Error(`[pull] Filter "${moduleFilter}" not found in installed modules`);
 						process.exit(1);
+					}
+
+					if (!moduleFilter && moduleSelection.ignored.length > 0) {
+						logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${moduleSelection.ignored.join(', ')}`);
 					}
 
 					if (modulesToPull.length === 0) {
@@ -750,12 +770,12 @@ program
 						logger.Info(`[pull] Will pull ${modulesToPull.length} module(s): ${modulesToPull.join(', ')}`);
 					}
 
-					await pullSiteZip(gateway, siteRoot);
+					await pullSiteZip(gateway, siteRoot, ignoredModules);
 
-					await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency);
+					await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency, ignoredModules);
 
 					if (!ignoreAssets) {
-						await pullAssets(gateway, siteRoot);
+						await pullAssets(gateway, siteRoot, ignoredModules);
 					} else {
 						logger.Info('[pull] Skipping assets step');
 					}
@@ -766,7 +786,7 @@ program
 					pullSpinner.text = 'Checking Siteglide MCP (alpha)';
 					await ensureMcpOnPull();
 
-					await tidyUpAfterPull();
+					await tidyUpAfterPull(ignoredModules);
 
 					logger.Info('[pull] All steps finished');
 					pullSpinner.succeed('Pulled files');
