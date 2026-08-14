@@ -18,14 +18,14 @@ function resolveMcpBin() {
 		/* fall through */
 	}
 
-	const sibling = path.resolve(__dirname, '..', 'Siteglide-MCP---Experimental', 'bin', 'siteglide-mcp.js');
+	const sibling = path.resolve(__dirname, '..', 'Siteglide-MCP', 'bin', 'siteglide-mcp.js');
 	if (fs.existsSync(sibling)) {
 		return sibling;
 	}
 
 	console.error(
 		'[siteglide-cli-mcp] @siteglide/siteglide-mcp is not installed.\n' +
-			'From the workspace: npm install in Siteglide-MCP---Experimental, and link it from siteglide-cli.'
+			'From the workspace: npm install in Siteglide-MCP, and link it from siteglide-cli.'
 	);
 	process.exit(1);
 }

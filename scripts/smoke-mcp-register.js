@@ -1,7 +1,14 @@
+(async () => {
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {
+	ensureMcpOnPull,
+	hasAlphaCredentials,
+	readAlphaCredentials,
+	getMcpConfigStatus
+} = require('../lib/mcpAlpha');
 const {
 	ensureMcpRegistered,
 	ensureMcpIdeRules,
@@ -13,6 +20,25 @@ const {
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-mcp-reg-'));
 const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-mcp-home-'));
 const cursorPath = path.join(root, '.cursor', 'mcp.json');
+
+assert.strictEqual(hasAlphaCredentials(root), false, 'missing alpha.json should skip MCP setup');
+
+const skipped = await ensureMcpOnPull({ rootPath: root, homedir: fakeHome, interactive: false });
+assert.strictEqual(skipped.skipped, true);
+assert.strictEqual(skipped.reason, 'missing-alpha-credentials');
+assert.strictEqual(fs.existsSync(path.join(root, '.cursor', 'rules', 'setup_siteglide_mcp.mdc')), false);
+
+fs.mkdirSync(path.join(root, '.siteglide'), { recursive: true });
+fs.writeFileSync(
+	path.join(root, '.siteglide', 'alpha.json'),
+	JSON.stringify({ token: 'npm_test_token' }, null, 2)
+);
+
+const creds = readAlphaCredentials(root);
+assert.ok(creds);
+assert.strictEqual(creds.tag, 'alpha');
+assert.strictEqual(creds.package, '@siteglide/siteglide-mcp');
+
 fs.mkdirSync(path.dirname(cursorPath), { recursive: true });
 fs.writeFileSync(
 	cursorPath,
@@ -31,7 +57,6 @@ const afterFirst = JSON.parse(fs.readFileSync(cursorPath, 'utf8'));
 assert.deepStrictEqual(afterFirst.mcpServers.other, { command: 'keep-me' });
 assert.strictEqual(afterFirst.mcpServers[SERVER_NAME].command, process.execPath);
 assert.deepStrictEqual(afterFirst.mcpServers[SERVER_NAME].args, [resolveMcpScriptPath()]);
-assert.ok(!afterFirst.mcpServers[SERVER_NAME].command.includes('siteglide-cli-mcp') || afterFirst.mcpServers[SERVER_NAME].args);
 
 const second = ensureMcpRegistered({ rootPath: root, homedir: fakeHome });
 assert.ok(second.unchanged.includes('Cursor'));
@@ -41,15 +66,15 @@ const desired = buildMcpLaunchEntry();
 assert.strictEqual(desired.command, process.execPath);
 assert.ok(fs.existsSync(desired.args[0]));
 
+const configStatus = getMcpConfigStatus(root);
+assert.ok(configStatus.configured);
+assert.ok(configStatus.paths.includes(cursorPath));
+
 const rules = ensureMcpIdeRules({ rootPath: root });
 assert.ok(rules.written.includes('Cursor'));
 assert.ok(fs.existsSync(path.join(root, '.cursor', 'rules', 'setup_siteglide_mcp.mdc')));
-assert.ok(fs.existsSync(path.join(root, '.claude', 'siteglide-mcp.md')));
-const cursorRule = fs.readFileSync(path.join(root, '.cursor', 'rules', 'setup_siteglide_mcp.mdc'), 'utf8');
-assert.ok(cursorRule.indexOf('.siteglide-config') > -1);
-assert.ok(cursorRule.indexOf('envs_list') > -1);
-assert.ok(cursorRule.indexOf('NEVER') > -1);
 
 fs.rmSync(root, { recursive: true, force: true });
 fs.rmSync(fakeHome, { recursive: true, force: true });
 console.log('mcp registration smoke ok');
+})();

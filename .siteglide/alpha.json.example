@@ -1,0 +1,6 @@
+{
+  "token": "npm_xxxxxxxx",
+  "registry": "https://registry.npmjs.org/",
+  "tag": "alpha",
+  "package": "@siteglide/siteglide-mcp"
+}

@@ -8,7 +8,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const CLI_ROOT = path.resolve(__dirname, '..');
-const MCP_ROOT = path.resolve(CLI_ROOT, '..', 'Siteglide-MCP---Experimental');
+const MCP_ROOT = path.resolve(CLI_ROOT, '..', 'Siteglide-MCP');
 const OUT_ROOT = path.resolve(CLI_ROOT, '..', 'siteglide-cli-workspace-notes', 'dist');
 const STAGE = path.join(OUT_ROOT, 'siteglide-cli-test-bundle');
 const pad2 = (n) => String(n).padStart(2, '0');

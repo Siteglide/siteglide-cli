@@ -14,7 +14,7 @@ const program = require('commander'),
 	unzip = require('./lib/unzip'),
 	path = require('path'),
 	dir = require('./lib/directories'),
-	{ ensureMcpRegistered, ensureMcpIdeRules } = require('./lib/ai'),
+	{ ensureMcpOnPull } = require('./lib/mcpAlpha'),
 	{
 		resolveSiteAppRoot
 	} = require('./lib/migrateAppDirectory');
@@ -763,9 +763,8 @@ program
 					// After module zips (and assets that may land under modules/) are on disk
 					await mergeModuleAgentsToRoot(modulesToPull);
 
-					pullSpinner.text = 'Checking IDE MCP registration';
-					ensureMcpRegistered();
-					ensureMcpIdeRules();
+					pullSpinner.text = 'Checking Siteglide MCP (alpha)';
+					await ensureMcpOnPull();
 
 					await tidyUpAfterPull();
 
