@@ -4,9 +4,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-	ensureMcpOnPull,
-	hasAlphaCredentials,
-	readAlphaCredentials,
 	getMcpConfigStatus
 } = require('../lib/mcpAlpha');
 const {
@@ -21,23 +18,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-mcp-reg-'));
 const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-mcp-home-'));
 const cursorPath = path.join(root, '.cursor', 'mcp.json');
 
-assert.strictEqual(hasAlphaCredentials(root), false, 'missing alpha.json should skip MCP setup');
-
-const skipped = await ensureMcpOnPull({ rootPath: root, homedir: fakeHome, interactive: false });
-assert.strictEqual(skipped.skipped, true);
-assert.strictEqual(skipped.reason, 'missing-alpha-credentials');
 assert.strictEqual(fs.existsSync(path.join(root, '.cursor', 'rules', 'setup_siteglide_mcp.mdc')), false);
-
-fs.mkdirSync(path.join(root, '.siteglide'), { recursive: true });
-fs.writeFileSync(
-	path.join(root, '.siteglide', 'alpha.json'),
-	JSON.stringify({ token: 'npm_test_token' }, null, 2)
-);
-
-const creds = readAlphaCredentials(root);
-assert.ok(creds);
-assert.strictEqual(creds.tag, 'alpha');
-assert.strictEqual(creds.package, '@siteglide/siteglide-mcp');
 
 fs.mkdirSync(path.dirname(cursorPath), { recursive: true });
 fs.writeFileSync(
