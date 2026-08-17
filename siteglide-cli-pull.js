@@ -601,14 +601,8 @@ const pullAssets = async (gateway, siteRoot = dir.APP, ignoredModules = DEFAULT_
 	}));
 	let moduleAssetCount = 0;
 	let wroteCount = 0;
-	let skippedEmptyPath = 0;
 	asset_files.forEach(file => {
 		const physicalPath = file.data.physical_file_path.replace(/\\/g, '/');
-		if (physicalPath.indexOf('//') > -1) {
-			skippedEmptyPath++;
-			logger.Info(`[pull] Skipping asset with empty folder in path: ${physicalPath}`);
-			return;
-		}
 		const isModuleAsset = physicalPath === dir.MODULES || physicalPath.indexOf(dir.MODULES + '/') === 0;
 		const root = isModuleAsset ? dir.MODULES : siteRoot;
 		const relativePath = isModuleAsset
@@ -630,9 +624,6 @@ const pullAssets = async (gateway, siteRoot = dir.APP, ignoredModules = DEFAULT_
 		fs.writeFileSync(fullPath, file.data.body, logger.Error);
 		wroteCount++;
 	});
-	if (skippedEmptyPath > 0) {
-		logger.Info(`[pull] Assets: skipped ${skippedEmptyPath} file(s) with empty folder in path`);
-	}
 	logger.Info(`[pull] Assets: wrote ${wroteCount} file(s) (${moduleAssetCount} under modules)`);
 };
 
