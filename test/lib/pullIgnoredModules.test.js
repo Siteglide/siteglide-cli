@@ -43,7 +43,7 @@ test('mergePullIgnoredModules lets include remove a name added by exclude', () =
 	})).toEqual(DEFAULT_PULL_IGNORED_MODULES);
 });
 
-test('ensurePullModulesConfig creates pull.json when missing and does not overwrite existing file', async () => {
+test('ensurePullModulesConfig creates modules.json when missing and does not overwrite existing file', async () => {
 	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-pull-modules-'));
 	const configPath = path.join(rootPath, PULL_MODULES_CONFIG_RELATIVE_PATH);
 
@@ -71,7 +71,7 @@ test('ensurePullModulesConfig creates pull.json when missing and does not overwr
 	await fs.remove(rootPath);
 });
 
-test('preparePullModulesConfig applies include and exclude from pull.json', async () => {
+test('preparePullModulesConfig applies include and exclude from modules.json', async () => {
 	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-pull-modules-config-'));
 	const configPath = path.join(rootPath, PULL_MODULES_CONFIG_RELATIVE_PATH);
 	await fs.ensureDir(path.dirname(configPath));

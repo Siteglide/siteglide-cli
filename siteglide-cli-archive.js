@@ -11,6 +11,7 @@ const program = require('commander'),
 	version = require('./package.json').version,
 	dir = require('./lib/directories'),
 	files = require('./lib/assets/files'),
+	{ deployGlobOptions } = require('./lib/deployGlob'),
 	Gateway = require('./lib/proxy');
 
 const { assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory');
@@ -30,7 +31,7 @@ const addModulesToArchive = (archive, withImages) => {
 const addModuleToArchive = (module, archive, withImages, pattern = '?(public|private)/**') => {
 	module = module.replace('/','');
 	return new Promise((resolve, reject) => {
-		glob(pattern, { cwd: `${dir.MODULES}/${module}` }, (err, files) => {
+		glob(pattern, deployGlobOptions({ cwd: `${dir.MODULES}/${module}` }), (err, files) => {
 			if (err) throw reject(err);
 			const moduleTemplateData = templateData();
 
@@ -66,7 +67,10 @@ const makeArchive = (archivePath, directory, program) => {
 
 	const releaseArchive = prepareArchive(archivePath);
 	if (directory) {
-		releaseArchive.glob('**/*', { cwd: directory, ignore: ['assets/**', '**/node_modules/**']}, { prefix: directory });
+		releaseArchive.glob('**/*', deployGlobOptions({
+			cwd: directory,
+			ignore: ['assets/**', '**/node_modules/**']
+		}), { prefix: directory });
 	}
 
 	addModulesToArchive(releaseArchive, program.opts().withImages).then(r => {

@@ -694,7 +694,7 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide-modules/pull.json (include/exclude). Use -m to pull one module including ignored ones.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (include/exclude). Use -m to pull one module including ignored ones.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
