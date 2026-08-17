@@ -52,20 +52,22 @@ test('ensurePullModulesConfig creates modules.json when missing and does not ove
 	expect(await fs.pathExists(configPath)).toEqual(true);
 
 	const parsed = JSON.parse(await fs.readFile(configPath, 'utf8'));
-	expect(parsed.include).toEqual([]);
-	expect(parsed.exclude).toEqual([]);
-	expect(typeof parsed.usage).toEqual('string');
-	expect(parsed.usage).toContain('exclude');
-	expect(parsed.usage).toContain('include');
-	expect(parsed.usage).toContain('git');
+	expect(parsed.pull_behaviour.include).toEqual([]);
+	expect(parsed.pull_behaviour.exclude).toEqual([]);
+	expect(typeof parsed.pull_behaviour.usage).toEqual('string');
+	expect(parsed.pull_behaviour.usage).toContain('exclude');
+	expect(parsed.pull_behaviour.usage).toContain('include');
+	expect(parsed.pull_behaviour.usage).toContain('git');
 
-	await fs.writeFile(configPath, '{"include":[],"exclude":["team_override"]}\n', 'utf8');
+	await fs.writeFile(configPath, '{"pull_behaviour":{"include":[],"exclude":["team_override"]}}\n', 'utf8');
 
 	const second = await ensurePullModulesConfig(rootPath);
 	expect(second.created).toEqual(false);
 	expect(JSON.parse(await fs.readFile(configPath, 'utf8'))).toEqual({
-		include: [],
-		exclude: ['team_override']
+		pull_behaviour: {
+			include: [],
+			exclude: ['team_override']
+		}
 	});
 
 	await fs.remove(rootPath);
@@ -76,8 +78,10 @@ test('preparePullModulesConfig applies include and exclude from modules.json', a
 	const configPath = path.join(rootPath, PULL_MODULES_CONFIG_RELATIVE_PATH);
 	await fs.ensureDir(path.dirname(configPath));
 	await fs.writeFile(configPath, JSON.stringify({
-		include: ['module_357'],
-		exclude: ['custom_module']
+		pull_behaviour: {
+			include: ['module_357'],
+			exclude: ['custom_module']
+		}
 	}, null, '\t') + '\n', 'utf8');
 
 	const prepared = await preparePullModulesConfig(rootPath);
