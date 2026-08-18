@@ -25,7 +25,8 @@ function resolveMcpBin() {
 
 	console.error(
 		'[siteglide-cli-mcp] @siteglide/siteglide-mcp is not installed.\n' +
-			'From the workspace: npm install in Siteglide-MCP, and link it from siteglide-cli.'
+			'Run siteglide-cli pull to install MCP from npm or GitHub when available,\n' +
+			'or from the siteglide-cli repo: npm run install:mcp'
 	);
 	process.exit(1);
 }

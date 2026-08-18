@@ -774,7 +774,7 @@ program
 					// After module zips (and assets that may land under modules/) are on disk
 					await mergeModuleAgentsToRoot(modulesToPull);
 
-					pullSpinner.text = 'Checking Siteglide MCP';
+					pullSpinner.stop();
 					await ensureMcpOnPull();
 
 					await tidyUpAfterPull(ignoredModules);
