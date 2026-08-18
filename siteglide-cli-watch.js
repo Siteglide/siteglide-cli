@@ -25,8 +25,8 @@ const filename = filePath => filePath.split(path.sep).pop();
 const filePathUnixified = filePath =>
 	filePath
 		.replace(/\\/g, '/')
-		.replace(new RegExp(`^${dir.APP}/`), '')
-		.replace(new RegExp(`^${dir.LEGACY_APP}/`), '');
+		.replace(new RegExp(`^${dir.SITE_ROOT}/`), '')
+		.replace(new RegExp(`^${dir.APP}/`), '');
 let counter = 0;
 let siteRoot = null;
 
@@ -193,8 +193,8 @@ const pushFile = (gateway, syncedFilePath) => {
 const isModule19CustomCss = (syncedFilePath) => {
 	const normalized = syncedFilePath.replace(/\\/g, '/');
 	const legacyCustom =
-		normalized === `${dir.LEGACY_APP}/assets/css/modules/module_19/_custom-variables.scss` ||
-		normalized === `${dir.LEGACY_APP}/assets/css/modules/module_19/_custom.scss`;
+		normalized === `${dir.SITE_ROOT}/assets/css/modules/module_19/_custom-variables.scss` ||
+		normalized === `${dir.SITE_ROOT}/assets/css/modules/module_19/_custom.scss`;
 	const appCustom =
 		normalized === `${dir.APP}/assets/css/modules/module_19/_custom-variables.scss` ||
 		normalized === `${dir.APP}/assets/css/modules/module_19/_custom.scss`;
@@ -287,7 +287,7 @@ gateway.ping().then(async () => {
 
 	if (watchDirectories.length === 0) {
 		logger.Error(
-			`${dir.APP}/ or ${dir.LEGACY_APP}/ has to exist! Please make sure you have the correct folder structure.`
+			`${dir.SITE_ROOT}/ or ${dir.APP}/ has to exist! Please make sure you have the correct folder structure.`
 		);
 	}
 

@@ -66,7 +66,7 @@ const getBody = (filePath, processTemplate) => {
 
 const deploy = async (env, authData, params) => {
 	const gateway = new Gateway(authData);
-	const siteRoot = dir.currentApp() || null;
+		const siteRoot = dir.getSiteRoot() || null;
 
 	if (siteRoot) {
 		let files = await glob(`${siteRoot}/views/pages/**/*.liquid`);

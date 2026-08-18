@@ -107,7 +107,7 @@ program
 const siteRoot = assertExclusiveSiteAppRoot();
 if (!siteRoot && !fs.existsSync(dir.MODULES)) {
 	logger.Error(
-		`${dir.APP}/ or ${dir.LEGACY_APP}/ has to exist! Please make sure you have the correct folder structure.`,
+		`${dir.SITE_ROOT}/ or ${dir.APP}/ has to exist! Please make sure you have the correct folder structure.`,
 		{ hideTimestamp: true }
 	);
 }

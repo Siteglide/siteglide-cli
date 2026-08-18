@@ -7,7 +7,9 @@ const {
 	DEFAULT_PACKAGE,
 	pickLatestPublishedVersion,
 	getMcpConfigStatus,
-	isCliLocalMcpDependency
+	needsMcpInstall,
+	resolveInstalledMcpVersion,
+	resolveInstalledMcpVersionWithTimeout
 } = require('../../lib/mcpAlpha');
 const { SERVER_NAME } = require('../../lib/ai');
 
@@ -58,6 +60,18 @@ test('DEFAULT_PACKAGE is scoped npm name: @siteglide org + siteglide-mcp package
 	expect(DEFAULT_PACKAGE).toEqual('@siteglide/siteglide-mcp');
 });
 
-test('isCliLocalMcpDependency detects file: dependency in CLI package.json', () => {
-	expect(isCliLocalMcpDependency()).toEqual(true);
+test('needsMcpInstall when published version missing or already installed', () => {
+	expect(needsMcpInstall(null, null)).toEqual(false);
+	expect(needsMcpInstall('0.1.0-alpha.0', null)).toEqual(false);
+	expect(needsMcpInstall(null, '0.2.0-alpha.1')).toEqual(true);
+	expect(needsMcpInstall('0.1.0-alpha.0', '0.2.0-alpha.1')).toEqual(true);
+	expect(needsMcpInstall('0.2.0-alpha.1', '0.2.0-alpha.1')).toEqual(false);
+});
+
+test('resolveInstalledMcpVersionWithTimeout returns installed version', async () => {
+	const expectedVersion = resolveInstalledMcpVersion();
+	expect(await resolveInstalledMcpVersionWithTimeout()).toEqual({
+		version: expectedVersion,
+		timedOut: false
+	});
 });

@@ -418,7 +418,7 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
 };
 
 /**
- * Download the main site backup zip and convert it into the local site root (`app/`).
+ * Download the main site backup zip and convert it into the local site root (`marketplace_builder/` or `app/`).
  * Calls Siteglide-API `/cli/backup` then `/cli/backupStatus/:id` (no module_name).
  *
  * @param {Gateway} gateway - Authenticated API client for the current environment.
@@ -426,7 +426,7 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
  * Side effects: writes/overwrites that folder; may merge into `./modules`;
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
-const pullSiteZip = async (gateway, siteRoot = dir.APP, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
+const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	logger.Info(`[pull] Step: downloading main site zip → ${siteRoot}/`);
 	const filename = `${siteRoot}.zip`;
 	pullSpinner.text = 'Pulling site files';
@@ -563,7 +563,7 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignore
  * Side effects: creates dirs and writes/overwrites asset files under the site root or `./modules`;
  * updates `pullSpinner` text; downloads each asset from its remote_url.
  */
-const pullAssets = async (gateway, siteRoot = dir.APP, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
+const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
 	pullSpinner.text = 'Pulling assets';
 	const response = await gateway.pull();
 	const asset_files = [];
@@ -639,7 +639,7 @@ const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) =>
 	logger.Info('[pull] Step: tidying up local files');
 	pullSpinner.text = 'Tidying up...';
 
-	const siteZips = [`./${dir.APP}.zip`, `./${dir.LEGACY_APP}.zip`];
+	const siteZips = [`./${dir.SITE_ROOT}.zip`, `./${dir.APP}.zip`];
 	for (let i = 0; i < siteZips.length; i++) {
 		const siteZip = siteZips[i];
 		if (await fs.pathExists(siteZip)) {
@@ -663,7 +663,7 @@ const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) =>
 	}
 
 	// Pull must not leave modules nested under app (or leftover marketplace_builder)
-	const appRoots = [dir.APP, dir.LEGACY_APP];
+	const appRoots = [dir.SITE_ROOT, dir.APP];
 	for (let i = 0; i < appRoots.length; i++) {
 		const appRoot = appRoots[i];
 		const nestedModules = `./${appRoot}/modules`;
