@@ -25,7 +25,9 @@ const program = require('commander'),
 		preparePullModulesConfig,
 		partitionPullIgnoredModules,
 		resolvePullIgnoredModules,
-		selectModulesToPull
+		selectModulesToPull,
+		formatModuleNameForLog,
+		formatModuleListForLog
 	} = require('./lib/pullIgnoredModules');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
@@ -115,14 +117,14 @@ const copyAgentsTree = async (srcDir, destDir, moduleName) => {
 		const destPath = path.join(destDir, name);
 		const stats = await fs.stat(srcPath);
 		if (stats.isDirectory()) {
-			logger.Debug(`[pull] .agents: merging directory "${name}/" from module "${moduleName}"`);
+			logger.Debug(`[pull] .agents: merging directory "${name}/" from module "${formatModuleNameForLog(moduleName)}"`);
 			fileCount += await copyAgentsTree(srcPath, destPath, moduleName);
 		} else {
 			await makeWritable(destPath);
 			await fs.copy(srcPath, destPath, { overwrite: true });
 			await makeReadOnly(destPath);
 			const displayPath = destPath.replace(/\\/g, '/').replace(/^\.\//, '');
-			logger.Debug(`[pull] .agents: wrote ./${displayPath} (from module "${moduleName}")`);
+			logger.Debug(`[pull] .agents: wrote ./${displayPath} (from module "${formatModuleNameForLog(moduleName)}")`);
 			fileCount++;
 		}
 	}
@@ -158,22 +160,22 @@ const mergeModuleAgentsToRoot = async (moduleNames) => {
 		logger.Debug(`[pull] Checking for ${agentsSrcDisplay}`);
 
 		if (!(await fs.pathExists(agentsSrc))) {
-			logger.Debug(`[pull] Module "${moduleName}" — no ${AGENTS_ROOT} directory found`);
+			logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" — no ${AGENTS_ROOT} directory found`);
 			continue;
 		}
 
 		const srcStat = await fs.stat(agentsSrc);
 		if (!srcStat.isDirectory()) {
-			logger.Debug(`[pull] Module "${moduleName}" — ${AGENTS_ROOT} exists but is not a directory; skip`);
+			logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" — ${AGENTS_ROOT} exists but is not a directory; skip`);
 			continue;
 		}
 
-		logger.Info(`[pull] Module "${moduleName}" — found ${AGENTS_ROOT}; merging into ./${AGENTS_ROOT}`);
+		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — found ${AGENTS_ROOT}; merging into ./${AGENTS_ROOT}`);
 		const count = await copyAgentsTree(agentsSrc, `./${AGENTS_ROOT}`, moduleName);
 		result.modulesWithAgents++;
 		result.totalFiles += count;
 		if (count > 0) {
-			logger.Info(`[pull] Module "${moduleName}" — merged ${count} file(s) into ./${AGENTS_ROOT}`);
+			logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — merged ${count} file(s) into ./${AGENTS_ROOT}`);
 		}
 	}
 
@@ -409,7 +411,7 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
 			continue;
 		}
 		if (isPullIgnoredModule(moduleName, ignoredModules)) {
-			logger.Debug(`[pull] Skipping default-ignored module "${moduleName}" from ./${fromRoot}/modules`);
+			logger.Debug(`[pull] Skipping default-ignored module "${formatModuleNameForLog(moduleName)}" from ./${fromRoot}/modules`);
 			continue;
 		}
 		await fs.copy(srcPath, path.join(`./${dir.MODULES}`, moduleName), { overwrite: true });
@@ -458,13 +460,13 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
  * uses then deletes a temp zip and `.tmp/pull-<moduleName>` work directory.
  */
 const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Starting module ${moduleName}`);
+	logger.Info(`[pull] Starting module ${formatModuleNameForLog(moduleName)}`);
 	const filename = `${dir.MODULES}-${moduleName}.zip`;
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
 	const pullTask = await gateway.pullZip({ module_name: moduleName });
-	logger.Debug(`[pull] Module "${moduleName}" backup started (id: ${pullTask.id})`);
+	logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" backup started (id: ${pullTask.id})`);
 	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
-	logger.Debug(`[pull] Module "${moduleName}" backup ready (status: ${readyTask.status}) — downloading zip`);
+	logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" backup ready (status: ${readyTask.status}) — downloading zip`);
 	await downloadFile(readyTask.zip_file.url, filename);
 	await fs.remove(workDir);
 	await unzip(filename, workDir);
@@ -480,7 +482,7 @@ const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_
 	// Some module zips nest files as <moduleName>/... instead of modules/<moduleName>/...
 	const directModulePath = `./${workDir}/${moduleName}`;
 	if (await fs.pathExists(directModulePath)) {
-		logger.Debug(`[pull] Module "${moduleName}" zip used direct layout; copying into ./${dir.MODULES}/${moduleName}`);
+		logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" zip used direct layout; copying into ./${dir.MODULES}/${moduleName}`);
 		await fs.ensureDir(`./${dir.MODULES}/${moduleName}`);
 		await fs.copy(directModulePath, `./${dir.MODULES}/${moduleName}`, { overwrite: true });
 	}
@@ -546,7 +548,7 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignore
 	await mapLimit(modulesToPull, limit, async (moduleName) => {
 		await pullModuleZip(gateway, moduleName, ignoredModules);
 		completed += 1;
-		logger.Info(`[pull] Module "${moduleName}" done (${completed}/${total})`);
+		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" done (${completed}/${total})`);
 		pullSpinner.text = `Pulling modules (${completed}/${total} done, up to ${limit} at a time)`;
 	});
 
@@ -614,7 +616,7 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 		if (isModuleAsset) {
 			const moduleName = relativePath.split('/')[0];
 			if (isPullIgnoredModule(moduleName, ignoredModules)) {
-				logger.Debug(`[pull] Skipping asset for default-ignored module "${moduleName}": ${physicalPath}`);
+				logger.Debug(`[pull] Skipping asset for default-ignored module "${formatModuleNameForLog(moduleName)}": ${physicalPath}`);
 				return;
 			}
 			moduleAssetCount++;
@@ -719,7 +721,7 @@ program
 
 					pullSpinner.start();
 					if (moduleFilter) {
-						logger.Info(`[pull] Module filter (-m): "${moduleFilter}"`);
+						logger.Info(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
 					}
 					if (ignoreAssets) {
 						logger.Info('[pull] --ignore-assets set; asset download step will be skipped');
@@ -735,7 +737,7 @@ program
 					logger.Debug(`[pull] list_modules returned ${installedModules.length} module(s)`);
 					if (installedModules.length > 0) {
 						installedModules.forEach((name, i) => {
-							logger.Debug(`\t${i + 1}. ${name}`, { hideTimestamp: true });
+							logger.Debug(`\t${i + 1}. ${formatModuleNameForLog(name)}`, { hideTimestamp: true });
 						});
 					} else {
 						logger.Debug('[pull] Raw list_modules response keys: ' + Object.keys(modulesResponse || {}).join(', '));
@@ -746,19 +748,19 @@ program
 					const modulesToPull = selectModulesToPull(installedModules, moduleFilter, effectiveIgnoredModules);
 
 					if (moduleFilter && modulesToPull === null) {
-						pullSpinner.fail(`Module "${moduleFilter}" is not installed on this site`);
-						logger.Error(`[pull] Filter "${moduleFilter}" not found in installed modules`);
+						pullSpinner.fail(`Module "${formatModuleNameForLog(moduleFilter)}" is not installed on this site`);
+						logger.Error(`[pull] Filter "${formatModuleNameForLog(moduleFilter)}" not found in installed modules`);
 						process.exit(1);
 					}
 
 					if (!moduleFilter && moduleSelection.ignored.length > 0) {
-						logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${moduleSelection.ignored.join(', ')}`);
+						logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
 					}
 
 					if (modulesToPull.length === 0) {
 						logger.Info('[pull] No modules selected to pull');
 					} else {
-						logger.Info(`[pull] Will pull ${modulesToPull.length} module(s): ${modulesToPull.join(', ')}`);
+						logger.Info(`[pull] Will pull ${modulesToPull.length} module(s): ${formatModuleListForLog(modulesToPull).join(', ')}`);
 					}
 
 					await pullSiteZip(gateway, siteRoot, ignoredModules);

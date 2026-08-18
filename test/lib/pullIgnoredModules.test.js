@@ -12,7 +12,9 @@ const {
 	filterPullIgnoredModules,
 	partitionPullIgnoredModules,
 	resolvePullIgnoredModules,
-	selectModulesToPull
+	selectModulesToPull,
+	formatModuleNameForLog,
+	formatModuleListForLog
 } = require('../../lib/pullIgnoredModules');
 
 const installed = ['module_357', 'user', 'siteglide_system', 'studio'];
@@ -162,4 +164,10 @@ test('resolvePullIgnoredModules drops the explicit -m target from the ignore lis
 		'siteglide_email_marketing'
 	]);
 	expect(resolvePullIgnoredModules(undefined)).toEqual(DEFAULT_PULL_IGNORED_MODULES);
+});
+
+test('formatModuleNameForLog uses display alias for module_984 only in logs', () => {
+	expect(formatModuleNameForLog('module_984')).toEqual('Siteglide AI skills');
+	expect(formatModuleNameForLog('module_357')).toEqual('module_357');
+	expect(formatModuleListForLog(['module_984', 'user'])).toEqual(['Siteglide AI skills', 'user']);
 });
