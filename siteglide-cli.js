@@ -1,24 +1,30 @@
 #!/usr/bin/env node
 
 const program = require('commander'),
-	updateNotifier = require('update-notifier'),
 	pkg = require('./package.json'),
 	logger = require('./lib/logger'),
 	chalk = require('chalk'),
 	version = 'Siteglide CLI v' + pkg.version;
 
-updateNotifier({
-	pkg: pkg
-}).notify({
-	isGlobal: true,
-	defer: false,
-	message: 'Update available ' +
-	chalk.dim('{currentVersion}') +
-	chalk.reset(' → ') +
-	chalk.green('{latestVersion}') +
-	' \nRun ' + chalk.cyan('{updateCommand}') + ' to update' +
-	' \nChangelog: https://developers.siteglide.com/cli-changelog'
-});
+void (async () => {
+	try {
+		const { default: updateNotifier } = await import('update-notifier');
+		updateNotifier({
+			pkg: pkg
+		}).notify({
+			isGlobal: true,
+			defer: false,
+			message: 'Update available ' +
+			chalk.dim('{currentVersion}') +
+			chalk.reset(' → ') +
+			chalk.green('{latestVersion}') +
+			' \nRun ' + chalk.cyan('{updateCommand}') + ' to update' +
+			' \nChangelog: https://developers.siteglide.com/cli-changelog'
+		});
+	} catch {
+		// Non-fatal: version check is optional when update-notifier fails to load.
+	}
+})();
 
 program
 	.version(version, '-v, --version')
