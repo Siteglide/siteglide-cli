@@ -119,7 +119,7 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-w --with-assets', 'With assets, deploys your "assets" folder')
-	.option('--skip-remote-check', 'Skip remote mtime conflict checks (CI / intentional overwrite)')
+	.option('-s, --skip-remote-check', 'Skip remote mtime conflict checks (CI / intentional overwrite)')
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;

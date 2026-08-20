@@ -15,7 +15,7 @@ program
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-l, --livereload', 'Turns on a livereload server')
-	.option('--skip-remote-check', 'Skip remote mtime checks before each upload')
+	.option('-s, --skip-remote-check', 'Skip remote mtime checks before each upload')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);

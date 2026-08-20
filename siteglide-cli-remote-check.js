@@ -27,7 +27,7 @@ program
 	.option('--mode <mode>', 'file | deploy-pre | deploy-post', 'deploy-pre')
 	.option('--path <path>', 'local file path (mode=file)')
 	.option('--deployed-at <iso>', 'deploy timestamp (mode=deploy-post)')
-	.option('--skip-remote-check', 'Treat as continue')
+	.option('-s, --skip-remote-check', 'Treat as continue')
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);

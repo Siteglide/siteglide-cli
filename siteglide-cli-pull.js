@@ -9,6 +9,7 @@ const program = require('commander'),
 	downloadFile = require('./lib/downloadFile'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	Gateway = require('./lib/proxy'),
+	Confirm = require('./lib/confirm'),
 	{ selectChoice, inputText, confirmYesNo } = require('./lib/prompts'),
 	getBinary = require('./lib/assets/getBinary'),
 	unzip = require('./lib/unzip'),
@@ -841,11 +842,15 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Site and first module batch prefetch in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Site and first module batch prefetch in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones. Use -s / --skip-remote-check for legacy pull (simple Y/n confirm; no commit or merge guiderails).')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
 	.option('-m --module <module>', 'Optional module name filter. Without this flag, non-ignored installed modules are pulled.')
+	.option(
+		'-s, --skip-remote-check',
+		'Legacy pull: simple Y/n confirm only — skip commit-before/after gates and merge-first prompts'
+	)
 	.option(
 		'--merge-first-sync',
 		'Internal: lightweight pull for sync merge-first (site, modules, assets only)',
@@ -881,6 +886,7 @@ program
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
 		const assumeYes = process.env.SITEGLIDE_PULL_ASSUME_YES === '1';
+		const skipRemoteCheck = Boolean(params.skipRemoteCheck);
 		const mergeFirstSync = params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1';
 
 		const runMergeFirstPull = async (wipMessage) => {
@@ -929,7 +935,7 @@ program
 			const skipCommitBaseline = process.env.SITEGLIDE_PULL_SKIP_COMMIT_BASELINE === '1';
 			const isPartialModulePull = Boolean(moduleFilter);
 
-			if (skipCommitBaseline || isPartialModulePull) {
+			if (skipCommitBaseline || isPartialModulePull || skipRemoteCheck) {
 				// Timestamp only — preserve existing lastPullCommit (do not set from temp/partial tree).
 				writePullBaseline(environment);
 				return;
@@ -976,7 +982,7 @@ program
 					if (!mergeFirstSync) {
 						await ensureSiteglideGitignored();
 					}
-					if (!mergeFirstSync && isWorkingTreeDirty()) {
+					if (!mergeFirstSync && !skipRemoteCheck && isWorkingTreeDirty()) {
 						if (!process.stdin.isTTY || process.env.CI) {
 							logger.Error('[pull] Working tree is dirty. Commit your work, then pull again (non-interactive).');
 							process.exit(1);
@@ -1112,6 +1118,22 @@ program
 
 		if (assumeYes) {
 			return startPull();
+		}
+
+		if (skipRemoteCheck) {
+			return (async () => {
+				if (!process.stdin.isTTY || process.env.CI) {
+					return startPull();
+				}
+				const response = await Confirm(
+					'Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n'
+				);
+				if (response === 'Y') {
+					await startPull();
+				} else {
+					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+				}
+			})();
 		}
 
 		return (async () => {
