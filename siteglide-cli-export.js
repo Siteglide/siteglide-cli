@@ -158,6 +158,7 @@ program
 								(urlToTest.indexOf('.gif')>-1)||
 								(urlToTest.indexOf('.heic')>-1)||
 								(urlToTest.indexOf('.pdf')>-1)||
+								(urlToTest.indexOf('.m4a')>-1)||
 								(urlToTest.indexOf('.mp3')>-1)||
 								(urlToTest.indexOf('.mp4')>-1)||
 								(urlToTest.indexOf('.mov')>-1)||
