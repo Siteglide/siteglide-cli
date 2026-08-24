@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
 
 const program = require('commander'),
 	ora = require('ora'),
@@ -31,6 +32,7 @@ const program = require('commander'),
 	} = require('./lib/pullIgnoredModules');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
+logger.registerSpinner(pullSpinner);
 
 /** Project-root folder that receives merged agent files from modules. */
 const AGENTS_ROOT = '.agents';

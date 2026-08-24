@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
 
 /**
  * Thin launcher for Siteglide MCP (stdio). stdout is reserved for MCP JSON-RPC.
