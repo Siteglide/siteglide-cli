@@ -145,13 +145,13 @@ const copyAgentsTree = async (srcDir, destDir, moduleName) => {
  * root folders/symlinks; updates pullSpinner text.
  */
 const mergeModuleAgentsToRoot = async (moduleNames) => {
-	logger.Info('[pull] Looking for AI agent skills relevant to your current modules');
+	logger.Info('[pull] AI: Looking for AI agent skills relevant to your current modules');
 	pullSpinner.text = `Merging ${AGENTS_ROOT} files`;
 
 	const result = { modulesWithAgents: 0, totalFiles: 0, skillCount: 0 };
 
 	if (!moduleNames || moduleNames.length === 0) {
-		logger.Info('[pull] No skills found — skipping IDE folders');
+		logger.Info('[pull] AI: No skills found — skipping IDE folders');
 		return result;
 	}
 
@@ -192,7 +192,7 @@ const mergeModuleAgentsToRoot = async (moduleNames) => {
 	if (result.skillCount > 0) {
 		await ensureAgentIdeScaffolding();
 	} else {
-		logger.Info('[pull] No skills found — skipping IDE folders');
+		logger.Info('[pull] AI: No skills found — skipping IDE folders');
 	}
 
 	return result;
@@ -412,10 +412,10 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
 		if (!stats.isDirectory()) {
 			continue;
 		}
-		if (isPullIgnoredModule(moduleName, ignoredModules)) {
-			logger.Debug(`[pull] Skipping default-ignored module "${formatModuleNameForLog(moduleName)}" from ./${fromRoot}/modules`);
-			continue;
-		}
+		// if (isPullIgnoredModule(moduleName, ignoredModules)) {
+		// 	logger.Debug(`[pull] Skipping default-ignored module "${formatModuleNameForLog(moduleName)}" from ./${fromRoot}/modules`);
+		// 	continue;
+		// }
 		await fs.copy(srcPath, path.join(`./${dir.MODULES}`, moduleName), { overwrite: true });
 	}
 	await fs.remove(modulesPath);
@@ -431,7 +431,7 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
 const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Step: downloading main site zip → ${siteRoot}/`);
+	logger.Info(`[pull] Site: Downloading main site zip → ${siteRoot}/`);
 	const filename = `${siteRoot}.zip`;
 	pullSpinner.text = 'Pulling site files';
 	const pullTask = await gateway.pullZip();
@@ -448,7 +448,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
 	}
 	await fs.remove(`./${siteRoot}/app`);
 	await cleanupEmptyDirs(siteRoot);
-	logger.Info('[pull] Site files pulled');
+	logger.Info('[pull] Site: Files pulled');
 };
 
 /**
@@ -462,7 +462,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
  * uses then deletes a temp zip and `.tmp/pull-<moduleName>` work directory.
  */
 const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Starting module ${formatModuleNameForLog(moduleName)}`);
+	logger.Info(`[pull] Modules: Starting pull - ${formatModuleNameForLog(moduleName)}`);
 	const filename = `${dir.MODULES}-${moduleName}.zip`;
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
 	const pullTask = await gateway.pullZip({ module_name: moduleName });
@@ -543,18 +543,18 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignore
 	}
 
 	const limit = Math.max(1, concurrency);
-	logger.Info(`[pull] Pulling ${total} module(s) (up to ${limit} at a time)`);
+	logger.Info(`[pull] Modules: Pulling ${total} module(s) (up to ${limit} at a time)`);
 	pullSpinner.text = `Pulling modules (up to ${limit} at a time)`;
 
 	let completed = 0;
 	await mapLimit(modulesToPull, limit, async (moduleName) => {
 		await pullModuleZip(gateway, moduleName, ignoredModules);
 		completed += 1;
-		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" done (${completed}/${total})`);
+		logger.Info(`[pull] Modules: ${formatModuleNameForLog(moduleName)} done (${completed}/${total})`);
 		pullSpinner.text = `Pulling modules (${completed}/${total} done, up to ${limit} at a time)`;
 	});
 
-	logger.Info(`[pull] Pulled ${total} module(s)`);
+	logger.Info(`[pull] Modules: Pulled ${total} module(s)`);
 };
 
 /**
@@ -719,7 +719,7 @@ program
 			if (response === 'Y') {
 				try {
 					const siteRoot = await resolveSiteAppRoot();
-					logger.Info(`[pull] Site files root: ${siteRoot}/`);
+					// logger.Info(`[pull] Site files root: ${siteRoot}/`);
 
 					pullSpinner.start();
 					if (moduleFilter) {
@@ -755,14 +755,14 @@ program
 						process.exit(1);
 					}
 
-					if (!moduleFilter && moduleSelection.ignored.length > 0) {
-						logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
-					}
+					// if (!moduleFilter && moduleSelection.ignored.length > 0) {
+					// 	logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
+					// }
 
 					if (modulesToPull.length === 0) {
 						logger.Info('[pull] No modules selected to pull');
 					} else {
-						logger.Info(`[pull] Will pull ${modulesToPull.length} module(s): ${formatModuleListForLog(modulesToPull).join(', ')}`);
+						logger.Info(`[pull] Modules: Will pull ${modulesToPull.length} module(s): ${formatModuleListForLog(modulesToPull).join(', ')}`);
 					}
 
 					await pullSiteZip(gateway, siteRoot, ignoredModules);
