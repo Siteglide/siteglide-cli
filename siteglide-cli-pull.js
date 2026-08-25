@@ -34,7 +34,10 @@ const program = require('commander'),
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 logger.registerSpinner(pullSpinner);
 
-/** Project-root folder that receives merged agent files from modules. */
+/** Folder name under each module's public/assets/ that holds agent skill files (no leading dot). */
+const MODULE_AGENTS_DIR = 'agents';
+
+/** Project-root folder that receives merged agent files from modules (leading dot). */
 const AGENTS_ROOT = '.agents';
 
 /** Default max concurrent module backup/download/extract jobs. */
@@ -103,7 +106,7 @@ const makeReadOnly = async (filePath) => {
  * Recursively merge `srcDir` into `destDir`. Existing destination files are made writable,
  * overwritten, then marked read-only again so the next pull can still replace them.
  *
- * @param {string} srcDir - Source `.agents` tree under a module.
+ * @param {string} srcDir - Source `agents` tree under a module's public/assets/.
  * @param {string} destDir - Destination project-root `.agents` directory.
  * @param {string} moduleName - Module name (for log messages).
  * @returns {Promise<number>} Number of files written.
@@ -134,7 +137,7 @@ const copyAgentsTree = async (srcDir, destDir, moduleName) => {
 };
 
 /**
- * For each pulled module, if `modules/<name>/public/assets/.agents/` exists, merge its
+ * For each pulled module, if `modules/<name>/public/assets/agents/` exists, merge its
  * contents into the project-root `./.agents/` directory (overwrite on conflict).
  * When at least one `SKILL.md` is present under `./.agents`, also scaffolds IDE discovery
  * folders (Cursor, Claude, Windsurf, Copilot) pointing at the shared skills tree.
@@ -157,22 +160,22 @@ const mergeModuleAgentsToRoot = async (moduleNames) => {
 
 	for (let i = 0; i < moduleNames.length; i++) {
 		const moduleName = moduleNames[i];
-		const agentsSrc = path.join('.', dir.MODULES, moduleName, 'public', 'assets', AGENTS_ROOT);
+		const agentsSrc = path.join('.', dir.MODULES, moduleName, 'public', 'assets', MODULE_AGENTS_DIR);
 		const agentsSrcDisplay = agentsSrc.replace(/\\/g, '/');
 		logger.Debug(`[pull] Checking for ${agentsSrcDisplay}`);
 
 		if (!(await fs.pathExists(agentsSrc))) {
-			logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" — no ${AGENTS_ROOT} directory found`);
+			logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" — no ${MODULE_AGENTS_DIR}/ directory found`);
 			continue;
 		}
 
 		const srcStat = await fs.stat(agentsSrc);
 		if (!srcStat.isDirectory()) {
-			logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" — ${AGENTS_ROOT} exists but is not a directory; skip`);
+			logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" — ${MODULE_AGENTS_DIR}/ exists but is not a directory; skip`);
 			continue;
 		}
 
-		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — found ${AGENTS_ROOT}; merging into ./${AGENTS_ROOT}`);
+		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — found ${MODULE_AGENTS_DIR}/; merging into ./${AGENTS_ROOT}`);
 		const count = await copyAgentsTree(agentsSrc, `./${AGENTS_ROOT}`, moduleName);
 		result.modulesWithAgents++;
 		result.totalFiles += count;
@@ -689,7 +692,7 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/.agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
