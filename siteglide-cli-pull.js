@@ -23,6 +23,7 @@ const program = require('commander'),
 		DEFAULT_PULL_IGNORED_MODULES,
 		PULL_MODULES_CONFIG_RELATIVE_PATH,
 		isPullIgnoredModule,
+		isAgentsOnlyPullModule,
 		preparePullModulesConfig,
 		partitionPullIgnoredModules,
 		resolvePullIgnoredModules,
@@ -34,10 +35,10 @@ const program = require('commander'),
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 logger.registerSpinner(pullSpinner);
 
-/** Folder name under each module's public/assets/ that holds agent skill files (no leading dot). */
+/** Folder name under module_984's public/assets/ that holds agent skill files (no leading dot). */
 const MODULE_AGENTS_DIR = 'agents';
 
-/** Project-root folder that receives merged agent files from modules (leading dot). */
+/** Project-root folder that receives skill files from module_984 on pull (leading dot). */
 const AGENTS_ROOT = '.agents';
 
 /** Default max concurrent module backup/download/extract jobs. */
@@ -106,7 +107,7 @@ const makeReadOnly = async (filePath) => {
  * Recursively merge `srcDir` into `destDir`. Existing destination files are made writable,
  * overwritten, then marked read-only again so the next pull can still replace them.
  *
- * @param {string} srcDir - Source `agents` tree under a module's public/assets/.
+ * @param {string} srcDir - Source `agents` tree from module_984's public/assets/.
  * @param {string} destDir - Destination project-root `.agents` directory.
  * @param {string} moduleName - Module name (for log messages).
  * @returns {Promise<number>} Number of files written.
@@ -137,68 +138,19 @@ const copyAgentsTree = async (srcDir, destDir, moduleName) => {
 };
 
 /**
- * For each pulled module, if `modules/<name>/public/assets/agents/` exists, merge its
- * contents into the project-root `./.agents/` directory (overwrite on conflict).
- * When at least one `SKILL.md` is present under `./.agents`, also scaffolds IDE discovery
- * folders (Cursor, Claude, Windsurf, Copilot) pointing at the shared skills tree.
+ * Scaffold IDE discovery folders when `./.agents/skills` contains at least one SKILL.md.
+ * Skills are sourced exclusively from module_984 during pull.
  *
- * @param {string[]} moduleNames - Module machine names that were pulled this run.
- * @returns {Promise<{modulesWithAgents: number, totalFiles: number, skillCount: number}>}
- * Side effects: may create `./.agents` and write/overwrite files under it; may create IDE
- * root folders/symlinks; updates pullSpinner text.
+ * Side effects: may create IDE root folders/symlinks under the project root.
  */
-const mergeModuleAgentsToRoot = async (moduleNames) => {
-	logger.Info('[pull] AI: Looking for AI agent skills relevant to your current modules');
-	pullSpinner.text = `Merging ${AGENTS_ROOT} files`;
-
-	const result = { modulesWithAgents: 0, totalFiles: 0, skillCount: 0 };
-
-	if (!moduleNames || moduleNames.length === 0) {
-		logger.Info('[pull] AI: No skills found — skipping IDE folders');
-		return result;
-	}
-
-	for (let i = 0; i < moduleNames.length; i++) {
-		const moduleName = moduleNames[i];
-		const agentsSrc = path.join('.', dir.MODULES, moduleName, 'public', 'assets', MODULE_AGENTS_DIR);
-		const agentsSrcDisplay = agentsSrc.replace(/\\/g, '/');
-		logger.Debug(`[pull] Checking for ${agentsSrcDisplay}`);
-
-		if (!(await fs.pathExists(agentsSrc))) {
-			logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" — no ${MODULE_AGENTS_DIR}/ directory found`);
-			continue;
-		}
-
-		const srcStat = await fs.stat(agentsSrc);
-		if (!srcStat.isDirectory()) {
-			logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" — ${MODULE_AGENTS_DIR}/ exists but is not a directory; skip`);
-			continue;
-		}
-
-		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — found ${MODULE_AGENTS_DIR}/; merging into ./${AGENTS_ROOT}`);
-		const count = await copyAgentsTree(agentsSrc, `./${AGENTS_ROOT}`, moduleName);
-		result.modulesWithAgents++;
-		result.totalFiles += count;
-		if (count > 0) {
-			logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — merged ${count} file(s) into ./${AGENTS_ROOT}`);
-		}
-	}
-
-	result.skillCount = await countSkillMarkdownFiles(`./${AGENTS_ROOT}`);
-
-	if (result.totalFiles > 0) {
-		logger.Info(
-			`[pull] .agents: merged ${result.totalFiles} file(s) from ${result.modulesWithAgents} module(s) (${result.skillCount} skills)`
-		);
-	}
-
-	if (result.skillCount > 0) {
+const finalizeMergedAgents = async () => {
+	const skillCount = await countSkillMarkdownFiles(`./${AGENTS_ROOT}`);
+	if (skillCount > 0) {
+		logger.Info(`[pull] .agents: ${skillCount} skill(s) from module_984 — setting up IDE folders`);
 		await ensureAgentIdeScaffolding();
 	} else {
-		logger.Info('[pull] AI: No skills found — skipping IDE folders');
+		logger.Info('[pull] AI: No skills found (module_984 not pulled or has no agents/) — skipping IDE folders');
 	}
-
-	return result;
 };
 
 /**
@@ -364,6 +316,90 @@ const ensureAgentIdeScaffolding = async () => {
 };
 
 /**
+ * Resolve `public/assets/agents/` inside a module backup work directory (without writing to `./modules/`).
+ *
+ * @param {string} workDir - Temp directory containing an extracted module zip.
+ * @param {string} moduleName - Module machine name.
+ * @returns {Promise<string|null>} Absolute path to the agents source tree, or null.
+ */
+const resolveAgentsSourceInWorkDir = async (workDir, moduleName) => {
+	const candidates = [
+		path.join(workDir, dir.MODULES, moduleName, 'public', 'assets', MODULE_AGENTS_DIR),
+		path.join(workDir, moduleName, 'public', 'assets', MODULE_AGENTS_DIR)
+	];
+	for (let i = 0; i < candidates.length; i++) {
+		const candidate = candidates[i];
+		if (await fs.pathExists(candidate)) {
+			const stat = await fs.stat(candidate);
+			if (stat.isDirectory()) {
+				return candidate;
+			}
+		}
+	}
+	return null;
+};
+
+/**
+ * Remove a stale `./modules/module_984/` checkout — skills live under `./.agents/` only.
+ *
+ * @param {string} moduleName - Module machine name.
+ */
+const removeLocalModuleCheckout = async (moduleName) => {
+	const modulePath = path.join('.', dir.MODULES, moduleName);
+	if (await fs.pathExists(modulePath)) {
+		await fs.remove(modulePath);
+		logger.Debug(`[pull] Removed ./${dir.MODULES}/${moduleName} (agents-only module — files live under ./${AGENTS_ROOT})`);
+	}
+};
+
+/**
+ * Pull module_984 and merge `public/assets/agents/` into `./.agents/` only.
+ * module_984 is the sole Siteglide module that ships AI skills — nothing is written under `./modules/module_984/`.
+ *
+ * @param {Gateway} gateway - Authenticated API client for the current environment.
+ * @param {string} moduleName - Must be module_984 (agents-only pull module).
+ * @returns {Promise<number>} Number of files merged into `./.agents/`.
+ */
+const pullAgentsOnlyModule = async (gateway, moduleName) => {
+	logger.Info(`[pull] AI: Pulling skills from ${formatModuleNameForLog(moduleName)} → ./${AGENTS_ROOT}/`);
+	pullSpinner.text = `Merging ${AGENTS_ROOT} from ${formatModuleNameForLog(moduleName)}`;
+	const filename = `${dir.MODULES}-${moduleName}.zip`;
+	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
+	const pullTask = await gateway.pullZip({ module_name: moduleName });
+	logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" backup started (id: ${pullTask.id})`);
+	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
+	logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" backup ready (status: ${readyTask.status}) — downloading zip`);
+	await downloadFile(readyTask.zip_file.url, filename);
+	await fs.remove(workDir);
+	await unzip(filename, workDir);
+	await fs.remove(`./${filename}`);
+
+	if (await fs.pathExists(path.join(workDir, 'app'))) {
+		await copyChildren(path.join(workDir, 'app'), workDir);
+		await fs.remove(path.join(workDir, 'app'));
+	}
+
+	const agentsSrc = await resolveAgentsSourceInWorkDir(workDir, moduleName);
+	let fileCount = 0;
+	if (agentsSrc) {
+		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — found ${MODULE_AGENTS_DIR}/; merging into ./${AGENTS_ROOT}`);
+		fileCount = await copyAgentsTree(agentsSrc, `./${AGENTS_ROOT}`, moduleName);
+		if (fileCount > 0) {
+			logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — merged ${fileCount} file(s) into ./${AGENTS_ROOT}`);
+		}
+	} else {
+		logger.Info(`[pull] Module "${formatModuleNameForLog(moduleName)}" — no ${MODULE_AGENTS_DIR}/ directory found in backup`);
+	}
+
+	if (await fs.pathExists(workDir)) {
+		await fs.remove(workDir);
+	}
+
+	await removeLocalModuleCheckout(moduleName);
+	return fileCount;
+};
+
+/**
  * Remove empty directories left under a pull root after restructuring.
  *
  * @param {string} root - Relative directory to scan (e.g. marketplace_builder).
@@ -415,10 +451,10 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
 		if (!stats.isDirectory()) {
 			continue;
 		}
-		// if (isPullIgnoredModule(moduleName, ignoredModules)) {
-		// 	logger.Debug(`[pull] Skipping default-ignored module "${formatModuleNameForLog(moduleName)}" from ./${fromRoot}/modules`);
-		// 	continue;
-		// }
+		if (isAgentsOnlyPullModule(moduleName)) {
+			logger.Debug(`[pull] Skipping agents-only module "${formatModuleNameForLog(moduleName)}" from ./${fromRoot}/modules`);
+			continue;
+		}
 		await fs.copy(srcPath, path.join(`./${dir.MODULES}`, moduleName), { overwrite: true });
 	}
 	await fs.remove(modulesPath);
@@ -624,6 +660,10 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 				logger.Debug(`[pull] Skipping asset for default-ignored module "${formatModuleNameForLog(moduleName)}": ${physicalPath}`);
 				return;
 			}
+			if (isAgentsOnlyPullModule(moduleName)) {
+				logger.Debug(`[pull] Skipping asset for agents-only module "${formatModuleNameForLog(moduleName)}": ${physicalPath}`);
+				return;
+			}
 			moduleAssetCount++;
 		}
 		const fullPath = path.join(root, relativePath);
@@ -692,7 +732,7 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. Merges each module\'s public/assets/agents into ./.agents (overwrite). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. AI skills come only from module_984: its public/assets/agents/ merges into ./.agents (never ./modules/module_984/). When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/cli-settings/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
@@ -770,7 +810,14 @@ program
 
 					await pullSiteZip(gateway, siteRoot, ignoredModules);
 
-					await pullModulesInParallel(gateway, modulesToPull, modulePullConcurrency, ignoredModules);
+					const agentsOnlyModules = modulesToPull.filter(isAgentsOnlyPullModule);
+					const modulesForNormalPull = modulesToPull.filter((moduleName) => !isAgentsOnlyPullModule(moduleName));
+
+					await pullModulesInParallel(gateway, modulesForNormalPull, modulePullConcurrency, ignoredModules);
+
+					for (let i = 0; i < agentsOnlyModules.length; i++) {
+						await pullAgentsOnlyModule(gateway, agentsOnlyModules[i]);
+					}
 
 					if (!ignoreAssets) {
 						await pullAssets(gateway, siteRoot, ignoredModules);
@@ -778,8 +825,11 @@ program
 						logger.Info('[pull] Skipping assets step');
 					}
 
-					// After module zips (and assets that may land under modules/) are on disk
-					await mergeModuleAgentsToRoot(modulesToPull);
+					for (let i = 0; i < agentsOnlyModules.length; i++) {
+						await removeLocalModuleCheckout(agentsOnlyModules[i]);
+					}
+
+					await finalizeMergedAgents();
 
 					pullSpinner.stop();
 					await ensureMcpOnPull();
