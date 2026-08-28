@@ -487,15 +487,15 @@ footer ul {
 
   <ul>
     <li>
-      <a href="https://developers.siteglide.com" class="button">
+      <a href="https://docs.siteglide.com" class="button">
         <Icon icon="book" />
         Documentation
       </a>
     </li>
     <li>
-      <a href="https://my.siteglide.com" class="button">
+      <a href="https://admin.siteglide.com" class="button">
         <Icon icon="serverSettings" />
-        Siteglide Portal
+        Siteglide Admin
       </a>
     </li>
   </ul>

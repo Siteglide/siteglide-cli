@@ -15,7 +15,7 @@
 	"bugs": {
 		"url": "https://github.com/siteglide/siteglide-cli/issues"
 	},
-	"homepage": "https://developers.siteglide.com/introducing-siteglide-cli",
+	"homepage": "https://docs.siteglide.com/articles/1541403-introduction-to-the-command-line-interface-cli",
 	"engines": {
 		"node": ">=18"
 	},

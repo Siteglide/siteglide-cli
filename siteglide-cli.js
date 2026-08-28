@@ -18,7 +18,7 @@ updateNotifier({
 	chalk.reset(' → ') +
 	chalk.green('{latestVersion}') +
 	' \nRun ' + chalk.cyan('{updateCommand}') + ' to update' +
-	' \nChangelog: https://developers.siteglide.com/cli-changelog'
+	' \nChangelog: https://docs.siteglide.com/articles/4471977-cli-changelog'
 });
 
 program
