@@ -251,7 +251,7 @@ Also see ./.github/siteglide-mcp.md: prefer Siteglide MCP tools; NEVER read .sit
  * pointer files; creates/replaces skills directory links; updates pullSpinner text.
  */
 const ensureAgentIdeScaffolding = async () => {
-	pullSpinner.text = 'Setting up IDE skill folders';
+	pullSpinner.text = 'AI: Setting up IDE skill folders';
 
 	const skillsTarget = path.join(AGENTS_ROOT, 'skills');
 	await fs.ensureDir(`./${skillsTarget}`);
@@ -281,7 +281,7 @@ const ensureAgentIdeScaffolding = async () => {
 	);
 	await ensureSkillsDirLink(path.join('.github', 'skills'), skillsTarget);
 
-	logger.Info('[pull] IDE folders ready (.cursor, .claude, .windsurf, .github → .agents/skills)');
+	logger.Info('[pull] AI: Skill IDE folders ready (.cursor, .claude, .windsurf, .github → .agents/skills)');
 };
 
 /**
@@ -637,7 +637,7 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
  * updates `pullSpinner` text and writes tidying-up logs.
  */
 const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info('[pull] Step: tidying up local files');
+	logger.Info('[pull] Tidying up local files');
 	pullSpinner.text = 'Tidying up...';
 
 	const siteZips = [`./${dir.SITE_ROOT}.zip`, `./${dir.APP}.zip`];
