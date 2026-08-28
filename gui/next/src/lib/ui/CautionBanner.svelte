@@ -13,6 +13,8 @@
   font-size: .9rem;
   line-height: 1.45;
   color: var(--color-text);
+
+  max-height: 75px;
 }
 
 .caution strong {
