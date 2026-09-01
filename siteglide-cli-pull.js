@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 process.noDeprecation = true;
 
+const notifyCliUpdate = require('./lib/notifyCliUpdate');
+
+notifyCliUpdate();
+
 const program = require('commander'),
 	ora = require('ora'),
 	fs = require('fs-extra'),

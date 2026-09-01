@@ -4,7 +4,7 @@
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
-		"install:mcp": "npm install file:../Siteglide-MCP --no-save",
+		"mcp:i-local": "npm install file:../Siteglide-MCP --no-save",
 		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production",
 		"build-gui": "npm --prefix gui/next ci && npm --prefix gui/next run build",
 		"i": "npm install -g .",
@@ -18,6 +18,10 @@
 	"homepage": "https://docs.siteglide.com/articles/1541403-introduction-to-the-command-line-interface-cli",
 	"engines": {
 		"node": ">=18"
+	},
+	"siteglideMcp": {
+		"usage": "Allows siteglide-cli pull to recommend auto updates to the MCP within the same semantic version range only. The -0 suffix includes prereleases (e.g. 0.1.0-alpha.0) until a stable 0.1.x exists.",
+		"compatibleRange": "^0.1.0-0"
 	},
 	"keywords": [
 		"Siteglide"
