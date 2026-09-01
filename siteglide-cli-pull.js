@@ -48,6 +48,9 @@ const MODULE_AGENTS_LEGACY_DIR = '.agents';
 /** Project-root folder that receives skill files from module_984 on pull (leading dot). */
 const AGENTS_ROOT = '.agents';
 
+/** Pull only ever writes here, so third-party skills alongside ours are never touched. */
+const SITEGLIDE_SKILLS_ROOT = path.join('skills', 'siteglide');
+
 /** Directory names under public/assets/ that may contain skills (current then legacy). */
 const MODULE_AGENTS_DIR_NAMES = [MODULE_AGENTS_DIR, MODULE_AGENTS_LEGACY_DIR];
 
@@ -289,7 +292,8 @@ const ensureAgentIdeScaffolding = async () => {
 };
 
 /**
- * If a module asset path points at skill files, return the relative path under `./.agents/`.
+ * If a module asset path points at skill files, return the relative path under
+ * `./.agents/skills/siteglide/`.
  *
  * @param {string} physicalPath - Normalized forward-slash asset path from the API.
  * @param {string} moduleName - Module machine name (module_984).
@@ -306,7 +310,8 @@ const resolveAgentsAssetRelativePath = (physicalPath, moduleName) => {
 			const marker = markers[m];
 			const idx = physicalPath.indexOf(marker);
 			if (idx !== -1) {
-				return physicalPath.slice(idx + marker.length);
+				const assetPath = physicalPath.slice(idx + marker.length).replace(/^skills\//, '');
+				return path.join(SITEGLIDE_SKILLS_ROOT, assetPath);
 			}
 		}
 	}
