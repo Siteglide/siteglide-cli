@@ -143,7 +143,7 @@ test('shouldPromptMcpUpdate respects 7-day reminder cooldown', async () => {
 		writeMcpUpdateDeclinedReminder(rootPath);
 		expect(shouldPromptMcpUpdate(rootPath)).toEqual(false);
 
-		const remindersPath = path.join(rootPath, '.siteglide', 'IDE', 'reminders.json');
+		const remindersPath = path.join(rootPath, '.siteglide', 'user', 'reminders.json');
 		const reminders = JSON.parse(await fs.readFile(remindersPath, 'utf8'));
 		const declinedMs = Date.parse(reminders[MCP_UPDATE_DECLINED_KEY]);
 		const afterCooldown = declinedMs + (MCP_UPDATE_REMINDER_DAYS * 24 * 60 * 60 * 1000) + 1000;

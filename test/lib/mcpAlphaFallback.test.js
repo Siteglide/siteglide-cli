@@ -140,7 +140,7 @@ test('ensureMcpOnPull stores reminder when user declines global MCP install', as
 			latestVersion: '0.1.0'
 		});
 		expect(mockConfirm).toHaveBeenCalled();
-		const reminders = JSON.parse(await fs.readFile(path.join(rootPath, '.siteglide', 'IDE', 'reminders.json'), 'utf8'));
+		const reminders = JSON.parse(await fs.readFile(path.join(rootPath, '.siteglide', 'user', 'reminders.json'), 'utf8'));
 		expect(typeof reminders[MCP_UPDATE_DECLINED_KEY]).toEqual('string');
 		expect(mockExecFileSync).not.toHaveBeenCalledWith(
 			expect.anything(),
@@ -154,7 +154,7 @@ test('ensureMcpOnPull stores reminder when user declines global MCP install', as
 
 test('ensureMcpOnPull suppresses prompt within 7 days of declining MCP update', async () => {
 	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-mcp-fallback-'));
-	const remindersPath = path.join(rootPath, '.siteglide', 'IDE', 'reminders.json');
+	const remindersPath = path.join(rootPath, '.siteglide', 'user', 'reminders.json');
 
 	try {
 		await fs.ensureDir(path.dirname(remindersPath));

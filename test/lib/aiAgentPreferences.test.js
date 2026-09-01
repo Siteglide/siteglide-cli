@@ -10,8 +10,8 @@ const {
 	resolveEnabledSkillAgents
 } = require('../../lib/aiAgentPreferences');
 
-test('preferences live under .siteglide/IDE so they stay local to the developer', () => {
-	expect(AI_AGENT_PREFERENCES_RELATIVE_PATH).toEqual(path.join('.siteglide', 'IDE', 'ai-agent-preferences.json'));
+test('preferences live under .siteglide/user so they stay local to the developer', () => {
+	expect(AI_AGENT_PREFERENCES_RELATIVE_PATH).toEqual(path.join('.siteglide', 'user', 'ai-agent-preferences.json'));
 });
 
 test('resolveEnabledSkillAgents keeps include and drops exclude', () => {
