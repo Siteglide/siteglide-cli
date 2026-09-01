@@ -526,27 +526,29 @@ const mapLimit = async (items, limit, iterator) => {
  * @param {Gateway} gateway - Authenticated API client.
  * @param {string[]} modulesToPull - Module machine names to pull.
  * @param {number} concurrency - Max concurrent module pulls.
+ * @param {string[]} [ignoredModules] - Effective ignore list for this run.
+ * @param {number} [total] - Progress denominator, so callers can count modules finished elsewhere.
+ * @returns {Promise<number>} How many modules this call finished.
  * Side effects: same as `pullModuleZip` for each module; updates pullSpinner text.
  */
-const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	const total = modulesToPull.length;
+const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignoredModules = DEFAULT_PULL_IGNORED_MODULES, total = modulesToPull.length) => {
 	if (total === 0) {
-		return;
+		return 0;
 	}
 
 	const limit = Math.max(1, concurrency);
-	logger.Info(`[pull] Modules: Pulling ${total} module(s) (up to ${limit} at a time)`);
-	pullSpinner.text = `Pulling modules (up to ${limit} at a time)`;
+	logger.Info(`[pull] Modules: Pulling ${total} module(s)`);
+	pullSpinner.text = 'Pulling modules';
 
 	let completed = 0;
 	await mapLimit(modulesToPull, limit, async (moduleName) => {
 		await pullModuleZip(gateway, moduleName, ignoredModules);
 		completed += 1;
 		logger.Info(`[pull] Modules: ${formatModuleNameForLog(moduleName)} done (${completed}/${total})`);
-		pullSpinner.text = `Pulling modules (${completed}/${total} done, up to ${limit} at a time)`;
+		pullSpinner.text = `Pulling modules (${completed}/${total} done)`;
 	});
 
-	logger.Info(`[pull] Modules: Pulled ${total} module(s)`);
+	return completed;
 };
 
 /**
@@ -755,6 +757,17 @@ program
 					const moduleSelection = partitionPullIgnoredModules(installedModules, effectiveIgnoredModules);
 					const modulesToPull = selectModulesToPull(installedModules, moduleFilter, effectiveIgnoredModules);
 
+					// Machine names (not display aliases) so they can be pasted into the config file.
+					if (installedModules.length > 0) {
+						const installedForLog = installedModules.map((name) => {
+							return isPullIgnoredModule(name, effectiveIgnoredModules) ? `${name} (skipped)` : name;
+						});
+						logger.Info(`[pull] Modules: ${installedModules.length} installed on this site: ${installedForLog.join(', ')}`);
+					}
+					if (moduleSelection.ignored.length > 0) {
+						logger.Info(`[pull] Modules: Change what is skipped via pull_behaviour include/exclude in ./${PULL_MODULES_CONFIG_RELATIVE_PATH}`);
+					}
+
 					if (moduleFilter && modulesToPull === null) {
 						pullSpinner.fail(`Module "${formatModuleNameForLog(moduleFilter)}" is not installed on this site`);
 						logger.Error(`[pull] Filter "${formatModuleNameForLog(moduleFilter)}" not found in installed modules`);
@@ -765,18 +778,21 @@ program
 					// 	logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
 					// }
 
-					if (modulesToPull.length === 0) {
+					const agentsOnlyModules = modulesToPull.filter(isAgentsOnlyPullModule);
+					const modulesForNormalPull = modulesToPull.filter((moduleName) => !isAgentsOnlyPullModule(moduleName));
+					// Skills arrive with the assets step, so they only count once assets are pulled.
+					const modulesCounted = ignoreAssets ? modulesForNormalPull : modulesToPull;
+					const moduleTotal = modulesCounted.length;
+
+					if (moduleTotal === 0) {
 						logger.Info('[pull] No modules selected to pull');
 					} else {
-						logger.Info(`[pull] Modules: Will pull ${modulesToPull.length} module(s): ${formatModuleListForLog(modulesToPull).join(', ')}`);
+						logger.Info(`[pull] Modules: Will pull ${moduleTotal} module(s): ${formatModuleListForLog(modulesCounted).join(', ')}`);
 					}
 
 					await pullSiteZip(gateway, siteRoot, ignoredModules);
 
-					const agentsOnlyModules = modulesToPull.filter(isAgentsOnlyPullModule);
-					const modulesForNormalPull = modulesToPull.filter((moduleName) => !isAgentsOnlyPullModule(moduleName));
-
-					await pullModulesInParallel(gateway, modulesForNormalPull, modulePullConcurrency, ignoredModules);
+					let modulesDone = await pullModulesInParallel(gateway, modulesForNormalPull, modulePullConcurrency, ignoredModules, moduleTotal);
 
 					if (!ignoreAssets) {
 						await pullAssets(gateway, siteRoot, ignoredModules);
@@ -786,6 +802,14 @@ program
 
 					for (let i = 0; i < agentsOnlyModules.length; i++) {
 						await removeLocalModuleCheckout(agentsOnlyModules[i]);
+						if (!ignoreAssets) {
+							modulesDone += 1;
+							logger.Info(`[pull] Modules: ${formatModuleNameForLog(agentsOnlyModules[i])} done (${modulesDone}/${moduleTotal})`);
+						}
+					}
+
+					if (moduleTotal > 0) {
+						logger.Info(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
 					}
 
 					await finalizeMergedAgents();
