@@ -28,6 +28,8 @@ test('ensureMcpRegistered and ensureMcpIdeRules write only under rootPath and cl
 		const first = ensureMcpRegistered({ rootPath, homedir: fakeHome });
 		expect(first.updated).toContain('Cursor');
 		expect(first.added).toContain('Windsurf');
+		expect(first.added).toContain('VSCode');
+		expect(first.added).toContain('Claude');
 
 		const afterFirst = JSON.parse(await fs.readFile(cursorPath, 'utf8'));
 		expect(afterFirst.mcpServers.other).toEqual({ command: 'keep-me' });
@@ -56,6 +58,37 @@ test('ensureMcpRegistered and ensureMcpIdeRules write only under rootPath and cl
 		for (let i = 0; i < mcpIdeArtifactPaths(rootPath).length; i++) {
 			expect(await fs.pathExists(mcpIdeArtifactPaths(rootPath)[i])).toEqual(false);
 		}
+	} finally {
+		await removeMcpIdeArtifacts(rootPath);
+		await fs.remove(rootPath);
+		await fs.remove(fakeHome);
+	}
+});
+
+test('ensureMcpRegistered skips excluded agents but still writes included mcp.json files', async () => {
+	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-mcp-gated-'));
+	const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-mcp-gated-home-'));
+	const enabledSkillAgents = ['Cursor', 'VSCode'];
+
+	try {
+		const result = ensureMcpRegistered({ rootPath, homedir: fakeHome, enabledSkillAgents });
+		expect(result.added).toEqual(['Cursor', 'VSCode']);
+		expect(await fs.pathExists(path.join(rootPath, '.cursor', 'mcp.json'))).toEqual(true);
+		expect(await fs.pathExists(path.join(rootPath, '.vscode', 'mcp.json'))).toEqual(true);
+		expect(await fs.pathExists(path.join(rootPath, '.mcp.json'))).toEqual(false);
+
+		const rules = ensureMcpIdeRules({ rootPath, enabledSkillAgents });
+		expect(rules.written).toEqual(['Cursor']);
+		expect(await fs.pathExists(path.join(rootPath, '.claude', 'siteglide-mcp.md'))).toEqual(false);
+
+		expect(getMcpConfigStatus(rootPath, enabledSkillAgents)).toEqual({
+			configured: true,
+			paths: [
+				path.join(rootPath, '.cursor', 'mcp.json'),
+				path.join(rootPath, '.vscode', 'mcp.json')
+			],
+			missing: []
+		});
 	} finally {
 		await removeMcpIdeArtifacts(rootPath);
 		await fs.remove(rootPath);

@@ -34,7 +34,12 @@ const program = require('commander'),
 		selectModulesToPull,
 		formatModuleNameForLog,
 		formatModuleListForLog
-	} = require('./lib/pullIgnoredModules');
+	} = require('./lib/pullIgnoredModules'),
+	{
+		AI_AGENT_PREFERENCES_RELATIVE_PATH,
+		prepareAiAgentPreferences,
+		isSkillAgentEnabled
+	} = require('./lib/aiAgentPreferences');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 logger.registerSpinner(pullSpinner);
@@ -122,10 +127,10 @@ const makeReadOnly = async (filePath) => {
  *
  * Side effects: may create IDE root folders/symlinks under the project root.
  */
-const finalizeMergedAgents = async () => {
+const finalizeMergedAgents = async (enabledSkillAgents) => {
 	const skillCount = await countSkillMarkdownFiles(`./${AGENTS_ROOT}`);
 	if (skillCount > 0) {
-		await ensureAgentIdeScaffolding();
+		await ensureAgentIdeScaffolding(enabledSkillAgents);
 	}
 };
 
@@ -257,38 +262,52 @@ Also see ./.github/siteglide-mcp.md: prefer Siteglide MCP tools; NEVER read .sit
  * Side effects: creates `.cursor`, `.claude`, `.windsurf`, `.github` paths; writes managed
  * pointer files; creates/replaces skills directory links; updates pullSpinner text.
  */
-const ensureAgentIdeScaffolding = async () => {
+const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 	pullSpinner.text = 'AI: Setting up IDE skill folders';
 
 	const skillsTarget = path.join(AGENTS_ROOT, 'skills');
 	await fs.ensureDir(`./${skillsTarget}`);
 
-	// Cursor — rule (as in Siteglide-AI-Skills) + skills link for native .cursor/skills discovery
-	await writeManagedAgentFile(
-		path.join('.cursor', 'rules', 'setup_siteglide_skills.mdc'),
-		CURSOR_SETUP_RULE
-	);
-	await ensureSkillsDirLink(path.join('.cursor', 'skills'), skillsTarget);
+	const ready = [];
 
-	// Claude — CLAUDE.md pointer + skills link (Claude discovers .claude/skills)
-	await writeManagedAgentFile(path.join('.claude', 'CLAUDE.md'), CLAUDE_SETUP_MD);
-	await ensureSkillsDirLink(path.join('.claude', 'skills'), skillsTarget);
+	if (isSkillAgentEnabled('Cursor', enabledSkillAgents)) {
+		await writeManagedAgentFile(
+			path.join('.cursor', 'rules', 'setup_siteglide_skills.mdc'),
+			CURSOR_SETUP_RULE
+		);
+		await ensureSkillsDirLink(path.join('.cursor', 'skills'), skillsTarget);
+		ready.push('.cursor');
+	}
 
-	// Windsurf — rule + skills link (Cascade discovers .windsurf/skills; also reads .agents/skills)
-	await writeManagedAgentFile(
-		path.join('.windsurf', 'rules', 'setup_siteglide_skills.md'),
-		WINDSURF_SETUP_RULE
-	);
-	await ensureSkillsDirLink(path.join('.windsurf', 'skills'), skillsTarget);
+	if (isSkillAgentEnabled('Claude', enabledSkillAgents)) {
+		await writeManagedAgentFile(path.join('.claude', 'CLAUDE.md'), CLAUDE_SETUP_MD);
+		await ensureSkillsDirLink(path.join('.claude', 'skills'), skillsTarget);
+		ready.push('.claude');
+	}
 
-	// Copilot — instructions under .github + skills link (.github/skills is Copilot's project path)
-	await writeManagedAgentFile(
-		path.join('.github', 'copilot-instructions.md'),
-		COPILOT_INSTRUCTIONS_MD
-	);
-	await ensureSkillsDirLink(path.join('.github', 'skills'), skillsTarget);
+	if (isSkillAgentEnabled('Windsurf', enabledSkillAgents)) {
+		await writeManagedAgentFile(
+			path.join('.windsurf', 'rules', 'setup_siteglide_skills.md'),
+			WINDSURF_SETUP_RULE
+		);
+		await ensureSkillsDirLink(path.join('.windsurf', 'skills'), skillsTarget);
+		ready.push('.windsurf');
+	}
 
-	logger.Info('[pull] AI: Skill IDE folders ready (.cursor, .claude, .windsurf, .github → .agents/skills)');
+	if (isSkillAgentEnabled('Github Copilot', enabledSkillAgents)) {
+		await writeManagedAgentFile(
+			path.join('.github', 'copilot-instructions.md'),
+			COPILOT_INSTRUCTIONS_MD
+		);
+		await ensureSkillsDirLink(path.join('.github', 'skills'), skillsTarget);
+		ready.push('.github');
+	}
+
+	if (ready.length > 0) {
+		logger.Info(`[pull] AI: Skill IDE folders ready (${ready.join(', ')} → .agents/skills)`);
+	} else {
+		logger.Info(`[pull] AI: Skill IDE folders skipped (no agents included in ${AI_AGENT_PREFERENCES_RELATIVE_PATH})`);
+	}
 };
 
 /**
@@ -742,6 +761,10 @@ program
 					if (pullModulesConfigCreated) {
 						logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} allowing you to configure which modules should be skipped on future pulls. If you use GitHub, we recommend this file should not be gitignored.`);
 					}
+					const { created: aiAgentPreferencesCreated, enabledSkillAgents } = await prepareAiAgentPreferences(process.cwd());
+					if (aiAgentPreferencesCreated) {
+						logger.Info(`[pull] Created ./${AI_AGENT_PREFERENCES_RELATIVE_PATH} allowing you to configure which AI agent skill folders and MCP configs pull creates. This one is personal to your machine, so it does not need to be shared with the team.`);
+					}
 					const modulesResponse = await gateway.listModules();
 					const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
 					logger.Debug(`[pull] list_modules returned ${installedModules.length} module(s)`);
@@ -812,10 +835,10 @@ program
 						logger.Info(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
 					}
 
-					await finalizeMergedAgents();
+					await finalizeMergedAgents(enabledSkillAgents);
 
 					pullSpinner.stop();
-					await ensureMcpOnPull();
+					await ensureMcpOnPull({ enabledSkillAgents });
 
 					await tidyUpAfterPull(ignoredModules);
 
