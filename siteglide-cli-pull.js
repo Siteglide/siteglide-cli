@@ -733,7 +733,7 @@ program
 					pullSpinner.text = 'Fetching installed modules';
 					const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
 					if (pullModulesConfigCreated) {
-						logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} — edit pull_behaviour include/exclude to customize skipped modules (commit to git so the team stays in sync)`);
+						logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} allowing you to configure which modules should be skipped on future pulls. If you use GitHub, we recommend this file should not be gitignored.`);
 					}
 					const modulesResponse = await gateway.listModules();
 					const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
