@@ -1,11 +1,10 @@
 {
 	"name": "@siteglide/siteglide-cli",
-	"version": "1.10.3",
+	"version": "1.11.0",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
 		"mcp:i-local": "npm install file:../Siteglide-MCP --no-save",
-		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production",
 		"build-gui": "npm --prefix gui/next ci && npm --prefix gui/next run build",
 		"i": "npm install -g .",
 		"test": "jest --silent"
