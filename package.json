@@ -17,7 +17,7 @@
 	},
 	"homepage": "https://docs.siteglide.com/articles/1541403-introduction-to-the-command-line-interface-cli",
 	"engines": {
-		"node": ">=18"
+		"node": ">=20"
 	},
 	"siteglideMcp": {
 		"usage": "Allows siteglide-cli pull to recommend auto updates to the MCP within the same semantic version range only. The -0 suffix includes prereleases (e.g. 0.1.0-alpha.0) until a stable 0.1.x exists.",
