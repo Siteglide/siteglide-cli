@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
 
 const program = require('commander'),
 	fs = require('fs'),
@@ -11,9 +12,12 @@ const program = require('commander'),
 	version = require('./package.json').version,
 	dir = require('./lib/directories'),
 	files = require('./lib/assets/files'),
+	{ deployGlobOptions } = require('./lib/deployGlob'),
 	Gateway = require('./lib/proxy');
 
-const availableDirectories = () => dir.ALLOWED.filter(fs.existsSync);
+const { assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory');
+
+const availableDirectories = () => dir.available();
 
 const addModulesToArchive = (archive, withImages) => {
 	if (!fs.existsSync(dir.MODULES)) return Promise.resolve(true);
@@ -28,7 +32,7 @@ const addModulesToArchive = (archive, withImages) => {
 const addModuleToArchive = (module, archive, withImages, pattern = '?(public|private)/**') => {
 	module = module.replace('/','');
 	return new Promise((resolve, reject) => {
-		glob(pattern, { cwd: `${dir.MODULES}/${module}` }, (err, files) => {
+		glob(pattern, deployGlobOptions({ cwd: `${dir.MODULES}/${module}` }), (err, files) => {
 			if (err) throw reject(err);
 			const moduleTemplateData = templateData();
 
@@ -57,15 +61,20 @@ const addModuleToArchive = (module, archive, withImages, pattern = '?(public|pri
 	});
 };
 
-const makeArchive = (path, directory, program) => {
+const makeArchive = (archivePath, directory, program) => {
 	if (availableDirectories().length === 0) {
 		logger.Error(`At least one of ${dir.ALLOWED} directories is needed to deploy`, { hideTimestamp: true });
 	}
 
-	const releaseArchive = prepareArchive(path);
-	releaseArchive.glob('**/*', { cwd: directory, ignore: ['assets/**', '**/node_modules/**']}, { prefix: directory });
+	const releaseArchive = prepareArchive(archivePath);
+	if (directory) {
+		releaseArchive.glob('**/*', deployGlobOptions({
+			cwd: directory,
+			ignore: ['assets/**', '**/node_modules/**']
+		}), { prefix: directory });
+	}
 
-	addModulesToArchive(releaseArchive).then(r => {
+	addModulesToArchive(releaseArchive, program.opts().withImages).then(r => {
 		releaseArchive.finalize();
 	});
 
@@ -96,4 +105,12 @@ program
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
 	.parse(process.argv);
 
-makeArchive(program.opts().target, dir.LEGACY_APP, program);
+const siteRoot = assertExclusiveSiteAppRoot();
+if (!siteRoot && !fs.existsSync(dir.MODULES)) {
+	logger.Error(
+		`${dir.SITE_ROOT}/ or ${dir.APP}/ has to exist! Please make sure you have the correct folder structure.`,
+		{ hideTimestamp: true }
+	);
+}
+logger.Info(`[Deploy] Archiving from: ${siteRoot || '(modules only)'}`);
+makeArchive(program.opts().target, siteRoot, program);

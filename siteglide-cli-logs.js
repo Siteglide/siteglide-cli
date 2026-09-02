@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
 
 const program = require('commander'),
 	EventEmitter = require('events'),

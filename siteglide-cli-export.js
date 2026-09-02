@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
 
 const program = require('commander'),
 	fs = require('fs-extra'),
@@ -60,7 +61,8 @@ program
 		const filename = params.path;
 		const exportInternalIds = params.exportInternalIds;
 		const authData = fetchAuthData(environment, program, program);
-		const zipFileName = `${dir.LEGACY_APP}.zip`;
+		const siteRoot = dir.defaultSiteRoot();
+		const zipFileName = `${siteRoot}.zip`;
 		gateway = new Gateway(authData);
 
 		Confirm('Are you sure you would like to export? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
@@ -69,21 +71,21 @@ program
 					await gateway.pullZip().then(pullTask => {
 						waitForStatus(() => gateway.pullZipStatus(pullTask.id))
 							.then(pullTask => downloadFile(pullTask.zip_file.url, zipFileName))
-							.then(() => unzip(zipFileName, dir.LEGACY_APP))
-							.then(() => shell.cp('-R', `./${dir.LEGACY_APP}/app/*`, `./${dir.LEGACY_APP}`))
+							.then(() => unzip(zipFileName, siteRoot))
+							.then(() => shell.cp('-R', `./${siteRoot}/app/*`, `./${siteRoot}`))
 							.then(() => shell.rm(`./${zipFileName}`))
 							.then(() => {
-								if (fs.existsSync(`./${dir.LEGACY_APP}/modules`)) {
-									shell.cp('-R', `./${dir.LEGACY_APP}/modules`, `./`)
-									shell.rm('-r', `./${dir.LEGACY_APP}/modules`)
+								if (fs.existsSync(`./${siteRoot}/modules`)) {
+									shell.cp('-R', `./${siteRoot}/modules`, `./`)
+									shell.rm('-r', `./${siteRoot}/modules`)
 								}
 							})
-							.then(() => shell.rm(`./${dir.LEGACY_APP}/asset_manifest.json`))
-							.then(() => shell.rm('-r',`./${dir.LEGACY_APP}/app`))
+							.then(() => shell.rm(`./${siteRoot}/asset_manifest.json`))
+							.then(() => shell.rm('-r',`./${siteRoot}/app`))
 							.then(() => {
-								var list = fs.readdirSync(`./${dir.LEGACY_APP}`).filter(folder => fs.statSync(path.join(`./${dir.LEGACY_APP}`, folder)).isDirectory());
+								var list = fs.readdirSync(`./${siteRoot}`).filter(folder => fs.statSync(path.join(`./${siteRoot}`, folder)).isDirectory());
 								for(var i = 0; i < list.length; i++) {
-									var folder = path.join(`./${dir.LEGACY_APP}`, list[i]);
+									var folder = path.join(`./${siteRoot}`, list[i]);
 									try {
 										fs.rmdirSync(folder);
 									} catch(e) {
@@ -111,7 +113,7 @@ program
 						}
 						var assets = response.asset;
 						if(!params.withAssets){
-							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|heic|svg|pdf|mp3|mp4|mov|ogg|otf|ttf|webm|webp|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|zip|csv)$/i));
+							assets = assets.filter(file => (file.data.physical_file_path.indexOf('assets/images/')===-1||file.data.physical_file_path.indexOf('assets/documents/')===-1)).filter(file => !file.data.physical_file_path.match(/.(jpg|jpeg|png|gif|heic|svg|pdf|m4a|mp3|mp4|mov|ogg|otf|ttf|webm|webp|woff|woff2|ico|ppt|pptx|doc|docx|xls|xlsx|pages|numbers|key|zip|csv)$/i));
 						}
 						assets = assets.filter(file => !file.data.physical_file_path.includes('/.keep')).filter(file => !file.data.physical_file_path.includes('_sgthumb'));
 						var count = 0;
@@ -157,6 +159,7 @@ program
 								(urlToTest.indexOf('.gif')>-1)||
 								(urlToTest.indexOf('.heic')>-1)||
 								(urlToTest.indexOf('.pdf')>-1)||
+								(urlToTest.indexOf('.m4a')>-1)||
 								(urlToTest.indexOf('.mp3')>-1)||
 								(urlToTest.indexOf('.mp4')>-1)||
 								(urlToTest.indexOf('.mov')>-1)||
@@ -182,11 +185,11 @@ program
 								(urlToTest.indexOf('.csv')>-1)
 							){
 								var folderPath = file.data.physical_file_path.split('/');
-								folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
+								folderPath = siteRoot+'/'+folderPath.slice(0, folderPath.length-1).join('/');
 								fs.mkdirSync(folderPath, { recursive: true });
 								await getAsset(file.data.remote_url,time).then(async response => {
 									if(response!=='error_missing_file'){
-										response.body.pipe(fs.createWriteStream(dir.LEGACY_APP+'/'+file.data.physical_file_path));
+										response.body.pipe(fs.createWriteStream(siteRoot+'/'+file.data.physical_file_path));
 										count++;
 										if(params.withAssets){
 											exportSpinner.text = `Downloaded ${count} assets out of ${assets.length}, this may take a while...`;
@@ -200,12 +203,12 @@ program
 
 						asset_files.forEach(file => {
 							var folderPath = file.data.physical_file_path.split('/');
-							folderPath = dir.LEGACY_APP+'/'+folderPath.slice(0, folderPath.length-1).join('/');
+							folderPath = siteRoot+'/'+folderPath.slice(0, folderPath.length-1).join('/');
 							fs.mkdirSync(folderPath, { recursive: true });
-							fs.writeFileSync(dir.LEGACY_APP+'/'+file.data.physical_file_path, file.data.body, logger.Error);
+							fs.writeFileSync(siteRoot+'/'+file.data.physical_file_path, file.data.body, logger.Error);
 						});
 
-						exportSpinner.stopAndPersist().succeed(`Files downloaded into ${dir.LEGACY_APP} folder`);
+						exportSpinner.stopAndPersist().succeed(`Files downloaded into ${siteRoot} folder`);
 					}, logger.Error);
 
 				await gateway.export(exportInternalIds, params.csv).then(exportTask => {

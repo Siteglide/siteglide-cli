@@ -4,21 +4,31 @@
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
-		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production"
+		"mcp:i-local": "npm install file:../Siteglide-MCP --no-save",
+		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production",
+		"build-gui": "npm --prefix gui/next ci && npm --prefix gui/next run build",
+		"i": "npm install -g .",
+		"test": "jest --silent"
 	},
 	"main": "./siteglide-cli.js",
 	"license": "MIT",
 	"bugs": {
 		"url": "https://github.com/siteglide/siteglide-cli/issues"
 	},
-	"homepage": "https://developers.siteglide.com/introducing-siteglide-cli",
+	"homepage": "https://docs.siteglide.com/articles/1541403-introduction-to-the-command-line-interface-cli",
 	"engines": {
-		"node": ">=12"
+		"node": ">=20"
+	},
+	"siteglideMcp": {
+		"usage": "Allows siteglide-cli pull to recommend auto updates to the MCP within the same semantic version range only. The -0 suffix includes prereleases (e.g. 0.1.0-alpha.0) until a stable 0.1.x exists.",
+		"compatibleRange": "^0.1.0-0"
 	},
 	"keywords": [
 		"Siteglide"
 	],
 	"dependencies": {
+		"@platformos/platformos-check-node": "^0.0.20",
+		"@platformos/platformos-common": "^0.0.18",
 		"archiver": "^5.3.0",
 		"archiver-promise": "^1.0.0",
 		"async": "^3.2.3",
@@ -50,6 +60,7 @@
 		"ora": "^5.4.1",
 		"request": "^2.88.2",
 		"request-promise": "^4.2.6",
+		"semver": "^7.8.5",
 		"shelljs": "^0.8.5",
 		"terser": "^5.12.1",
 		"update-notifier": "^5.1.0",
@@ -58,16 +69,22 @@
 		"website-scraper": "^4.2.3",
 		"website-scraper-existing-directory": "^0.1.0"
 	},
+	"devDependencies": {
+		"jest": "^30.4.2"
+	},
 	"bin": {
 		"siteglide-cli": "./siteglide-cli.js",
 		"siteglide-cli-add": "./siteglide-cli-add.js",
 		"siteglide-cli-archive": "./siteglide-cli-archive.js",
+		"siteglide-cli-check": "./siteglide-cli-check.js",
 		"siteglide-cli-deploy": "./siteglide-cli-deploy.js",
 		"siteglide-cli-export": "./siteglide-cli-export.js",
 		"siteglide-cli-gui": "./siteglide-cli-gui.js",
 		"siteglide-cli-import": "./siteglide-cli-import.js",
 		"siteglide-cli-init": "./siteglide-cli-init.js",
+		"siteglide-cli-list": "./siteglide-cli-list.js",
 		"siteglide-cli-logs": "./siteglide-cli-logs.js",
+		"siteglide-cli-mcp": "./siteglide-cli-mcp.js",
 		"siteglide-cli-migrate": "./siteglide-cli-migrate.js",
 		"siteglide-cli-modules": "./siteglide-cli-modules.js",
 		"siteglide-cli-pull": "./siteglide-cli-pull.js",

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
 
 const program = require('commander'),
 	Gateway = require('./lib/proxy'),
@@ -9,7 +10,10 @@ const program = require('commander'),
 	Confirm = require('./lib/confirm'),
 	glob = require('globby'),
 	fs = require('fs'),
+	path = require('path'),
 	getFile = require('./lib/migration/lib/utils/get-file'),
+	dir = require('./lib/directories'),
+	{ assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory'),
 	version = require('./package.json').version;
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
@@ -63,28 +67,34 @@ const getBody = (filePath, processTemplate) => {
 
 const deploy = async (env, authData, params) => {
 	const gateway = new Gateway(authData);
+		const siteRoot = dir.getSiteRoot() || null;
 
-	let files = await glob('marketplace_builder/views/pages/**/*.liquid');
+	if (siteRoot) {
+		let files = await glob(`${siteRoot}/views/pages/**/*.liquid`);
 
-	try {
-		for(var i=0;i<files.length;i++){
-			await getFile.run(files[i], i, params)
-			.then(async(file) => {
-				if(file.fileContent.includes('is_homepage: true')){
-					let filePath = filePathUnixified(file.filePath); // need path with / separators
+		try {
+			for(var i=0;i<files.length;i++){
+				await getFile.run(files[i], i, params)
+				.then(async(file) => {
+					if(file.fileContent.includes('is_homepage: true')){
+						let filePath = filePathUnixified(file.filePath); // need path with / separators
+						// API expects path without app/ or marketplace_builder/ prefix
+						const apiPath = filePath
+							.replace(new RegExp(`^${siteRoot}/`), '');
 
-					const formData = {
-						path: filePath,
-						marketplace_builder_file_body: getBody(filePath, false)
-					};
+						const formData = {
+							path: apiPath,
+							marketplace_builder_file_body: getBody(file.filePath, false)
+						};
 
-					return gateway.sync(formData);
-				}
-			})
-			.catch((err) => console.log(err))
+						return gateway.sync(formData);
+					}
+				})
+				.catch((err) => console.log(err))
+			}
+		} catch (error) {
+			console.log(`Error: ${error}`);
 		}
-	} catch (error) {
-		console.log(`Error: ${error}`);
 	}
 
 	await uploadArchive(env, params.withAssets);
@@ -103,6 +113,8 @@ program
 		process.env.WITH_IMAGES = params.withAssets;
 
 		const authData = fetchAuthData(environment, program);
+		// Fail fast before confirm when both app/ and marketplace_builder/ exist
+		assertExclusiveSiteAppRoot();
 
 		Confirm(`Are you sure you would like to deploy to ${authData.url}? (Y/n)\n`).then(function (response) {
 			if (response === 'Y') {

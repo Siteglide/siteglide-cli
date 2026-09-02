@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
 
 const program = require('commander'),
 	spawn = require('child_process').spawn,
@@ -152,8 +153,8 @@ program
 										.then(() => process.exit(0))
 										.catch(() => process.exit(1));
 								} else {
-									await makeArchive('./.tmp/assets.zip', dir.LEGACY_APP)
-										.then(async () => await makeArchive('./.tmp/marketplace-release.zip', dir.LEGACY_APP))
+									await makeArchive('./.tmp/assets.zip', dir.defaultSiteRoot())
+										.then(async () => await makeArchive('./.tmp/marketplace-release.zip', dir.defaultSiteRoot()))
 								}
 							})
 						);
@@ -170,8 +171,8 @@ program
 									.then(() => process.exit(0))
 									.catch(() => process.exit(1));
 								} else {
-									await makeArchive('./.tmp/assets.zip', dir.LEGACY_APP)
-										.then(async () => await makeArchive('./.tmp/marketplace-release.zip', dir.LEGACY_APP))
+									await makeArchive('./.tmp/assets.zip', dir.defaultSiteRoot())
+										.then(async () => await makeArchive('./.tmp/marketplace-release.zip', dir.defaultSiteRoot()))
 								}
 							})
 						);

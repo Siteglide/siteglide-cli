@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
+
 const program = require('commander'),
 	degit = require('degit'),
 	version = require('./package.json').version,
