@@ -6,9 +6,9 @@ const program = require('commander'),
 	prepareArchive = require('./lib/prepareArchive'),
 	logger = require('./lib/logger'),
 	assets = require('./lib/assets/deploy'),
-	glob = require('glob'),
-  settings = require('./lib/settings'),
-  templates = require('./lib/templates'),
+	glob = require('globby'),
+	settings = require('./lib/settings'),
+	templates = require('./lib/templates'),
 	version = require('./package.json').version,
 	dir = require('./lib/directories'),
 	files = require('./lib/assets/files'),
@@ -23,7 +23,7 @@ const addModulesToArchive = (archive, withImages) => {
 	if (!fs.existsSync(dir.MODULES)) return Promise.resolve(true);
 
 	return Promise.all(
-		glob.sync('*/', { cwd: dir.MODULES }).map(
+		glob.sync('*', { cwd: dir.MODULES, onlyDirectories: true }).map(
 			module => ( addModuleToArchive(module, archive, withImages))
 		)
 	);
@@ -31,33 +31,28 @@ const addModulesToArchive = (archive, withImages) => {
 
 const addModuleToArchive = (module, archive, withImages, pattern = '?(public|private)/**') => {
 	module = module.replace('/','');
-	return new Promise((resolve, reject) => {
-		glob(pattern, deployGlobOptions({ cwd: `${dir.MODULES}/${module}` }), (err, files) => {
-			if (err) throw reject(err);
-			const moduleTemplateData = templateData();
+	return glob(pattern, deployGlobOptions({ cwd: `${dir.MODULES}/${module}` })).then(files => {
+		const moduleTemplateData = templateData();
 
-			return Promise.all(
-				files
-				.filter(file => {
-					return !withImages || !(file.startsWith('public/assets/') || file.startsWith('private/assets'));
-				})
-				.map(f => {
-					const path = `${dir.MODULES}/${module}/${f}`;
-					return new Promise((resolve, reject) => {
-						fs.lstat(path, (err, stat) => {
-							if (!stat.isDirectory()) {
-								archive.append(templates.fillInTemplateValues(path, moduleTemplateData), {
-									name: path
-								});
-							}
-							resolve();
-						});
-					});
-				})
-			).then(r => {
-				resolve();
+		return Promise.all(
+			files
+			.filter(file => {
+				return !withImages || !(file.startsWith('public/assets/') || file.startsWith('private/assets'));
 			})
-		});
+			.map(f => {
+				const path = `${dir.MODULES}/${module}/${f}`;
+				return new Promise((resolve, reject) => {
+					fs.lstat(path, (err, stat) => {
+						if (!stat.isDirectory()) {
+							archive.append(templates.fillInTemplateValues(path, moduleTemplateData), {
+								name: path
+							});
+						}
+						resolve();
+					});
+				});
+			})
+		);
 	});
 };
 
