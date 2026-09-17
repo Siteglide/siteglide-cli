@@ -33,22 +33,19 @@
 		"archiver": "^5.3.0",
 		"archiver-promise": "^1.0.0",
 		"async": "^3.2.3",
-		"body-parser": "^1.19.2",
+		"body-parser": "^1.20.8",
 		"chalk": "^4.1.2",
-		"cheerio": "^1.0.0-rc.10",
+		"cheerio": "^1.1.2",
 		"chokidar": "^3.5.3",
 		"clean-css": "^5.2.4",
 		"commander": "^8.3.0",
-		"compression": "^1.7.4",
-		"degit": "^2.8.4",
+		"compression": "^1.8.1",
+		"degit": "^2.8.6",
 		"email-validator": "^2.0.4",
-		"express": "^4.17.3",
+		"express": "^4.22.3",
 		"fs-extra": "^10.0.1",
 		"globby": "^11",
-		"imagemin": "^7.0.1",
-		"imagemin-mozjpeg": "^9.0.0",
-		"imagemin-pngquant": "^9.0.2",
-		"js-yaml": "^4.1.0",
+		"js-yaml": "^4.3.2",
 		"livereload": "^0.9.3",
 		"mime-types": "^2.1.35",
 		"minimist": "^1.2.6",
@@ -62,16 +59,18 @@
 		"request": "^2.88.2",
 		"request-promise": "^4.2.6",
 		"semver": "^7.8.5",
+		"sharp": "^0.35.3",
 		"shelljs": "^0.8.5",
 		"terser": "^5.12.1",
-		"update-notifier": "^5.1.0",
+		"update-notifier": "^7.3.1",
+		"uuid": "11.1.1",
 		"valid-url": "^1.0.9",
 		"webpack-cli": "6.0.1",
 		"website-scraper": "^4.2.3",
 		"website-scraper-existing-directory": "^0.1.0"
 	},
 	"devDependencies": {
-		"jest": "^30.4.2"
+		"jest": "^30.5.1"
 	},
 	"bin": {
 		"siteglide-cli": "./siteglide-cli.js",
@@ -95,5 +94,37 @@
 		"siteglide-cli-watch": "./siteglide-cli-watch.js"
 	},
 	"preferGlobal": true,
-	"repository": "siteglide/siteglide-cli"
+	"repository": "siteglide/siteglide-cli",
+	"overrides": {
+		"uuid": "$uuid",
+		"qs": "^6.16.0",
+		"json-schema": "^0.4.0",
+		"tough-cookie": "^4.1.4",
+		"ansi-regex": "^5.0.1",
+		"minimatch": "^3.1.4",
+		"brace-expansion": "^1.1.18",
+		"cross-spawn": "^7.0.6",
+		"ws": "^7.5.11",
+		"request": {
+			"form-data": "^2.5.6",
+			"qs": "^6.16.0",
+			"tough-cookie": "^4.1.4",
+			"uuid": "^3.4.0"
+		},
+		"website-scraper": {
+			"cheerio": "1.2.0",
+			"request": {
+				"form-data": "^2.5.6",
+				"qs": "^6.16.0",
+				"tough-cookie": "^4.1.4",
+				"uuid": "^3.4.0"
+			}
+		},
+		"archiver-promise": {
+			"async": "^3.2.6"
+		},
+		"@istanbuljs/load-nyc-config": {
+			"js-yaml": "^4.3.2"
+		}
+	}
 }
