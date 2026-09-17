@@ -15,7 +15,6 @@ const {
 	needsMcpInstall,
 	shouldPromptMcpUpdate,
 	writeMcpUpdateDeclinedReminder,
-	resolveInstalledMcpVersion,
 	resolveInstalledMcpVersionWithTimeout
 } = require('../../lib/mcpAlpha');
 const { SERVER_NAME } = require('../../lib/ai');
@@ -126,11 +125,10 @@ test('needsMcpInstall when published version missing or already installed', () =
 	expect(needsMcpInstall('0.1.1', '0.1.1')).toEqual(false);
 });
 
-test('resolveInstalledMcpVersionWithTimeout returns installed version', async () => {
-	const expectedVersion = resolveInstalledMcpVersion();
-	expect(await resolveInstalledMcpVersionWithTimeout()).toEqual({
-		version: expectedVersion,
-		timedOut: false
+test('resolveInstalledMcpVersionWithTimeout returns timedOut when deadline is exceeded', async () => {
+	expect(await resolveInstalledMcpVersionWithTimeout(1)).toEqual({
+		version: null,
+		timedOut: true
 	});
 });
 

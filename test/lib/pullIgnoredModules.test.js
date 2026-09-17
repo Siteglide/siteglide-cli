@@ -117,7 +117,10 @@ test('DEFAULT_PULL_IGNORED_MODULES lists expected Siteglide platform modules', (
 		'siteglide_events',
 		'siteglide_media_downloads',
 		'siteglide_design_system',
-		'siteglide_email_marketing'
+		'siteglide_email_marketing',
+		'undefined',
+		'captchas',
+		'captchas_turnstile'
 	]);
 });
 
@@ -161,7 +164,10 @@ test('resolvePullIgnoredModules drops the explicit -m target from the ignore lis
 		'siteglide_events',
 		'siteglide_media_downloads',
 		'siteglide_design_system',
-		'siteglide_email_marketing'
+		'siteglide_email_marketing',
+		'undefined',
+		'captchas',
+		'captchas_turnstile'
 	]);
 	expect(resolvePullIgnoredModules(undefined)).toEqual(DEFAULT_PULL_IGNORED_MODULES);
 });
