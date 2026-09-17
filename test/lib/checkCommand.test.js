@@ -12,7 +12,7 @@ test('platformos-check runs against a minimal app liquid file', async () => {
 		const platformosCheck = require('@platformos/platformos-check-node');
 		const result = await platformosCheck.appCheckRun(rootPath);
 		expect(Array.isArray(result.offenses)).toEqual(true);
-		expect(result.app.length).toBeGreaterThan(0);
+		expect(result.app.size).toBeGreaterThan(0);
 	} finally {
 		await fs.remove(rootPath);
 	}
