@@ -8,11 +8,11 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
  *
  * @param {string} entry - Filename under repo root (e.g. `siteglide-cli.js`)
  * @param {string[]} [args]
- * @param {{ cwd?: string, env?: Record<string, string> }} [opts]
+ * @param {{ cwd?: string, env?: Record<string, string>, input?: string, timeout?: number }} [opts]
  */
 const runCli = (entry, args = [], opts = {}) => {
 	const scriptPath = path.join(REPO_ROOT, entry);
-	const result = spawnSync(process.execPath, [scriptPath, ...args], {
+	const spawnOpts = {
 		encoding: 'utf8',
 		cwd: opts.cwd || REPO_ROOT,
 		env: {
@@ -21,7 +21,17 @@ const runCli = (entry, args = [], opts = {}) => {
 			...opts.env
 		},
 		windowsHide: true
-	});
+	};
+
+	if (opts.input !== undefined) {
+		spawnOpts.input = opts.input;
+	}
+
+	if (opts.timeout !== undefined) {
+		spawnOpts.timeout = opts.timeout;
+	}
+
+	const result = spawnSync(process.execPath, [scriptPath, ...args], spawnOpts);
 
 	const stdout = result.stdout || '';
 	const stderr = result.stderr || '';

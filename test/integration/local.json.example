@@ -1,0 +1,6 @@
+{
+	"project": "D:/git/testing_sites/your-test-site",
+	"env": "staging",
+	"configFile": ".siteglide-config",
+	"pullModule": "core"
+}

@@ -2,7 +2,7 @@
 
 Siteglide CLI is a tool that enables you to work on your project from your local editor and has similar behaviours to that of using FTP, in that you can sync up and pull down changes from your website. You will be required to use some terminal commands to use this feature.
 
-Run the regression test suite from the repo root with `npm test` (Jest; see `jest.config.js`).
+Run the regression test suite from the repo root with `npm test` (Jest; see `jest.config.js`). Optional live API tests against a local project: `npm run test:integration` (see `test/INTEGRATION.md`).
 
 For features and setup instructions, see our help documentation [here](https://docs.siteglide.com/articles/1541403-introduction-to-the-command-line-interface-cli)
 
