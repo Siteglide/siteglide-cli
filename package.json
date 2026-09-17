@@ -35,9 +35,7 @@
 		"async": "^3.2.3",
 		"body-parser": "^1.20.8",
 		"chalk": "^4.1.2",
-		"cheerio": "^1.1.2",
 		"chokidar": "^3.5.3",
-		"clean-css": "^5.2.4",
 		"commander": "^8.3.0",
 		"compression": "^1.8.1",
 		"degit": "^2.8.6",
@@ -53,19 +51,15 @@
 		"node-fetch": "^2.6.7",
 		"node-notifier": "^10.0.1",
 		"node-stream-zip": "^1.15.0",
-		"normalize-url": "^6.1.0",
 		"open": "^8.4.0",
 		"ora": "^5.4.1",
 		"semver": "^7.8.5",
 		"sharp": "^0.35.3",
 		"shelljs": "^0.8.5",
-		"terser": "^5.12.1",
 		"update-notifier": "^7.3.1",
 		"uuid": "11.1.1",
 		"valid-url": "^1.0.9",
-		"webpack-cli": "6.0.1",
-		"website-scraper": "^4.2.3",
-		"website-scraper-existing-directory": "^0.1.0"
+		"webpack-cli": "6.0.1"
 	},
 	"devDependencies": {
 		"jest": "^30.5.1"
@@ -83,7 +77,6 @@
 		"siteglide-cli-list": "./siteglide-cli-list.js",
 		"siteglide-cli-logs": "./siteglide-cli-logs.js",
 		"siteglide-cli-mcp": "./siteglide-cli-mcp.js",
-		"siteglide-cli-migrate": "./siteglide-cli-migrate.js",
 		"siteglide-cli-modules": "./siteglide-cli-modules.js",
 		"siteglide-cli-pull": "./siteglide-cli-pull.js",
 		"siteglide-cli-push": "./siteglide-cli-push.js",
@@ -103,15 +96,6 @@
 		"brace-expansion": "^1.1.18",
 		"cross-spawn": "^7.0.6",
 		"ws": "^7.5.11",
-		"website-scraper": {
-			"cheerio": "1.2.0",
-			"request": {
-				"form-data": "^2.5.6",
-				"qs": "^6.16.0",
-				"tough-cookie": "^4.1.4",
-				"uuid": "^3.4.0"
-			}
-		},
 		"archiver-promise": {
 			"async": "^3.2.6"
 		},

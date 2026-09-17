@@ -11,6 +11,4 @@ Run: `npm test` from repo root (`CI=true` optional; avoids slow update-notifier 
 | `templates.test.js` | empty keys | **Environment** | Same CRLF normalization |
 | `pullIgnoredModules.test.js` | default list (×2) | **Stale test** | Add `undefined`, `captchas`, `captchas_turnstile` to expected list |
 | `mcpAlpha.test.js` | `resolveInstalledMcpVersionWithTimeout` | **Flaky / integration** | Assert `timedOut: true` with 1ms deadline instead of calling global npm |
-| `siteglide-cli-migrate.js` | `--help` crashed on load | **Real bug** | Wrong `directories` require paths in migration code (fixed during smoke test work) |
-
 All listed failures addressed in Phase 0 commits.

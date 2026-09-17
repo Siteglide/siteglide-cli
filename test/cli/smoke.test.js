@@ -12,7 +12,6 @@ const ROUTER_HELP_COMMANDS = [
 	['siteglide-cli.js', ['check', '--help'], /Usage: siteglide-cli check/],
 	['siteglide-cli.js', ['gui', '--help'], /Usage: siteglide-cli gui/],
 	['siteglide-cli.js', ['logs', '--help'], /Usage: siteglide-cli logs/],
-	['siteglide-cli.js', ['migrate', '--help'], /Usage: siteglide-cli migrate/],
 	['siteglide-cli.js', ['modules', '--help'], /Usage: siteglide-cli modules/],
 	['siteglide-cli.js', ['export', '--help'], /Usage: siteglide-cli export/]
 ];
@@ -27,7 +26,6 @@ const BIN_HELP = [
 	['siteglide-cli-check.js', /Usage: siteglide-cli check/],
 	['siteglide-cli-gui.js', /Usage: siteglide-cli gui/],
 	['siteglide-cli-logs.js', /Usage: siteglide-cli logs/],
-	['siteglide-cli-migrate.js', /Usage: siteglide-cli migrate/],
 	['siteglide-cli-modules.js', /Usage: siteglide-cli modules/],
 	['siteglide-cli-export.js', /Usage: siteglide-cli export/],
 	['siteglide-cli-archive.js', /Usage: siteglide-cli-archive/],
