@@ -14,6 +14,7 @@ const program = require('commander'),
 	getFile = require('./lib/get-file'),
 	dir = require('./lib/directories'),
 	{ assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory'),
+	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
 	version = require('./package.json').version;
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
@@ -111,6 +112,14 @@ program
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;
+
+		const lock = claimCommandLock('deploy', { environment });
+		if (!lock.ok) {
+			logCommandLockRefusal(lock);
+		}
+		if (!lock.nested) {
+			registerCommandLockCleanup();
+		}
 
 		const authData = fetchAuthData(environment, program);
 		// Fail fast before confirm when both app/ and marketplace_builder/ exist

@@ -39,7 +39,8 @@ const program = require('commander'),
 		AI_AGENT_PREFERENCES_RELATIVE_PATH,
 		prepareAiAgentPreferences,
 		isSkillAgentEnabled
-	} = require('./lib/aiAgentPreferences');
+	} = require('./lib/aiAgentPreferences'),
+	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 logger.registerSpinner(pullSpinner);
@@ -734,6 +735,15 @@ program
 	)
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
+
+		const lock = claimCommandLock('pull', { environment });
+		if (!lock.ok) {
+			logCommandLockRefusal(lock);
+		}
+		if (!lock.nested) {
+			registerCommandLockCleanup();
+		}
+
 		const ignoreAssets = params.ignoreAssets;
 		const moduleFilter = params.module;
 		const envConcurrency = parseInt(process.env.CONCURRENCY, 10);
