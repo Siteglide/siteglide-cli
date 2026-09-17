@@ -40,6 +40,7 @@ const program = require('commander'),
 		prepareAiAgentPreferences,
 		isSkillAgentEnabled
 	} = require('./lib/aiAgentPreferences'),
+	{ ensureProjectPreferences } = require('./lib/projectPreferences'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
@@ -851,6 +852,9 @@ program
 					await ensureMcpOnPull({ enabledSkillAgents });
 
 					await tidyUpAfterPull(ignoredModules);
+
+					const prefsPath = ensureProjectPreferences(process.cwd());
+					logger.Debug(`[pull] Project preferences at ${prefsPath.replace(/\\/g, '/')}`);
 
 					logger.Info('[pull] All steps finished');
 					pullSpinner.succeed('Pulled files');
