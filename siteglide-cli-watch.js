@@ -38,7 +38,11 @@ const program = require('commander'),
 	} = require('./lib/syncCurrentConflict'),
 	{ createSyncConflictGate } = require('./lib/syncConflictGate'),
 	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
-	{ recordSyncPath, syncedAtFromAssetFileMtime } = require('./lib/pullBaseline');
+	{
+		recordSyncPath,
+		syncedAtFromAssetFileMtime,
+		floorFromRemoteUpdatedAt
+	} = require('./lib/pullBaseline');
 
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
@@ -50,15 +54,43 @@ const filePathUnixified = filePath =>
 let counter = 0;
 let siteRoot = null;
 
-const noteSyncUploadSuccess = (syncedFilePath, syncedAt) => {
+/**
+ * Record per-path sync floor after upload (GraphQL updated_at + 1 ms when available).
+ * @param {import('./lib/proxy')} gateway
+ * @param {string} syncedFilePath
+ * @param {{ syncedAt?: string }} [opts] fallback when GraphQL fetch fails (e.g. assets)
+ */
+const noteSyncUploadSuccess = async (gateway, syncedFilePath, opts = {}) => {
 	if (!siteRoot || !process.env.SITEGLIDE_ENV) {
 		return;
 	}
-	recordSyncPath(
-		process.env.SITEGLIDE_ENV,
-		toPhysicalApiPath(syncedFilePath, siteRoot),
-		{ syncedAt }
-	);
+
+	const physicalPath = toPhysicalApiPath(syncedFilePath, siteRoot);
+	let syncedAt = opts.syncedAt;
+
+	recordSyncPath(process.env.SITEGLIDE_ENV, physicalPath, {
+		syncedAt: syncedAt || new Date().toISOString()
+	});
+
+	if (gateway) {
+		try {
+			const remote = await fetchRemoteFileMtime(gateway, physicalPath);
+			if (remote.found && remote.updatedAt) {
+				syncedAt = floorFromRemoteUpdatedAt(remote.updatedAt) || syncedAt;
+			}
+		} catch (err) {
+			logger.Debug(`[sync-floor] could not fetch remote updated_at: ${err.message || err}`);
+		}
+	}
+
+	if (!syncedAt) {
+		syncedAt = new Date().toISOString();
+	}
+
+	recordSyncPath(process.env.SITEGLIDE_ENV, physicalPath, {
+		syncedAt,
+		immediate: true
+	});
 };
 
 const isEmpty = filePath => {
@@ -646,7 +678,7 @@ const pushFile = (gateway, syncedFilePath) => {
 		marketplace_builder_file_body: getBody(syncedFilePath, filePath.startsWith('modules'))
 	};
 
-	return gateway.sync(formData).then(body => {
+	return gateway.sync(formData).then(async (body) => {
 		if(!body){
 			logger.Error(`[Sync] Error: unhandled.`, { exit: false });
 			return false;
@@ -666,7 +698,7 @@ const pushFile = (gateway, syncedFilePath) => {
 			logger.Error(error_msg, { exit: false });
 		}else{
 			logger.Success(`[Sync] Uploaded: ${filePath}`);
-			noteSyncUploadSuccess(syncedFilePath);
+			await noteSyncUploadSuccess(gateway, syncedFilePath);
 
 			if(body.refresh_index){
 				logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
@@ -724,7 +756,9 @@ const sendAsset = async (gateway, filePath) => {
 		manifestAddAsset(filePath);
 		manifestSend(gateway);
 		logger.Success(`[Sync] Uploaded: ${displayPath(filePath)}`);
-		noteSyncUploadSuccess(filePath, syncedAtFromAssetFileMtime(filePath));
+		await noteSyncUploadSuccess(gateway, filePath, {
+			syncedAt: syncedAtFromAssetFileMtime(filePath)
+		});
 		counter = 0;
 	} catch (e) {
 		logger.Debug(e);

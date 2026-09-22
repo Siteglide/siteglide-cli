@@ -10,8 +10,11 @@ const {
 	advancePullBaseline,
 	effectiveBaseline,
 	recordSyncPath,
-	flushPendingSyncRecords
+	flushPendingSyncRecords,
+	floorFromRemoteUpdatedAt,
+	SYNC_FLOOR_BUFFER_MS
 } = require('../../lib/pullBaseline');
+const { checkFile } = require('../../lib/remoteMtimeCheck');
 const {
 	writeConflictLog,
 	clearConflictLog,
@@ -192,6 +195,75 @@ describe('pullBaseline', () => {
 				'views/pages/a.liquid': '2026-06-01T12:00:00.000Z'
 			}
 		});
+	});
+
+	it('effectiveBaseline includes pending sync record before disk flush', () => {
+		recordSyncPath('staging', 'views/pages/home.liquid', {
+			cwd,
+			syncedAt: '2026-06-01T12:00:00.001Z'
+		});
+		assert.equal(readPullBaseline('staging', cwd), null);
+		assert.deepEqual(effectiveBaseline('staging', 'views/pages/home.liquid', cwd), {
+			at: '2026-06-01T12:00:00.001Z',
+			source: 'sync'
+		});
+	});
+
+	it('floorFromRemoteUpdatedAt adds SYNC_FLOOR_BUFFER_MS', () => {
+		assert.equal(SYNC_FLOOR_BUFFER_MS, 1);
+		assert.equal(
+			floorFromRemoteUpdatedAt('2026-01-01T12:00:00.000Z'),
+			'2026-01-01T12:00:00.001Z'
+		);
+		assert.equal(floorFromRemoteUpdatedAt('not-a-date'), null);
+	});
+
+	it('checkFile passes when remote updated_at matches floor minus buffer', async () => {
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z' });
+		recordSyncPath('staging', 'views/partials/x.liquid', {
+			cwd,
+			syncedAt: floorFromRemoteUpdatedAt('2026-05-01T12:00:00.000Z'),
+			immediate: true
+		});
+		const result = await checkFile({
+			gateway: {},
+			environment: 'staging',
+			filePath: 'marketplace_builder/views/partials/x.liquid',
+			siteRoot: 'marketplace_builder',
+			cwd,
+			remoteMeta: {
+				found: true,
+				updatedAt: '2026-05-01T12:00:00.000Z',
+				kind: 'partial'
+			}
+		});
+		assert.deepEqual(result, {
+			ok: true,
+			physicalPath: 'views/partials/x.liquid'
+		});
+	});
+
+	it('checkFile conflicts when remote is clearly newer than floor', async () => {
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z' });
+		recordSyncPath('staging', 'views/partials/x.liquid', {
+			cwd,
+			syncedAt: '2026-05-01T12:00:00.001Z',
+			immediate: true
+		});
+		const result = await checkFile({
+			gateway: {},
+			environment: 'staging',
+			filePath: 'marketplace_builder/views/partials/x.liquid',
+			siteRoot: 'marketplace_builder',
+			cwd,
+			remoteMeta: {
+				found: true,
+				updatedAt: '2026-05-01T12:00:10.000Z',
+				kind: 'partial'
+			}
+		});
+		assert.equal(result.ok, false);
+		assert.equal(result.reason, 'remote_newer');
 	});
 });
 

@@ -14,7 +14,6 @@ const program = require('commander'),
 	downloadFile = require('./lib/downloadFile'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	Gateway = require('./lib/proxy'),
-	Confirm = require('./lib/confirm'),
 	getBinary = require('./lib/assets/getBinary'),
 	unzip = require('./lib/unzip'),
 	path = require('path'),
@@ -41,7 +40,18 @@ const program = require('commander'),
 		isSkillAgentEnabled
 	} = require('./lib/aiAgentPreferences'),
 	{ ensureProjectPreferences } = require('./lib/projectPreferences'),
-	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock');
+	{ selectChoice, inputText, confirmYesNo } = require('./lib/prompts'),
+	{ recordPullBaselineAfterPull } = require('./lib/recordPullBaseline'),
+	{ clearConflictLog } = require('./lib/remoteCheckConflictLog'),
+	{ getGitReadiness, logGitSetupHint } = require('./lib/git/readiness'),
+	{ ensureSiteglideGitignored } = require('./lib/git/siteglideGitignore'),
+	{ isWorkingTreeDirty } = require('./lib/git/workingTree'),
+	{ commitAllSafe } = require('./lib/git/commit'),
+	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
+	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
+	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 logger.registerSpinner(pullSpinner);
@@ -718,11 +728,20 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. AI skills come only from module_984 assets (public/assets/agents/) into ./.agents (read-only; never ./modules/module_984/). Requires asset download — do not use --ignore-assets if you want skills. When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/project/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. AI skills come only from module_984 assets (public/assets/agents/) into ./.agents (read-only; never ./modules/module_984/). Requires asset download — do not use --ignore-assets if you want skills. When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/project/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones. Use -s / --skip-remote-check for legacy pull (simple confirm; no commit or merge guiderails).')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
 	.option('-m --module <module>', 'Optional module name filter. Without this flag, all installed modules are pulled.')
+	.option(
+		'-s, --skip-remote-check',
+		'Legacy pull: simple confirm only — skip commit-before/after gates and merge-first prompts'
+	)
+	.option(
+		'--merge-first-sync',
+		'Internal: lightweight pull for sync merge-first (site, modules, assets only)',
+		false
+	)
 	.option(
 		'--concurrency <number>',
 		`Max concurrent module pulls (default: ${DEFAULT_MODULE_PULL_CONCURRENCY}, or CONCURRENCY env)`,
@@ -752,10 +771,118 @@ program
 			|| (envConcurrency > 0 ? envConcurrency : DEFAULT_MODULE_PULL_CONCURRENCY);
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
+		const assumeYes = process.env.SITEGLIDE_PULL_ASSUME_YES === '1';
+		const skipRemoteCheck = Boolean(params.skipRemoteCheck);
+		const mergeFirstSync = params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1';
 
-		return Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
-			if (response === 'Y') {
-				try {
+		const runMergeFirstPull = async (wipMessage) => {
+			logger.Info('[pull] Merge: committing local work if needed, pulling on a temporary branch, then merging back.');
+			const result = await mergeFirstPull({
+				environment,
+				wipMessage,
+				pullFn: async () => {
+					await spawnNestedPull({
+						environment,
+						configFile: params.configFile,
+						ignoreAssets: params.ignoreAssets,
+						module: params.module,
+						concurrency: params.concurrency,
+						skipCommitBaseline: true
+					});
+				}
+			});
+			if (!result.ok) {
+				logger.Error(`[pull] Merge failed: ${result.error}`);
+				await offerMergeFirstFailureHelp(result, {
+					environment,
+					command: 'pull'
+				});
+				process.exit(1);
+			}
+			const conflicts = hasOpenGitConflicts();
+			if (conflicts.open) {
+				await offerMergeConflictAiHelp({
+					environment,
+					command: 'pull',
+					warnMessage:
+						'[pull] Merge started. Ask AI + MCP to resolve conflict markers if any, finish the merge commit, then continue.'
+				});
+			} else {
+				logger.Success('[pull] Merge completed with no conflict markers.');
+			}
+			process.exit(0);
+		};
+
+		const recordPullBaseline = () => {
+			recordPullBaselineAfterPull({
+				environment,
+				moduleFilter,
+				skipRemoteCheck
+			});
+		};
+
+		const startPull = async function () {
+			try {
+				const git = getGitReadiness();
+				if (git.repoInitialized) {
+					const open = hasOpenGitConflicts();
+					if (open.open) {
+						logger.Error(`[pull] Refusing pull while ${open.reason}. Ask AI + MCP to help resolve conflict markers first.`);
+						process.exit(1);
+					}
+					if (!mergeFirstSync) {
+						await ensureSiteglideGitignored();
+					}
+					if (!mergeFirstSync && !skipRemoteCheck && isWorkingTreeDirty()) {
+						if (!process.stdin.isTTY || process.env.CI) {
+							logger.Error('[pull] Working tree is dirty. Commit your work, then pull again (non-interactive).');
+							process.exit(1);
+						}
+						const chalk = require('chalk');
+						const message = chalk.yellow.bold('Commit your working tree before pulling.') +
+							' How shall we proceed?';
+						const ans = await selectChoice(message, [
+							{
+								name: 'Commit, pull and merge',
+								value: 'merge',
+								description:
+									'Commit changes now, pull on a new branch, then merge back. Conflicts stay in files for manual or AI resolution.'
+							},
+							{
+								name: 'Commit and pull',
+								value: 'commit_pull',
+								description:
+									'Commit your current work first (so it is recoverable from history), then continue with a normal pull.'
+							},
+							{
+								name: 'Cancel pull',
+								value: 'cancel'
+							}
+						]);
+						if (!ans || ans === 'cancel') {
+							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
+							process.exit(1);
+						}
+						const shortDate = new Date().toISOString().slice(0, 10);
+						const defaultBeforeMsg = `Snapshot before pulling from ${environment} environment ${shortDate}`;
+						const msg = await inputText('Commit message for your current work', { default: defaultBeforeMsg });
+						if (msg == null) {
+							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
+							process.exit(1);
+						}
+						const wipMessage = msg.trim() || defaultBeforeMsg;
+						if (ans === 'merge') {
+							await runMergeFirstPull(wipMessage);
+						}
+						const committed = commitAllSafe(wipMessage);
+						if (!committed.ok && !/nothing to commit/i.test(`${committed.stdout} ${committed.stderr}`)) {
+							logger.Error(`[pull] Commit failed: ${committed.stderr || committed.stdout}`);
+							process.exit(1);
+						}
+						logger.Info('[pull] Committed current work — continuing with a normal pull.');
+					}
+				}
+
 					const siteRoot = await resolveSiteAppRoot();
 					// logger.Info(`[pull] Site files root: ${siteRoot}/`);
 
@@ -846,15 +973,24 @@ program
 						logger.Info(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
 					}
 
-					await finalizeMergedAgents(enabledSkillAgents);
+					if (!mergeFirstSync) {
+						await finalizeMergedAgents(enabledSkillAgents);
 
-					pullSpinner.stop();
-					await ensureMcpOnPull({ enabledSkillAgents });
+						pullSpinner.stop();
+						await ensureMcpOnPull({ enabledSkillAgents });
+					} else {
+						pullSpinner.stop();
+						logger.Debug('[pull] Merge-first sync mode: skipping MCP and .agents scaffolding');
+					}
 
 					await tidyUpAfterPull(ignoredModules);
 
-					const prefsPath = ensureProjectPreferences(process.cwd());
-					logger.Debug(`[pull] Project preferences at ${prefsPath.replace(/\\/g, '/')}`);
+					recordPullBaseline();
+					if (!mergeFirstSync) {
+						clearConflictLog(environment);
+						const prefsPath = ensureProjectPreferences(process.cwd());
+						logger.Debug(`[pull] About-me preferences at ${prefsPath.replace(/\\/g, '/')}`);
+					}
 
 					logger.Info('[pull] All steps finished');
 					pullSpinner.succeed('Pulled files');
@@ -864,10 +1000,82 @@ program
 					logger.Error(e.message || e);
 					process.exit(1);
 				}
+		};
+
+		if (assumeYes) {
+			return startPull();
+		}
+
+		if (skipRemoteCheck) {
+			return (async () => {
+				if (!process.stdin.isTTY || process.env.CI) {
+					return startPull();
+				}
+				const response = await confirmYesNo(
+					'Are you sure you would like to pull? This will overwrite your local files immediately!'
+				);
+				if (response) {
+					await startPull();
+				} else {
+					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+				}
+			})();
+		}
+
+		return (async () => {
+			const git = getGitReadiness();
+
+			if (!git.repoInitialized) {
+				await logGitSetupHint(git);
+			}
+
+			if (git.repoInitialized && isWorkingTreeDirty()) {
+				await startPull();
+				return;
+			}
+
+			if (git.repoInitialized) {
+				const answer = await selectChoice(
+					'Are you sure you would like to pull? This will overwrite your local files immediately. ' +
+					'However, your work is completely committed to git, meaning you can always check the history or revert later.',
+					[
+						{
+							name: 'Merge',
+							value: 'merge',
+							description:
+								'Pull changes to a new branch and then merge that branch with this one. Conflicts stay in files for manual or AI resolution.'
+						},
+						{
+							name: 'Continue with the pull as normal',
+							value: 'continue'
+						},
+						{
+							name: 'Cancel pull',
+							value: 'cancel'
+						}
+					]
+				);
+				if (!answer || answer === 'cancel') {
+					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+					return;
+				}
+				if (answer === 'merge') {
+					await runMergeFirstPull();
+					return;
+				}
+				await startPull();
+				return;
+			}
+
+			const response = await confirmYesNo(
+				'Are you sure you would like to pull? This will overwrite your local files immediately!'
+			);
+			if (response) {
+				await startPull();
 			} else {
 				logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 			}
-		});
+		})();
 	});
 
 program.parse(process.argv);

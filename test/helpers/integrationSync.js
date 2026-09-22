@@ -1,25 +1,10 @@
 const fs = require('fs-extra');
 const path = require('path');
 const dir = require('../../lib/directories');
+const { normalizeSyncBody } = require('../../lib/sync/normalizeSyncResponse');
 
 /** Remote/local path under site root (no marketplace_builder/ prefix). */
 const SYNC_API_PATH = 'views/pages/_siteglide_cli_integration.liquid';
-
-/**
- * @param {unknown} body
- * @returns {object|string|unknown}
- */
-const normalizeSyncBody = (body) => {
-	if (Array.isArray(body) && typeof body[0] === 'string') {
-		try {
-			return JSON.parse(body[0]);
-		} catch {
-			return body[0];
-		}
-	}
-
-	return body;
-};
 
 /**
  * Sync a disposable integration page via Gateway.sync (stream body, same as watch).

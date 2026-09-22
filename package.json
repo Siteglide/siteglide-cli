@@ -8,8 +8,8 @@
 		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production",
 		"build-gui": "npm --prefix gui/next ci && npm --prefix gui/next run build",
 		"i": "npm install -g .",
-		"test": "jest --silent && node --test test/lib/siteglidePaths.test.js test/lib/syncStatus.test.js test/lib/commandLock.test.js",
-		"test:unit": "node --test test/lib/siteglidePaths.test.js test/lib/syncStatus.test.js test/lib/commandLock.test.js",
+		"test": "jest --silent && node --test test/lib/siteglidePaths.test.js test/lib/syncStatus.test.js test/lib/commandLock.test.js test/lib/mergeFirst.test.js test/lib/pullBaselineRemoteCheck.test.js test/lib/remoteConflictPrompt.test.js test/lib/remoteMtimeQuery.test.js test/lib/normalizeSyncResponse.test.js test/lib/syncConflictGate.test.js test/lib/syncCurrentConflict.test.js test/lib/syncFileWatcher.test.js test/lib/syncMergeFirstWatcher.test.js test/lib/syncUploadWave.test.js test/lib/siteglideGitignore.test.js",
+		"test:unit": "node --test test/lib/siteglidePaths.test.js test/lib/syncStatus.test.js test/lib/commandLock.test.js test/lib/mergeFirst.test.js test/lib/pullBaselineRemoteCheck.test.js test/lib/remoteConflictPrompt.test.js test/lib/remoteMtimeQuery.test.js test/lib/normalizeSyncResponse.test.js test/lib/syncConflictGate.test.js test/lib/syncCurrentConflict.test.js test/lib/syncFileWatcher.test.js test/lib/syncMergeFirstWatcher.test.js test/lib/syncUploadWave.test.js test/lib/siteglideGitignore.test.js",
 		"test:integration": "jest --config jest.integration.config.js --silent"
 	},
 	"main": "./siteglide-cli.js",
@@ -29,6 +29,7 @@
 		"Siteglide"
 	],
 	"dependencies": {
+		"@inquirer/prompts": "^8.5.2",
 		"@platformos/platformos-check-node": "^1.1.0",
 		"archiver": "^5.3.0",
 		"archiver-promise": "^1.0.0",
@@ -80,6 +81,7 @@
 		"siteglide-cli-modules": "./siteglide-cli-modules.js",
 		"siteglide-cli-pull": "./siteglide-cli-pull.js",
 		"siteglide-cli-push": "./siteglide-cli-push.js",
+		"siteglide-cli-remote-check": "./siteglide-cli-remote-check.js",
 		"siteglide-cli-server": "./siteglide-cli-server.js",
 		"siteglide-cli-sync": "./siteglide-cli-sync.js",
 		"siteglide-cli-watch": "./siteglide-cli-watch.js"

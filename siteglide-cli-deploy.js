@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.noDeprecation = true;
 
 /**
  * Deploy: optional prod commit → remote-mtime pre-check (Merge first / continue) →
@@ -7,15 +8,17 @@
 
 const program = require('commander'),
 	Gateway = require('./lib/proxy'),
-	fetchAuthData = require('./lib/settings').fetchSettings,
+	settings = require('./lib/settings'),
+	fetchAuthData = settings.fetchSettings,
 	spawn = require('child_process').spawn,
 	command = require('./lib/command'),
 	logger = require('./lib/logger'),
 	Confirm = require('./lib/confirm'),
+	templates = require('./lib/templates'),
 	glob = require('globby'),
 	fs = require('fs'),
 	path = require('path'),
-	getFile = require('./lib/migration/lib/utils/get-file'),
+	getFile = require('./lib/get-file'),
 	dir = require('./lib/directories'),
 	{ assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory'),
 	version = require('./package.json').version,
@@ -34,6 +37,8 @@ const program = require('commander'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull');
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
+
+const templateData = (templatePath) => settings.loadSettingsFile(templatePath);
 
 const uploadArchive = (env, withImages) => {
 	return new Promise((resolve, reject) => {
@@ -75,7 +80,9 @@ const uploadArchive = (env, withImages) => {
 
 const getBody = (filePath, processTemplate) => {
 	if (processTemplate) {
-		return fs.createReadStream(filePath);
+		const templatePath = `modules/${filePath.split(path.sep)[1]}/template-values.json`;
+		const moduleTemplateData = templateData(templatePath);
+		return templates.fillInTemplateValues(filePath, moduleTemplateData);
 	}
 	return fs.createReadStream(filePath);
 };
@@ -119,7 +126,7 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-w --with-assets', 'With assets, deploys your "assets" folder')
-	.option('--skip-remote-check', 'Skip remote mtime conflict checks (CI / intentional overwrite)')
+	.option('-s, --skip-remote-check', 'Skip remote mtime conflict checks (CI / intentional overwrite)')
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;

@@ -61,3 +61,25 @@ describe.each(BIN_HELP)('bin help: %s', (entry, pattern) => {
 		expect(result.output).toMatch(pattern);
 	});
 });
+
+test('pull help documents -s / --skip-remote-check', () => {
+	const result = runCli('siteglide-cli-pull.js', ['--help']);
+	expect(result.code).toEqual(0);
+	expect(result.output).toMatch(/-s, --skip-remote-check/);
+});
+
+test('sync help documents -s / --skip-remote-check', () => {
+	const result = runCli('siteglide-cli-sync.js', ['--help']);
+	expect(result.code).toEqual(0);
+	expect(result.output).toMatch(/-s, --skip-remote-check/);
+});
+
+test('deploy source documents -s / --skip-remote-check option', () => {
+	const fs = require('fs');
+	const path = require('path');
+	const deploySource = fs.readFileSync(
+		path.join(__dirname, '../../siteglide-cli-deploy.js'),
+		'utf8'
+	);
+	expect(deploySource).toMatch(/\.option\('-s, --skip-remote-check'/);
+});

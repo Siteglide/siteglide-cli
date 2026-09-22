@@ -16,14 +16,16 @@ program
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-l, --livereload', 'Turns on a livereload server')
+	.option('-s, --skip-remote-check', 'Skip remote mtime checks before each upload')
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
-		const env = Object.assign(process.env, {
-			SITEGLIDE_EMAIL: authData.email,
-			SITEGLIDE_TOKEN: authData.token,
-			SITEGLIDE_URL: authData.url,
-			SITEGLIDE_ENV: environment
+		const { buildSyncWatchEnv } = require('./lib/syncWatchEnv');
+		const env = buildSyncWatchEnv({
+			processEnv: process.env,
+			authData,
+			environment,
+			skipRemoteCheck: Boolean(params.skipRemoteCheck)
 		});
 		const options = [];
 		if(params.livereload){

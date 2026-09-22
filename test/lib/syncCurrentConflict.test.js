@@ -29,7 +29,7 @@ describe('syncCurrentConflict', () => {
 		fs.rmSync(cwd, { recursive: true, force: true });
 	});
 
-	it('writes awaiting-user record with local mtime under .siteglide/IDE/sync/', () => {
+	it('writes awaiting-user record with local mtime under .siteglide/user/sync/', () => {
 		const written = writeSyncCurrentConflict({
 			environment: 'staging',
 			reason: 'remote_newer',

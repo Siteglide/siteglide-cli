@@ -60,12 +60,20 @@ describe('siteglidePaths', () => {
 
 		assert.equal(fs.existsSync(joinUser(cwd, 'sync', '2.json')), true);
 		assert.equal(fs.existsSync(joinProject(cwd, 'modules.json')), true);
+		assert.equal(fs.existsSync(path.join(cwd, '.siteglide', 'IDE', 'sync', '2.json')), false);
 		assert.equal(fs.existsSync(legacyConfig), false);
 	});
 
 	it('rel paths match module output', () => {
 		assert.equal(rel.syncStatusDir, '.siteglide/user/sync');
+		assert.equal(rel.syncCurrentConflict, '.siteglide/user/sync/current-conflict.json');
+		assert.equal(rel.remoteCheckDir, '.siteglide/user/remote-check');
+		assert.equal(rel.pullBaselineDir, '.siteglide/user/pull');
+		assert.equal(rel.pullBaseline('staging'), '.siteglide/user/pull/staging.json');
+		assert.equal(rel.mergeDir, '.siteglide/user/merge');
+		assert.equal(rel.mergeManifest('staging'), '.siteglide/user/merge/staging.json');
 		assert.equal(rel.pullModulesConfig, '.siteglide/project/modules.json');
+		assert.equal(rel.aboutMe, '.siteglide/user/about-me.json');
 		assert.equal(rel.aiAgentPreferences, '.siteglide/user/ai-agent-preferences.json');
 		assert.equal(rel.gitignoreUser, '.siteglide/user/');
 		assert.equal(rel.gitignoreSecrets, '.siteglide-config');

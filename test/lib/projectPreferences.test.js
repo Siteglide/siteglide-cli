@@ -40,10 +40,10 @@ describe('projectPreferences', () => {
 		expect(second.target_audience.siteglideCli).toBe(null);
 	});
 
-	test('stores file under .siteglide/project/project-preferences.json', () => {
+	test('stores file under .siteglide/user/about-me.json', () => {
 		ensureProjectPreferences(cwd);
 		expect(projectPreferencesPath(cwd)).toBe(
-			path.join(cwd, '.siteglide', 'project', 'project-preferences.json')
+			path.join(cwd, '.siteglide', 'user', 'about-me.json')
 		);
 	});
 });
