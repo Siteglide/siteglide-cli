@@ -1,6 +1,6 @@
 {
 	"name": "@siteglide/siteglide-cli",
-	"version": "1.10.3",
+	"version": "1.12.0",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
@@ -23,7 +23,7 @@
 	},
 	"siteglideMcp": {
 		"usage": "Allows siteglide-cli pull to recommend auto updates to the MCP within the same semantic version range only. The -0 suffix includes prereleases (e.g. 0.1.0-alpha.0) until a stable 0.1.x exists.",
-		"compatibleRange": "^0.1.0-0"
+		"compatibleRange": "^0.2.0-0"
 	},
 	"keywords": [
 		"Siteglide"
