@@ -175,7 +175,7 @@ describe('syncCurrentConflict status extensions', () => {
 		assert.equal(read.status, 'waiting_for_git_resolution');
 		assert.equal(read.syncPaused, true);
 		assert.equal(read.awaitingUserDecision, false);
-		assert.match(read.agentGuidance, /git conflict markers/);
+		assert.match(read.agentGuidance, /verbally approves/);
 
 		clearSyncCurrentConflict(cwd);
 		assert.equal(readSyncCurrentConflict(cwd), null);

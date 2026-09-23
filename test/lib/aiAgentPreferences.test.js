@@ -6,6 +6,8 @@ const {
 	SKILL_AGENT_ROOTS,
 	AI_AGENT_PREFERENCES_RELATIVE_PATH,
 	ensureAiAgentPreferences,
+	needsAiAgentPreferencePrompt,
+	writeAiAgentPreferences,
 	prepareAiAgentPreferences,
 	resolveEnabledSkillAgents
 } = require('../../lib/aiAgentPreferences');
@@ -74,6 +76,35 @@ test('ensureAiAgentPreferences creates the file when missing and does not overwr
 				exclude: ['Claude']
 			}
 		});
+	} finally {
+		await fs.remove(rootPath);
+	}
+});
+
+test('needsAiAgentPreferencePrompt is true only when exclude is empty', () => {
+	expect(needsAiAgentPreferencePrompt({ include: DEFAULT_SKILL_AGENTS, exclude: [] })).toEqual(true);
+	expect(needsAiAgentPreferencePrompt({
+		include: DEFAULT_SKILL_AGENTS,
+		exclude: ['Windsurf']
+	})).toEqual(false);
+});
+
+test('writeAiAgentPreferences updates include and exclude while preserving usage', async () => {
+	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-ai-prefs-write-'));
+	const configPath = path.join(rootPath, AI_AGENT_PREFERENCES_RELATIVE_PATH);
+
+	try {
+		await ensureAiAgentPreferences(rootPath);
+		await writeAiAgentPreferences(rootPath, {
+			include: ['Cursor', 'VSCode'],
+			exclude: ['Claude', 'Windsurf', 'Github Copilot']
+		});
+		const parsed = JSON.parse(await fs.readFile(configPath, 'utf8'));
+		expect(parsed.pull_behaviour.include).toEqual(['Cursor', 'VSCode']);
+		expect(parsed.pull_behaviour.exclude).toEqual(['Claude', 'Windsurf', 'Github Copilot']);
+		expect(parsed.pull_behaviour.usage).toEqual(
+			'By default, pull will create folders in your project to support skills and MCP for multiple AI agents. You can move agents from include to exclude to stop those folders (and that agent\'s mcp.json) being created. The MCP package can still be installed globally.'
+		);
 	} finally {
 		await fs.remove(rootPath);
 	}

@@ -19,6 +19,7 @@ const program = require('commander'),
 	path = require('path'),
 	dir = require('./lib/directories'),
 	{ ensureMcpOnPull } = require('./lib/mcpAlpha'),
+	{ hasProjectMcpConfig } = require('./lib/ai'),
 	{
 		resolveSiteAppRoot
 	} = require('./lib/migrateAppDirectory'),
@@ -37,19 +38,24 @@ const program = require('commander'),
 	{
 		AI_AGENT_PREFERENCES_RELATIVE_PATH,
 		prepareAiAgentPreferences,
+		promptAiAgentPreferencesIfNeeded,
 		isSkillAgentEnabled
 	} = require('./lib/aiAgentPreferences'),
 	{ ensureProjectPreferences } = require('./lib/projectPreferences'),
+	{ promptTargetAudienceIfNeeded } = require('./lib/targetAudience'),
 	{ selectChoice, inputText, confirmYesNo } = require('./lib/prompts'),
 	{ recordPullBaselineAfterPull } = require('./lib/recordPullBaseline'),
-	{ clearConflictLog } = require('./lib/remoteCheckConflictLog'),
-	{ getGitReadiness, logGitSetupHint } = require('./lib/git/readiness'),
+	{ readPullBaseline } = require('./lib/pullBaseline'),
+	{ getGitReadiness } = require('./lib/git/readiness'),
+	{ maybeOfferGitSetupHint } = require('./lib/git/maybeGitSetupHint'),
 	{ ensureSiteglideGitignored } = require('./lib/git/siteglideGitignore'),
 	{ isWorkingTreeDirty } = require('./lib/git/workingTree'),
-	{ commitAllSafe } = require('./lib/git/commit'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
-	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
+	{ MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
+	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ CANCEL_SKIP_REMOTE_HINT } = require('./lib/remoteConflictPrompt'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull');
 
@@ -776,7 +782,7 @@ program
 		const mergeFirstSync = params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1';
 
 		const runMergeFirstPull = async (wipMessage) => {
-			logger.Info('[pull] Merge: committing local work if needed, pulling on a temporary branch, then merging back.');
+			logger.Info('[pull] Pull and merge: committing local work if needed, pulling on a temporary branch, then merging back.');
 			const result = await mergeFirstPull({
 				environment,
 				wipMessage,
@@ -799,17 +805,20 @@ program
 				});
 				process.exit(1);
 			}
-			const conflicts = hasOpenGitConflicts();
-			if (conflicts.open) {
-				await offerMergeConflictAiHelp({
-					environment,
-					command: 'pull',
-					warnMessage:
-						'[pull] Merge started. Ask AI + MCP to resolve conflict markers if any, finish the merge commit, then continue.'
-				});
-			} else {
-				logger.Success('[pull] Merge completed with no conflict markers.');
+			const completed = await completeMergeFirstResolution({
+				environment,
+				result,
+				command: 'pull',
+				commitMessage: 'siteglide: merge remote pull',
+				warnMessage:
+					`[pull] Merge started. ${MERGE_CONFLICT_CLI_WAIT_HINT}`,
+				logPrefix: '[pull]'
+			});
+			if (!completed.ok) {
+				logger.Error(`[pull] Merge resolution failed: ${completed.error || 'unknown error'}`);
+				process.exit(1);
 			}
+			logger.Success('[pull] Pull baseline updated. Merge complete.');
 			process.exit(0);
 		};
 
@@ -822,7 +831,22 @@ program
 		};
 
 		const startPull = async function () {
+			const pullCwd = process.cwd();
+			const mcpBeforePull = hasProjectMcpConfig(pullCwd);
 			try {
+				if (!mergeFirstSync) {
+					const audienceResult = await promptTargetAudienceIfNeeded(pullCwd);
+					if (audienceResult.cancelled) {
+						logger.Error('[Cancelled] Pull not executed — finish the about-me questions or press Ctrl+C to cancel.');
+						process.exit(1);
+					}
+					const agentPrefs = await promptAiAgentPreferencesIfNeeded(pullCwd);
+					if (agentPrefs.cancelled) {
+						logger.Error('[Cancelled] Pull not executed — choose at least one AI agent or press Ctrl+C to cancel.');
+						process.exit(1);
+					}
+				}
+
 				const git = getGitReadiness();
 				if (git.repoInitialized) {
 					const open = hasOpenGitConflicts();
@@ -843,20 +867,15 @@ program
 							' How shall we proceed?';
 						const ans = await selectChoice(message, [
 							{
-								name: 'Commit, pull and merge',
+								name: 'Pull and merge',
 								value: 'merge',
 								description:
 									'Commit changes now, pull on a new branch, then merge back. Conflicts stay in files for manual or AI resolution.'
 							},
 							{
-								name: 'Commit and pull',
-								value: 'commit_pull',
-								description:
-									'Commit your current work first (so it is recoverable from history), then continue with a normal pull.'
-							},
-							{
 								name: 'Cancel pull',
-								value: 'cancel'
+								value: 'cancel',
+								description: CANCEL_SKIP_REMOTE_HINT
 							}
 						]);
 						if (!ans || ans === 'cancel') {
@@ -871,15 +890,7 @@ program
 							process.exit(1);
 						}
 						const wipMessage = msg.trim() || defaultBeforeMsg;
-						if (ans === 'merge') {
-							await runMergeFirstPull(wipMessage);
-						}
-						const committed = commitAllSafe(wipMessage);
-						if (!committed.ok && !/nothing to commit/i.test(`${committed.stdout} ${committed.stderr}`)) {
-							logger.Error(`[pull] Commit failed: ${committed.stderr || committed.stdout}`);
-							process.exit(1);
-						}
-						logger.Info('[pull] Committed current work — continuing with a normal pull.');
+						await runMergeFirstPull(wipMessage);
 					}
 				}
 
@@ -985,9 +996,12 @@ program
 
 					await tidyUpAfterPull(ignoredModules);
 
+					if (!mergeFirstSync && !mcpBeforePull) {
+						await maybeOfferGitSetupHint({ cwd: pullCwd });
+					}
+
 					recordPullBaseline();
 					if (!mergeFirstSync) {
-						clearConflictLog(environment);
 						const prefsPath = ensureProjectPreferences(process.cwd());
 						logger.Debug(`[pull] About-me preferences at ${prefsPath.replace(/\\/g, '/')}`);
 					}
@@ -1026,7 +1040,7 @@ program
 			const git = getGitReadiness();
 
 			if (!git.repoInitialized) {
-				await logGitSetupHint(git);
+				await maybeOfferGitSetupHint({ git });
 			}
 
 			if (git.repoInitialized && isWorkingTreeDirty()) {
@@ -1035,23 +1049,25 @@ program
 			}
 
 			if (git.repoInitialized) {
+				const baseline = readPullBaseline(environment);
+				if (!baseline || !baseline.lastPullCommit) {
+					logger.Info(
+						'[pull] No pull baseline yet for this environment — Pull and merge seeds lastPullCommit for merge-first sync/deploy checks.'
+					);
+				}
 				const answer = await selectChoice(
-					'Are you sure you would like to pull? This will overwrite your local files immediately. ' +
-					'However, your work is completely committed to git, meaning you can always check the history or revert later.',
+					'Are you sure you would like to pull? Your work is committed to git, so you can check history or revert later.',
 					[
 						{
-							name: 'Merge',
+							name: 'Pull and merge',
 							value: 'merge',
 							description:
-								'Pull changes to a new branch and then merge that branch with this one. Conflicts stay in files for manual or AI resolution.'
-						},
-						{
-							name: 'Continue with the pull as normal',
-							value: 'continue'
+								'Pull changes to a new branch and merge back into your current branch. Conflicts stay in files for manual or AI resolution.'
 						},
 						{
 							name: 'Cancel pull',
-							value: 'cancel'
+							value: 'cancel',
+							description: CANCEL_SKIP_REMOTE_HINT
 						}
 					]
 				);
@@ -1059,11 +1075,7 @@ program
 					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 					return;
 				}
-				if (answer === 'merge') {
-					await runMergeFirstPull();
-					return;
-				}
-				await startPull();
+				await runMergeFirstPull();
 				return;
 			}
 

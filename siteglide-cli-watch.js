@@ -38,6 +38,10 @@ const program = require('commander'),
 	} = require('./lib/syncCurrentConflict'),
 	{ createSyncConflictGate } = require('./lib/syncConflictGate'),
 	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
+	{ MERGE_CONFLICT_AGENT_GUIDANCE, MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
+	{ waitForMergeResolution } = require('./lib/git/waitForMergeResolution'),
+	{ finalizePullBaseline } = require('./lib/git/finalizePullBaseline'),
 	{
 		recordSyncPath,
 		syncedAtFromAssetFileMtime,
@@ -332,20 +336,6 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 		conflicts: [conflictMeta]
 	});
 
-	if (decision === 'continue') {
-		resolveSyncCurrentConflict('continue');
-		clearSyncConflictRecords(environment);
-		return { action: 'continue', forcePath: primaryConflict.path };
-	}
-	if (decision === 'skip') {
-		resolveSyncCurrentConflict('skip');
-		const chalk = require('chalk');
-		const shown = (conflictMeta.path || primaryConflict.path || '').replace(/\\/g, '/');
-		logger.Error(`[Sync] Skipped file: ${shown}`, { exit: false });
-		logger.Print(`${chalk.red.bold(shown)}\n`);
-		clearSyncConflictRecords(environment);
-		return { action: 'skip', skipPath: primaryConflict.path };
-	}
 	if (decision === 'merge_first') {
 		resolveSyncCurrentConflict('merge_first');
 		syncFileWatcher.pause();
@@ -372,23 +362,29 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 				clearSyncConflictRecords(environment);
 				return { action: 'merge_first_failed' };
 			}
-			const conflicts = hasOpenGitConflicts();
-			if (conflicts.open) {
-				mergeConflictAiHelpOffered = true;
-				await offerMergeConflictAiHelp({
-					environment,
-					command: 'sync',
-					warnMessage:
-						'[Sync] Merge left conflict markers in your working tree. This file was not synced.'
-				});
-				logger.Warn(
-					'[Sync] When you are ready: resolve all conflicts, finish the merge commit, then save the file again to sync.',
-					{ exit: false }
-				);
-				await conflictGate.waitForGitClean();
-			} else {
-				logger.Success('[Sync] Merge completed with no conflict markers. Re-checking wave for upload.');
+			const completed = await completeMergeFirstResolution({
+				environment,
+				result: mf,
+				command: 'sync',
+				commitMessage: `siteglide: merge remote pull before sync (${conflictPath})`,
+				warnMessage:
+					`[Sync] Merge started. ${MERGE_CONFLICT_CLI_WAIT_HINT}`,
+				logPrefix: '[Sync]',
+				cwd: process.cwd(),
+				shouldAbort: () => syncStopping
+			});
+			if (!completed.ok) {
+				if (completed.aborted) {
+					clearSyncConflictRecords(environment);
+					return { action: 'cancel' };
+				}
+				if (completed.error) {
+					logger.Error(`[Sync] Merge resolution failed: ${completed.error}`, { exit: false });
+				}
+				clearSyncConflictRecords(environment);
+				return { action: 'merge_first_failed' };
 			}
+			logger.Success('[Sync] Merge complete. Re-checking wave for upload.');
 			clearSyncConflictRecords(environment);
 			return { action: 'merge_first' };
 		} finally {
@@ -421,12 +417,25 @@ const handleGitBlockAsLeader = async (gitOpen) => {
 			warnMessage:
 				`[Sync] Refusing while ${gitOpen.reason}. Sync is paused until conflict markers are resolved.`
 		});
-		logger.Warn(
-			'[Sync] When you are ready: resolve all conflicts, finish the merge commit, then save the file again to sync.',
-			{ exit: false }
-		);
+		logger.Warn(`[Sync] ${MERGE_CONFLICT_CLI_WAIT_HINT}`, { exit: false });
 	}
-	await conflictGate.waitForGitClean();
+	updateSyncCurrentConflictStatus({
+		status: 'waiting_for_git_resolution',
+		syncPaused: true,
+		agentGuidance: MERGE_CONFLICT_AGENT_GUIDANCE
+	});
+	const waited = await waitForMergeResolution({
+		cwd: process.cwd(),
+		logPrefix: '[Sync]',
+		shouldAbort: () => syncStopping
+	});
+	if (waited.ok && environment) {
+		try {
+			finalizePullBaseline({ environment, cwd: process.cwd() });
+		} catch (err) {
+			logger.Warn(`[Sync] Could not update pull baseline: ${err.message}`, { exit: false });
+		}
+	}
 };
 
 /**
@@ -434,14 +443,8 @@ const handleGitBlockAsLeader = async (gitOpen) => {
  * @param {object} [resolution]
  * @returns {Promise<{ proceed: boolean, entries: object[] }>}
  */
-const recheckWaveEntries = async (entries, resolution = {}) => {
+const recheckWaveEntries = async (entries) => {
 	const rechecked = await Promise.all(entries.map(async (entry) => {
-		if (resolution.forcePath && entry.path === resolution.forcePath) {
-			return { ...entry, checkResult: { proceed: true } };
-		}
-		if (resolution.skipPath && entry.path === resolution.skipPath) {
-			return { ...entry, checkResult: { proceed: false, skipUpload: true } };
-		}
 		const nextCheck = await beforeSyncOpCheck(entry.path);
 		return { ...entry, checkResult: nextCheck };
 	}));
@@ -487,11 +490,10 @@ const uploadWaveEntriesAsLeader = async (entries) => {
 /**
  * Re-check a blocked wave after conflict resolution, then upload passing entries.
  * @param {object[]} entries
- * @param {object} [resolution]
  * @returns {Promise<{ proceed: boolean, entries: object[] }>}
  */
-const finishConflictWaveUpload = async (entries, resolution = {}) => {
-	const rechecked = await recheckWaveEntries(entries, resolution);
+const finishConflictWaveUpload = async (entries) => {
+	const rechecked = await recheckWaveEntries(entries);
 	if (!rechecked.proceed) {
 		syncWaveLog(
 			`[Sync wave ${syncUploadWave.getCurrentWaveId()}] recheck still blocked after conflict resolution`
@@ -573,6 +575,7 @@ const processSyncTask = async (task, callback) => {
 					const gitEntry = decision.entries.find((entry) => checkHasGitBlock(entry.checkResult)) || decision.entries[0];
 					await handleGitBlockAsLeader(gitEntry.checkResult.gitOpen);
 					if (!syncStopping && !hasOpenGitConflicts().open) {
+						conflictGate.allowUploads();
 						await finishConflictWaveUpload(decision.entries);
 					}
 				} else {
@@ -585,9 +588,8 @@ const processSyncTask = async (task, callback) => {
 				);
 				if (resolution.action === 'cancel' || resolution.action === 'abort' || resolution.action === 'pause') {
 					stopSyncWatch('[Sync] Cancelling sync.');
-				} else if (resolution.action === 'continue' || resolution.action === 'skip') {
-					await finishConflictWaveUpload(decision.entries, resolution);
 				} else if (resolution.action === 'merge_first') {
+					conflictGate.allowUploads();
 					await finishConflictWaveUpload(decision.entries);
 				}
 			} else {

@@ -25,14 +25,16 @@ const program = require('commander'),
 	{ classifyEnvironment } = require('./lib/envClassification'),
 	{ collectDeployPreConflicts, collectDeployPostLeftovers } = require('./lib/remoteMtimeCheck'),
 	{ promptDeployConfirm } = require('./lib/remoteConflictPrompt'),
-	{ replaceDeployManifest, advancePullBaseline, writePullBaseline } = require('./lib/pullBaseline'),
+	{ replaceDeployManifest, advancePullBaseline } = require('./lib/pullBaseline'),
 	{ collectDeployManifestPaths } = require('./lib/deployManifestPaths'),
 	{ clearConflictLog, writeConflictLog } = require('./lib/remoteCheckConflictLog'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
 	{ commitAllSafe } = require('./lib/git/commit'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
-	{ mergeFirstDeploy, readMergeManifest } = require('./lib/git/mergeFirst'),
-	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ mergeFirstDeploy } = require('./lib/git/mergeFirst'),
+	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
+	{ MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
+	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull');
 
@@ -167,12 +169,6 @@ program
 			process.exit(1);
 		}
 
-		// If a prior deploy merge-first finished, promote pull baseline from snapshot.
-		const mergeMan = readMergeManifest(environment);
-		if (mergeMan && mergeMan.mode === 'deploy_full_pull' && mergeMan.remoteSnapshotAt && !hasOpenGitConflicts().open) {
-			writePullBaseline(environment, { lastPulledAt: mergeMan.remoteSnapshotAt });
-		}
-
 		const classification = classifyEnvironment(authData);
 		const git = getGitReadiness();
 		if (classification === 'production' && git.repoInitialized && process.stdin.isTTY && !process.env.CI) {
@@ -218,21 +214,20 @@ program
 				});
 				process.exit(1);
 			}
-			const conflicts = hasOpenGitConflicts();
-			if (conflicts.open) {
-				await offerMergeConflictAiHelp({
-					environment,
-					command: 'deploy',
-					warnMessage:
-						'[deploy] Merge left conflict markers in your working tree. Deploy was not started.'
-				});
-				logger.Warn(
-					'[deploy] When you are ready: resolve all conflicts, finish the merge commit, then re-run deploy yourself. Nothing will deploy until you do.',
-					{ exit: false }
-				);
-				process.exit(0);
+			const completed = await completeMergeFirstResolution({
+				environment,
+				result,
+				command: 'deploy',
+				commitMessage: 'siteglide: merge remote pull before deploy',
+				warnMessage:
+					`[deploy] Merge started. ${MERGE_CONFLICT_CLI_WAIT_HINT} Deploy continues after merge complete.`,
+				logPrefix: '[deploy]'
+			});
+			if (!completed.ok) {
+				logger.Error(`[deploy] Merge resolution failed: ${completed.error || 'unknown error'}`);
+				process.exit(1);
 			}
-			logger.Success('[deploy] Merge completed with no conflict markers. Continuing deploy…');
+			logger.Success('[deploy] Merge complete. Continuing deploy…');
 			decision = 'continue';
 		}
 

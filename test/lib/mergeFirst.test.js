@@ -6,6 +6,7 @@ const path = require('path');
 const { run } = require('../../lib/git/readiness');
 const { writePullBaseline, resolveLastPullCommit, resolveMergeBase, readPullBaseline } = require('../../lib/pullBaseline');
 const { mergeFirstDeploy } = require('../../lib/git/mergeFirst');
+const { finalizePullBaseline } = require('../../lib/git/finalizePullBaseline');
 const { hasOpenGitConflicts: hasConflicts } = require('../../lib/git/workingTree');
 
 function gitInit(cwd) {
@@ -110,6 +111,7 @@ describe('mergeFirst last-pull base', () => {
 		assert.equal(hasConflicts(cwd).open, false);
 		assert.equal(fs.readFileSync(path.join(cwd, 'a.txt'), 'utf8').replace(/\r\n/g, '\n'), 'remote\n');
 		assert.equal(fs.readFileSync(path.join(cwd, 'local-only.txt'), 'utf8').replace(/\r\n/g, '\n'), 'mine\n');
+		finalizePullBaseline({ environment: 'staging', cwd });
 		const baseline = readPullBaseline('staging', cwd);
 		assert.ok(baseline.lastPullCommit);
 		assert.notEqual(baseline.lastPullCommit, b);
