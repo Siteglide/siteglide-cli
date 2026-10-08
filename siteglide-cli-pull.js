@@ -49,6 +49,7 @@ const program = require('commander'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
 	{ maybeOfferGitSetupHint } = require('./lib/git/maybeGitSetupHint'),
 	{ ensureSiteglideGitignored } = require('./lib/git/siteglideGitignore'),
+	{ ensureAgentPathsGitignored } = require('./lib/git/agentGitignore'),
 	{ isWorkingTreeDirty } = require('./lib/git/workingTree'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
@@ -989,6 +990,13 @@ program
 
 						pullSpinner.stop();
 						await ensureMcpOnPull({ enabledSkillAgents });
+
+						const agentsTreePresent = await fs.pathExists(path.join(pullCwd, AGENTS_ROOT));
+						ensureAgentPathsGitignored({
+							cwd: pullCwd,
+							enabledSkillAgents,
+							includeAgentsRoot: agentsTreePresent
+						});
 					} else {
 						pullSpinner.stop();
 						logger.Debug('[pull] Merge-first sync mode: skipping MCP and .agents scaffolding');
