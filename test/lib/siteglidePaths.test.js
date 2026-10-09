@@ -73,6 +73,7 @@ describe('siteglidePaths', () => {
 		assert.equal(rel.mergeDir, '.siteglide/user/merge');
 		assert.equal(rel.mergeManifest('staging'), '.siteglide/user/merge/staging.json');
 		assert.equal(rel.pullModulesConfig, '.siteglide/project/modules.json');
+		assert.equal(rel.sourceOfTruthConfig, '.siteglide/project/sourceOfTruth.json');
 		assert.equal(rel.aboutMe, '.siteglide/user/about-me.json');
 		assert.equal(rel.aiAgentPreferences, '.siteglide/user/ai-agent-preferences.json');
 		assert.equal(rel.gitignoreUser, '.siteglide/user/');

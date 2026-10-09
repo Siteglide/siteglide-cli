@@ -42,6 +42,14 @@ const program = require('commander'),
 		isSkillAgentEnabled
 	} = require('./lib/aiAgentPreferences'),
 	{ ensureProjectPreferences } = require('./lib/projectPreferences'),
+	{
+		MODE_VERSION_CONTROL,
+		ensureSourceOfTruthConfig,
+		readSourceOfTruthMode,
+		resolveSkipRemoteCheck,
+		promptVersionControlPullConfirm,
+		assertVersionControlPullEnvironment
+	} = require('./lib/sourceOfTruth'),
 	{ promptTargetAudienceIfNeeded } = require('./lib/targetAudience'),
 	{ selectChoice, inputText, confirmYesNo } = require('./lib/prompts'),
 	{ recordPullBaselineAfterPull } = require('./lib/recordPullBaseline'),
@@ -740,7 +748,7 @@ program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. AI skills come only from module_984 assets (public/assets/agents/) into ./.agents (read-only; never ./modules/module_984/). Requires asset download — do not use --ignore-assets if you want skills. When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/project/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones. Use -s / --skip-remote-check for legacy pull (simple confirm; no commit or merge guiderails).')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. AI skills come only from module_984 assets (public/assets/agents/) into ./.agents (read-only; never ./modules/module_984/). Requires asset download — do not use --ignore-assets if you want skills. When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/project/modules.json (pull_behaviour.include/exclude). Team workflow: .siteglide/project/sourceOfTruth.json (site vs versionControl). Use -m to pull one module including ignored ones. Use -s / --skip-remote-check for legacy pull (simple confirm; no commit or merge guiderails).')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
@@ -807,7 +815,7 @@ program
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
 		const assumeYes = process.env.SITEGLIDE_PULL_ASSUME_YES === '1';
-		const skipRemoteCheck = Boolean(params.skipRemoteCheck);
+		let skipRemoteCheck = Boolean(params.skipRemoteCheck);
 		const mergeFirstSync = params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1';
 
 		const runMergeFirstPull = async (wipMessage) => {
@@ -981,6 +989,10 @@ program
 					}
 
 					pullSpinner.text = 'Fetching installed modules';
+					const { created: sourceOfTruthCreated } = await ensureSourceOfTruthConfig(process.cwd());
+					if (sourceOfTruthCreated) {
+						logger.Info('[pull] Created ./.siteglide/project/sourceOfTruth.json — set sourceOfTruth to site or versionControl for your team workflow.');
+					}
 					const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
 					if (pullModulesConfigCreated) {
 						logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} allowing you to configure which modules should be skipped on future pulls. If you use GitHub, we recommend this file should not be gitignored.`);
@@ -1098,17 +1110,54 @@ program
 				}
 		};
 
-		if (assumeYes) {
-			tempPullLog('route', { name: 'assume_yes_direct_startPull' });
-			return startPull();
-		}
+		return (async () => {
+			const { created: sourceOfTruthCreatedEarly } = await ensureSourceOfTruthConfig(process.cwd());
+			if (sourceOfTruthCreatedEarly) {
+				logger.Info('[pull] Created ./.siteglide/project/sourceOfTruth.json — set sourceOfTruth to site or versionControl for your team workflow.');
+			}
+			const sourceOfTruthMode = await readSourceOfTruthMode(process.cwd());
+			skipRemoteCheck = resolveSkipRemoteCheck({
+				cliFlag: Boolean(params.skipRemoteCheck),
+				mode: sourceOfTruthMode
+			});
+			tempPullLog('sourceOfTruth', {
+				mode: sourceOfTruthMode,
+				skipRemoteCheck,
+				cliSkipRemoteCheck: Boolean(params.skipRemoteCheck)
+			});
 
-		if (skipRemoteCheck) {
-			return (async () => {
+			const vcEnv = assertVersionControlPullEnvironment(sourceOfTruthMode);
+			if (!vcEnv.allowed) {
+				logger.Error(vcEnv.message);
+				process.exit(1);
+			}
+
+			if (
+				sourceOfTruthMode === MODE_VERSION_CONTROL
+				&& !assumeYes
+				&& process.stdin.isTTY
+				&& !process.env.CI
+			) {
+				const vcConfirm = await promptVersionControlPullConfirm();
+				tempPullLog('version_control_pull:confirm', { confirmed: Boolean(vcConfirm) });
+				if (!vcConfirm) {
+					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+					return;
+				}
+			}
+
+			if (assumeYes) {
+				tempPullLog('route', { name: 'assume_yes_direct_startPull' });
+				await startPull();
+				return;
+			}
+
+			if (skipRemoteCheck) {
 				tempPullLog('route', { name: 'skip_remote_check' });
 				if (!process.stdin.isTTY || process.env.CI) {
 					tempPullLog('skip_remote_check:ci_or_non_tty', {});
-					return startPull();
+					await startPull();
+					return;
 				}
 				const response = await confirmYesNo(
 					'Are you sure you would like to pull? This will overwrite your local files immediately!'
@@ -1119,10 +1168,9 @@ program
 				} else {
 					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 				}
-			})();
-		}
+				return;
+			}
 
-		return (async () => {
 			const git = getGitReadiness();
 			const dirty = git.repoInitialized ? isWorkingTreeDirty() : false;
 			const openConflicts = git.repoInitialized ? hasOpenGitConflicts() : { open: false };

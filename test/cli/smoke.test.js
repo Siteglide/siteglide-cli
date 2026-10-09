@@ -9,6 +9,7 @@ const ROUTER_HELP_COMMANDS = [
 	['siteglide-cli.js', ['pull', '--help'], /Usage: siteglide-cli pull/],
 	['siteglide-cli.js', ['deploy', '--help'], /Usage: siteglide-cli deploy/],
 	['siteglide-cli.js', ['init', '--help'], /Usage: siteglide-cli init/],
+	['siteglide-cli.js', ['ai', '--help'], /Usage: siteglide-cli ai/],
 	['siteglide-cli.js', ['check', '--help'], /Usage: siteglide-cli check/],
 	['siteglide-cli.js', ['gui', '--help'], /Usage: siteglide-cli gui/],
 	['siteglide-cli.js', ['logs', '--help'], /Usage: siteglide-cli logs/],
@@ -23,6 +24,7 @@ const BIN_HELP = [
 	['siteglide-cli-pull.js', /Usage: siteglide-cli pull/],
 	['siteglide-cli-deploy.js', /Usage: siteglide-cli deploy/],
 	['siteglide-cli-init.js', /Usage: siteglide-cli init/],
+	['siteglide-cli-ai.js', /Usage: siteglide-cli ai/],
 	['siteglide-cli-check.js', /Usage: siteglide-cli check/],
 	['siteglide-cli-gui.js', /Usage: siteglide-cli gui/],
 	['siteglide-cli-logs.js', /Usage: siteglide-cli logs/],
@@ -44,6 +46,12 @@ test('router help lists mcp command', () => {
 	const result = runCli('siteglide-cli.js', ['--help']);
 	expect(result.code).toEqual(0);
 	expect(result.output).toMatch(/mcp/);
+});
+
+test('router help lists ai command', () => {
+	const result = runCli('siteglide-cli.js', ['--help']);
+	expect(result.code).toEqual(0);
+	expect(result.output).toMatch(/\bai\b/);
 });
 
 describe.each(ROUTER_HELP_COMMANDS)('router help: %s %j', (entry, args, pattern) => {

@@ -68,6 +68,7 @@
 	"bin": {
 		"siteglide-cli": "./siteglide-cli.js",
 		"siteglide-cli-add": "./siteglide-cli-add.js",
+		"siteglide-cli-ai": "./siteglide-cli-ai.js",
 		"siteglide-cli-archive": "./siteglide-cli-archive.js",
 		"siteglide-cli-check": "./siteglide-cli-check.js",
 		"siteglide-cli-deploy": "./siteglide-cli-deploy.js",

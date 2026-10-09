@@ -182,9 +182,23 @@ program
 			}
 		}
 
+		const { readSourceOfTruthMode, resolveSkipRemoteCheck, MODE_VERSION_CONTROL } = require('./lib/sourceOfTruth');
+		const sourceOfTruthMode = await readSourceOfTruthMode(process.cwd());
+		const skipRemoteCheck = resolveSkipRemoteCheck({
+			cliFlag: Boolean(params.skipRemoteCheck),
+			mode: sourceOfTruthMode
+		});
+		if (
+			sourceOfTruthMode === MODE_VERSION_CONTROL
+			&& skipRemoteCheck
+			&& !params.skipRemoteCheck
+		) {
+			logger.Info('[deploy] sourceOfTruth is versionControl — remote conflict checks are skipped (same as -s / --skip-remote-check).');
+		}
+
 		const gateway = new Gateway(authData);
 		let pre = { ok: true, conflicts: [] };
-		if (!params.skipRemoteCheck) {
+		if (!skipRemoteCheck) {
 			pre = await collectDeployPreConflicts(gateway, environment);
 		}
 
@@ -192,7 +206,7 @@ program
 			environment,
 			url: authData.url,
 			preCheck: pre,
-			skipRemoteCheck: Boolean(params.skipRemoteCheck)
+			skipRemoteCheck
 		});
 
 		if (decision === 'merge_first') {

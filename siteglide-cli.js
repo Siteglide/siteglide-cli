@@ -18,6 +18,7 @@ program
 	.command('gui [environment]', 'gui for Admin, Logs, GraphiQL and Liquid Evaluator')
 	.command('logs [environment]', 'stream debugging logs from your website')
 	.command('init', 'create default folder structure for Siteglide Admin')
+	.command('ai', 'Set up Siteglide MCP and project source-of-truth (no pull)')
 	.command('check [path]', 'check Liquid code quality with platformos-check linter')
 	.command('deploy [environment]', 'upload all code to your site')
 	.command('export [environment]', 'export the code, assets and data from your site')

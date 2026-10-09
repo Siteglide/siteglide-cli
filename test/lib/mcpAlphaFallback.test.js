@@ -38,7 +38,8 @@ const logger = require('../../lib/logger');
 const {
 	DEFAULT_PACKAGE,
 	MCP_UPDATE_DECLINED_KEY,
-	ensureMcpOnPull
+	ensureMcpOnPull,
+	ensureMcpSetup
 } = require('../../lib/mcpAlpha');
 
 const npmListStdout = (version) => JSON.stringify({
@@ -75,6 +76,32 @@ beforeEach(() => {
 
 afterEach(() => {
 	jest.restoreAllMocks();
+});
+
+test('ensureMcpSetup uses logPrefix in log messages', async () => {
+	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-mcp-logprefix-'));
+
+	try {
+		mockFetch.mockResolvedValue({
+			status: 404,
+			ok: false
+		});
+		mockGlobalMcpVersion(null);
+
+		await ensureMcpSetup({
+			rootPath,
+			interactive: true,
+			logPrefix: '[ai]'
+		});
+
+		expect(logger.Warn).toHaveBeenCalledWith(
+			'[ai] AI: siteglide-mcp is unavailable — IDE registration skipped',
+			{ exit: false }
+		);
+	} finally {
+		await removeMcpIdeArtifacts(rootPath);
+		await fs.remove(rootPath);
+	}
 });
 
 test('ensureMcpOnPull warns when npm has no published package and MCP is not installed globally', async () => {

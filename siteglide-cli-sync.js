@@ -17,15 +17,28 @@ program
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-l, --livereload', 'Turns on a livereload server')
 	.option('-s, --skip-remote-check', 'Skip remote mtime checks before each upload')
-	.action((environment, params) => {
+	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
+		const { readSourceOfTruthMode, resolveSkipRemoteCheck, MODE_VERSION_CONTROL } = require('./lib/sourceOfTruth');
+		const sourceOfTruthMode = await readSourceOfTruthMode(process.cwd());
+		const skipRemoteCheck = resolveSkipRemoteCheck({
+			cliFlag: Boolean(params.skipRemoteCheck),
+			mode: sourceOfTruthMode
+		});
+		if (
+			sourceOfTruthMode === MODE_VERSION_CONTROL
+			&& skipRemoteCheck
+			&& !params.skipRemoteCheck
+		) {
+			logger.Info('[sync] sourceOfTruth is versionControl — remote conflict checks are skipped (same as -s / --skip-remote-check).');
+		}
 		const { buildSyncWatchEnv } = require('./lib/syncWatchEnv');
 		const env = buildSyncWatchEnv({
 			processEnv: process.env,
 			authData,
 			environment,
-			skipRemoteCheck: Boolean(params.skipRemoteCheck)
+			skipRemoteCheck
 		});
 		const options = [];
 		if(params.livereload){
