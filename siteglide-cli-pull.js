@@ -58,7 +58,12 @@ const program = require('commander'),
 	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
 	{ CANCEL_SKIP_REMOTE_HINT } = require('./lib/remoteConflictPrompt'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
-	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull');
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	{
+		tempPullLog,
+		tempPullGitSnapshot,
+		ensureTempPullTraceSession
+	} = require('./lib/git/tempPullTrace');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 logger.registerSpinner(pullSpinner);
@@ -763,7 +768,30 @@ program
 	.action((environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 
+		if (!process.env.SITEGLIDE_NESTED_CLI) {
+			ensureTempPullTraceSession();
+		}
+
 		const lock = claimCommandLock('pull', { environment });
+		tempPullLog('action_start', {
+			environment: environment || '',
+			configFile: params.configFile,
+			skipRemoteCheck: Boolean(params.skipRemoteCheck),
+			mergeFirstSync: Boolean(params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1'),
+			assumeYes: process.env.SITEGLIDE_PULL_ASSUME_YES === '1',
+			moduleFilter: params.module || '',
+			ignoreAssets: Boolean(params.ignoreAssets),
+			nestedCli: process.env.SITEGLIDE_NESTED_CLI || '',
+			skipCommitBaseline: process.env.SITEGLIDE_PULL_SKIP_COMMIT_BASELINE || '',
+			cwd: process.cwd(),
+			pid: process.pid
+		});
+		tempPullGitSnapshot(process.cwd(), 'action_start', { environment: environment || '' });
+		tempPullLog('command_lock', {
+			ok: lock.ok,
+			nested: lock.nested,
+			headline: lock.headline || lock.message || ''
+		});
 		if (!lock.ok) {
 			logCommandLockRefusal(lock);
 		}
@@ -783,6 +811,11 @@ program
 		const mergeFirstSync = params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1';
 
 		const runMergeFirstPull = async (wipMessage) => {
+			tempPullLog('runMergeFirstPull:start', {
+				environment,
+				wipMessageLen: wipMessage ? wipMessage.length : 0
+			});
+			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_start', { environment });
 			logger.Info('[pull] Pull and merge: committing local work if needed, pulling on a temporary branch, then merging back.');
 			const result = await mergeFirstPull({
 				environment,
@@ -798,7 +831,23 @@ program
 					});
 				}
 			});
+			tempPullLog('runMergeFirstPull:mergeFirst_result', {
+				ok: result.ok,
+				error: result.error || '',
+				phase: result.recoveryContext && result.recoveryContext.phase ? result.recoveryContext.phase : '',
+				conflictExpected: result.conflictExpected,
+				tempBranch: result.tempBranch || '',
+				originalBranch: result.originalBranch || ''
+			});
+			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_after_mergeFirst', {
+				environment,
+				tempBranch: result.tempBranch || ''
+			});
 			if (!result.ok) {
+				tempPullLog('hypothesis_confirm', {
+					id: 'H1',
+					expect: 'failed merge-first may leave dirty tree or temp branch; next pull often routes dirty_skip_outer_prompt'
+				});
 				logger.Error(`[pull] Merge failed: ${result.error}`);
 				await offerMergeFirstFailureHelp(result, {
 					environment,
@@ -806,6 +855,9 @@ program
 				});
 				process.exit(1);
 			}
+			tempPullLog('completeMergeFirstResolution:start', {
+				conflictExpected: result.conflictExpected
+			});
 			const completed = await completeMergeFirstResolution({
 				environment,
 				result,
@@ -815,6 +867,12 @@ program
 					`[pull] Merge started. ${MERGE_CONFLICT_CLI_WAIT_HINT}`,
 				logPrefix: '[pull]'
 			});
+			tempPullLog('completeMergeFirstResolution:done', {
+				ok: completed.ok,
+				error: completed.error || '',
+				aborted: completed.aborted
+			});
+			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_complete', { environment });
 			if (!completed.ok) {
 				logger.Error(`[pull] Merge resolution failed: ${completed.error || 'unknown error'}`);
 				process.exit(1);
@@ -834,6 +892,17 @@ program
 		const startPull = async function () {
 			const pullCwd = process.cwd();
 			const mcpBeforePull = hasProjectMcpConfig(pullCwd);
+			const nestedRole = (
+				process.env.SITEGLIDE_PULL_ASSUME_YES === '1'
+				|| process.env.SITEGLIDE_NESTED_CLI === '1'
+			);
+			tempPullLog('startPull:entry', {
+				role: nestedRole ? 'nested_pull' : 'outer_pull',
+				mergeFirstSync,
+				skipRemoteCheck,
+				cwd: pullCwd
+			});
+			tempPullGitSnapshot(pullCwd, 'startPull_entry', { environment });
 			try {
 				if (!mergeFirstSync) {
 					const audienceResult = await promptTargetAudienceIfNeeded(pullCwd);
@@ -859,7 +928,9 @@ program
 						await ensureSiteglideGitignored();
 					}
 					if (!mergeFirstSync && !skipRemoteCheck && isWorkingTreeDirty()) {
+						tempPullLog('route', { name: 'dirty_inner_merge_prompt' });
 						if (!process.stdin.isTTY || process.env.CI) {
+							tempPullLog('dirty_inner_merge_prompt:non_interactive_exit', {});
 							logger.Error('[pull] Working tree is dirty. Commit your work, then pull again (non-interactive).');
 							process.exit(1);
 						}
@@ -879,6 +950,7 @@ program
 								description: CANCEL_SKIP_REMOTE_HINT
 							}
 						]);
+						tempPullLog('dirty_inner_merge_prompt:choice', { choice: ans || 'cancel' });
 						if (!ans || ans === 'cancel') {
 							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
 							process.exit(1);
@@ -891,7 +963,9 @@ program
 							process.exit(1);
 						}
 						const wipMessage = msg.trim() || defaultBeforeMsg;
+						tempPullLog('dirty_inner_merge_prompt:run_merge_first', { wipMessageLen: wipMessage.length });
 						await runMergeFirstPull(wipMessage);
+						return;
 					}
 				}
 
@@ -1025,17 +1099,21 @@ program
 		};
 
 		if (assumeYes) {
+			tempPullLog('route', { name: 'assume_yes_direct_startPull' });
 			return startPull();
 		}
 
 		if (skipRemoteCheck) {
 			return (async () => {
+				tempPullLog('route', { name: 'skip_remote_check' });
 				if (!process.stdin.isTTY || process.env.CI) {
+					tempPullLog('skip_remote_check:ci_or_non_tty', {});
 					return startPull();
 				}
 				const response = await confirmYesNo(
 					'Are you sure you would like to pull? This will overwrite your local files immediately!'
 				);
+				tempPullLog('skip_remote_check:confirm', { confirmed: Boolean(response) });
 				if (response) {
 					await startPull();
 				} else {
@@ -1046,18 +1124,44 @@ program
 
 		return (async () => {
 			const git = getGitReadiness();
+			const dirty = git.repoInitialized ? isWorkingTreeDirty() : false;
+			const openConflicts = git.repoInitialized ? hasOpenGitConflicts() : { open: false };
+			tempPullLog('outer_route:git_readiness', {
+				repoInitialized: git.repoInitialized,
+				dirty,
+				conflictsOpen: openConflicts.open,
+				conflictsReason: openConflicts.reason || '',
+				remotes: (git.remotes || []).join(',')
+			});
+			if (openConflicts.open) {
+				tempPullLog('hypothesis_confirm', {
+					id: 'H1',
+					expect: 'startPull will refuse pull until merge/conflicts resolved; user may retry and see different prompt after partial fix'
+				});
+			}
 
 			if (!git.repoInitialized) {
+				tempPullLog('route', { name: 'no_git_confirm' });
 				await maybeOfferGitSetupHint({ git });
 			}
 
 			if (git.repoInitialized && isWorkingTreeDirty()) {
+				tempPullLog('route', { name: 'dirty_skip_outer_prompt' });
+				tempPullLog('hypothesis_confirm', {
+					id: 'H1',
+					expect: 'second Pull and merge prompt inside startPull (dirty_inner_merge_prompt), not the outer clean-tree prompt'
+				});
 				await startPull();
 				return;
 			}
 
 			if (git.repoInitialized) {
+				tempPullLog('route', { name: 'clean_committed_merge_prompt' });
 				const baseline = readPullBaseline(environment);
+				tempPullLog('pull_baseline_read', {
+					hasBaseline: Boolean(baseline),
+					lastPullCommit: baseline && baseline.lastPullCommit ? baseline.lastPullCommit.slice(0, 12) : ''
+				});
 				if (!baseline || !baseline.lastPullCommit) {
 					logger.Info(
 						'[pull] No pull baseline yet for this environment — Pull and merge seeds lastPullCommit for merge-first sync/deploy checks.'
@@ -1079,6 +1183,7 @@ program
 						}
 					]
 				);
+				tempPullLog('clean_committed_merge_prompt:choice', { choice: answer || 'cancel' });
 				if (!answer || answer === 'cancel') {
 					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
 					return;
@@ -1087,9 +1192,11 @@ program
 				return;
 			}
 
+			tempPullLog('route', { name: 'no_git_overwrite_confirm' });
 			const response = await confirmYesNo(
 				'Are you sure you would like to pull? This will overwrite your local files immediately!'
 			);
+			tempPullLog('no_git_overwrite_confirm:choice', { confirmed: Boolean(response) });
 			if (response) {
 				await startPull();
 			} else {

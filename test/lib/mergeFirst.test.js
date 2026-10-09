@@ -117,6 +117,25 @@ describe('mergeFirst last-pull base', () => {
 		assert.notEqual(baseline.lastPullCommit, b);
 	});
 
+	it('merge-first succeeds on empty repo (git init, no commits) with untracked pull tree', async () => {
+		fs.writeFileSync(path.join(cwd, 'README.md'), 'from first pull\n');
+		const result = await mergeFirstDeploy({
+			environment: 'staging',
+			cwd,
+			mode: 'pull_full',
+			pullFn: async () => {
+				fs.writeFileSync(path.join(cwd, 'README.md'), 'from second pull\n');
+			}
+		});
+		assert.equal(result.ok, true);
+		assert.equal(result.merged, true);
+		assert.equal(hasConflicts(cwd).open, false);
+		assert.equal(
+			fs.readFileSync(path.join(cwd, 'README.md'), 'utf8').replace(/\r\n/g, '\n'),
+			'from second pull\n'
+		);
+	});
+
 	it('uses initial commit as base when no lastPullCommit and both sides diverge', async () => {
 		fs.writeFileSync(path.join(cwd, 'a.txt'), 'base\n');
 		commitAll(cwd, 'initial');
