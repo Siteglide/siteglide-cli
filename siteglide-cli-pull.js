@@ -825,6 +825,10 @@ program
 			});
 			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_start', { environment });
 			logger.Info('[pull] Pull and merge: committing local work if needed, pulling on a temporary branch, then merging back.');
+			const gitReady = getGitReadiness();
+			if (gitReady.repoInitialized) {
+				await ensureSiteglideGitignored();
+			}
 			const result = await mergeFirstPull({
 				environment,
 				wipMessage,
@@ -835,7 +839,8 @@ program
 						ignoreAssets: params.ignoreAssets,
 						module: params.module,
 						concurrency: params.concurrency,
-						skipCommitBaseline: true
+						skipCommitBaseline: true,
+						mergeFirstSync: true
 					});
 				}
 			});
@@ -935,7 +940,12 @@ program
 					if (!mergeFirstSync) {
 						await ensureSiteglideGitignored();
 					}
-					if (!mergeFirstSync && !skipRemoteCheck && isWorkingTreeDirty()) {
+					if (
+						!mergeFirstSync
+						&& !skipRemoteCheck
+						&& process.env.SITEGLIDE_NESTED_CLI !== '1'
+						&& isWorkingTreeDirty()
+					) {
 						tempPullLog('route', { name: 'dirty_inner_merge_prompt' });
 						if (!process.stdin.isTTY || process.env.CI) {
 							tempPullLog('dirty_inner_merge_prompt:non_interactive_exit', {});

@@ -216,7 +216,9 @@ program
 				pullFn: async () => {
 					await spawnNestedPull({
 						environment,
-						configFile: params.configFile
+						configFile: params.configFile,
+						skipCommitBaseline: true,
+						mergeFirstSync: true
 					});
 				}
 			});

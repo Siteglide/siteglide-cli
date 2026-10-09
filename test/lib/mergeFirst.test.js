@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const { run } = require('../../lib/git/readiness');
 const { writePullBaseline, resolveLastPullCommit, resolveMergeBase, readPullBaseline } = require('../../lib/pullBaseline');
-const { mergeFirstDeploy } = require('../../lib/git/mergeFirst');
+const { mergeFirstDeploy, checkoutTempBranchForRemote } = require('../../lib/git/mergeFirst');
 const { finalizePullBaseline } = require('../../lib/git/finalizePullBaseline');
 const { hasOpenGitConflicts: hasConflicts } = require('../../lib/git/workingTree');
 
@@ -115,6 +115,23 @@ describe('mergeFirst last-pull base', () => {
 		const baseline = readPullBaseline('staging', cwd);
 		assert.ok(baseline.lastPullCommit);
 		assert.notEqual(baseline.lastPullCommit, b);
+	});
+
+	it('checkoutTempBranchForRemote uses checkout -B when already on the temp branch', async () => {
+		fs.writeFileSync(path.join(cwd, 'a.txt'), 'base\n');
+		const initial = commitAll(cwd, 'initial');
+		const branch = 'temp-pull-from-staging-2099-01-01-0000';
+		const onTemp = run('git', ['checkout', '-b', branch, initial], { cwd });
+		assert.equal(onTemp.ok, true, onTemp.stderr);
+		fs.writeFileSync(path.join(cwd, 'extra.txt'), 'wip\n');
+		commitAll(cwd, 'wip on temp');
+
+		const again = await checkoutTempBranchForRemote(branch, initial, cwd, 'initial_commit', {
+			environment: 'staging'
+		});
+		assert.equal(again.ok, true, again.error);
+		assert.equal(run('git', ['rev-parse', 'HEAD'], { cwd }).stdout, initial);
+		assert.equal(run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout, branch);
 	});
 
 	it('merge-first succeeds on empty repo (git init, no commits) with untracked pull tree', async () => {
