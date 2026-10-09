@@ -397,14 +397,17 @@ describe('projectPreferences', () => {
 		readProjectPreferences,
 		projectPreferencesPath
 	} = require('../../lib/projectPreferences');
+	let parentDir;
 	let cwd;
 
 	beforeEach(() => {
-		cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-prefs-'));
+		parentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-prefs-'));
+		cwd = path.join(parentDir, 'project');
+		fs.mkdirSync(cwd, { recursive: true });
 	});
 
 	afterEach(() => {
-		fs.rmSync(cwd, { recursive: true, force: true });
+		fs.rmSync(parentDir, { recursive: true, force: true });
 	});
 
 	it('creates null defaults and does not clobber filled values', () => {
@@ -425,7 +428,7 @@ describe('projectPreferences', () => {
 		ensureProjectPreferences(cwd);
 		const second = readProjectPreferences(cwd);
 		assert.equal(second.target_audience.role, 'designer');
-		assert.equal(second.target_audience.git, 'beginner');
+		assert.equal(second.target_audience.git, 'extra help');
 		assert.equal(second.target_audience.siteglideCli, null);
 	});
 });

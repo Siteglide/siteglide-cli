@@ -11,14 +11,17 @@ const {
 const { promptTargetAudienceIfNeeded } = require('../../lib/targetAudience');
 
 describe('target audience preferences', () => {
+	let parentDir;
 	let cwd;
 
 	beforeEach(() => {
-		cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-audience-'));
+		parentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-audience-'));
+		cwd = path.join(parentDir, 'project');
+		fs.mkdirSync(cwd, { recursive: true });
 	});
 
 	afterEach(() => {
-		fs.rmSync(cwd, { recursive: true, force: true });
+		fs.rmSync(parentDir, { recursive: true, force: true });
 	});
 
 	test('missingAudienceFields lists only null keys', () => {
@@ -33,8 +36,8 @@ describe('target audience preferences', () => {
 		writeProjectPreferences(cwd, { siteglideCli: 'advanced' });
 		expect(readProjectPreferences(cwd).target_audience).toEqual({
 			role: 'designer',
-			git: 'beginner',
-			siteglideCli: 'advanced'
+			git: 'extra help',
+			siteglideCli: 'familiar'
 		});
 	});
 
@@ -70,8 +73,8 @@ describe('target audience preferences', () => {
 			expect(result.cancelled).toEqual(false);
 			expect(result.audience).toEqual({
 				role: 'developer',
-				git: 'advanced',
-				siteglideCli: 'advanced'
+				git: 'familiar',
+				siteglideCli: 'familiar'
 			});
 		} finally {
 			process.stdin.isTTY = originalIsTTY;

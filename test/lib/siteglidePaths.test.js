@@ -6,20 +6,26 @@ const path = require('path');
 const {
 	joinUser,
 	joinProject,
+	joinAboutMe,
+	legacyAboutMePath,
+	migrateAboutMeToParent,
 	migrateLegacySiteglideLayout,
 	rel,
 	SITEGLIDE_USER_IGNORE_ENTRY
 } = require('../../lib/siteglidePaths');
 
 describe('siteglidePaths', () => {
+	let parentDir;
 	let cwd;
 
 	beforeEach(() => {
-		cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-paths-'));
+		parentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-paths-'));
+		cwd = path.join(parentDir, 'project');
+		fs.mkdirSync(cwd, { recursive: true });
 	});
 
 	afterEach(() => {
-		fs.rmSync(cwd, { recursive: true, force: true });
+		fs.rmSync(parentDir, { recursive: true, force: true });
 	});
 
 	it('joinProject keeps modules config under project/', () => {
@@ -74,7 +80,7 @@ describe('siteglidePaths', () => {
 		assert.equal(rel.mergeManifest('staging'), '.siteglide/user/merge/staging.json');
 		assert.equal(rel.pullModulesConfig, '.siteglide/project/modules.json');
 		assert.equal(rel.sourceOfTruthConfig, '.siteglide/project/sourceOfTruth.json');
-		assert.equal(rel.aboutMe, '.siteglide/user/about-me.json');
+		assert.equal(rel.aboutMe, '../.siteglide/user/about-me.json');
 		assert.equal(rel.aiAgentPreferences, '.siteglide/user/ai-agent-preferences.json');
 		assert.equal(rel.gitignoreUser, '.siteglide/user/');
 		assert.equal(rel.gitignoreSecrets, '.siteglide-config');
@@ -82,5 +88,29 @@ describe('siteglidePaths', () => {
 
 	it('SITEGLIDE_USER_IGNORE_ENTRY is the documented gitignore path', () => {
 		assert.equal(SITEGLIDE_USER_IGNORE_ENTRY, '.siteglide/user/');
+	});
+
+	it('joinAboutMe resolves to parent .siteglide/user/about-me.json', () => {
+		assert.equal(
+			joinAboutMe(cwd),
+			path.join(parentDir, '.siteglide', 'user', 'about-me.json')
+		);
+	});
+
+	it('migrateAboutMeToParent moves legacy project about-me.json to the parent folder', () => {
+		const legacyPath = legacyAboutMePath(cwd);
+		fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+		fs.writeFileSync(
+			legacyPath,
+			`${JSON.stringify({ target_audience: { role: 'developer', git: 'advanced', siteglideCli: null } }, null, 2)}\n`,
+			'utf8'
+		);
+
+		migrateAboutMeToParent(cwd);
+
+		const parentPath = path.join(parentDir, '.siteglide', 'user', 'about-me.json');
+		assert.equal(fs.existsSync(legacyPath), false);
+		assert.equal(fs.existsSync(parentPath), true);
+		assert.equal(JSON.parse(fs.readFileSync(parentPath, 'utf8')).target_audience.role, 'developer');
 	});
 });
