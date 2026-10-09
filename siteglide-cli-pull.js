@@ -41,7 +41,7 @@ const program = require('commander'),
 		promptAiAgentPreferencesIfNeeded,
 		isSkillAgentEnabled
 	} = require('./lib/aiAgentPreferences'),
-	{ ensureProjectPreferences } = require('./lib/projectPreferences'),
+	{ ensureSharedUserPreferencesAfterPull } = require('./lib/sharedUserPreferences'),
 	{
 		MODE_VERSION_CONTROL,
 		ensureSourceOfTruthConfig,
@@ -890,6 +890,7 @@ program
 				logger.Error(`[pull] Merge resolution failed: ${completed.error || 'unknown error'}`);
 				process.exit(1);
 			}
+			await ensureSharedUserPreferencesAfterPull(process.cwd());
 			logger.Success('[pull] Pull baseline updated. Merge complete.');
 			process.exit(0);
 		};
@@ -1009,7 +1010,7 @@ program
 					}
 					const { created: aiAgentPreferencesCreated, enabledSkillAgents } = await prepareAiAgentPreferences(process.cwd());
 					if (aiAgentPreferencesCreated) {
-						logger.Info(`[pull] Created ./${AI_AGENT_PREFERENCES_RELATIVE_PATH} allowing you to configure which AI agent skill folders and MCP configs pull creates. This one is personal to your machine, so it does not need to be shared with the team.`);
+						logger.Info(`[pull] Created ${AI_AGENT_PREFERENCES_RELATIVE_PATH} allowing you to configure which AI agent skill folders and MCP configs pull creates. This one is personal to your machine, so it does not need to be shared with the team.`);
 					}
 					const modulesResponse = await gateway.listModules();
 					const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
@@ -1105,10 +1106,7 @@ program
 					}
 
 					recordPullBaseline();
-					if (!mergeFirstSync) {
-						const prefsPath = ensureProjectPreferences(process.cwd());
-						logger.Debug(`[pull] About-me preferences at ${prefsPath.replace(/\\/g, '/')}`);
-					}
+					await ensureSharedUserPreferencesAfterPull(pullCwd);
 
 					logger.Info('[pull] All steps finished');
 					pullSpinner.succeed('Pulled files');

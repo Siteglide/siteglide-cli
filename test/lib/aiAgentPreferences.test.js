@@ -12,8 +12,19 @@ const {
 	resolveEnabledSkillAgents
 } = require('../../lib/aiAgentPreferences');
 
-test('preferences live under .siteglide/user so they stay local to the developer', () => {
-	expect(AI_AGENT_PREFERENCES_RELATIVE_PATH).toEqual(path.join('.siteglide', 'user', 'ai-agent-preferences.json'));
+const parentPreferencesPath = (parentDir) => {
+	return path.join(parentDir, '.siteglide', 'user', 'ai-agent-preferences.json');
+};
+
+const makeProjectRoot = async () => {
+	const parentDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-ai-prefs-'));
+	const rootPath = path.join(parentDir, 'project');
+	await fs.mkdir(rootPath);
+	return { parentDir, rootPath };
+};
+
+test('preferences live above the project root so they stay local to the developer', () => {
+	expect(AI_AGENT_PREFERENCES_RELATIVE_PATH).toEqual('../.siteglide/user/ai-agent-preferences.json');
 });
 
 test('resolveEnabledSkillAgents keeps include and drops exclude', () => {
@@ -54,8 +65,8 @@ test('SKILL_AGENT_ROOTS maps known agents and defaults include VSCode for MCP', 
 });
 
 test('ensureAiAgentPreferences creates the file when missing and does not overwrite', async () => {
-	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-ai-prefs-'));
-	const configPath = path.join(rootPath, AI_AGENT_PREFERENCES_RELATIVE_PATH);
+	const { parentDir, rootPath } = await makeProjectRoot();
+	const configPath = parentPreferencesPath(parentDir);
 
 	try {
 		const first = await ensureAiAgentPreferences(rootPath);
@@ -77,7 +88,7 @@ test('ensureAiAgentPreferences creates the file when missing and does not overwr
 			}
 		});
 	} finally {
-		await fs.remove(rootPath);
+		await fs.remove(parentDir);
 	}
 });
 
@@ -90,8 +101,8 @@ test('needsAiAgentPreferencePrompt is true only when exclude is empty', () => {
 });
 
 test('writeAiAgentPreferences updates include and exclude while preserving usage', async () => {
-	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-ai-prefs-write-'));
-	const configPath = path.join(rootPath, AI_AGENT_PREFERENCES_RELATIVE_PATH);
+	const { parentDir, rootPath } = await makeProjectRoot();
+	const configPath = parentPreferencesPath(parentDir);
 
 	try {
 		await ensureAiAgentPreferences(rootPath);
@@ -106,12 +117,12 @@ test('writeAiAgentPreferences updates include and exclude while preserving usage
 			'By default, pull will create folders in your project to support skills and MCP for multiple AI agents. You can move agents from include to exclude to stop those folders (and that agent\'s mcp.json) being created. The MCP package can still be installed globally.'
 		);
 	} finally {
-		await fs.remove(rootPath);
+		await fs.remove(parentDir);
 	}
 });
 
 test('prepareAiAgentPreferences enables every default agent on a first pull', async () => {
-	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-ai-prefs-first-'));
+	const { parentDir, rootPath } = await makeProjectRoot();
 
 	try {
 		const prepared = await prepareAiAgentPreferences(rootPath);
@@ -120,13 +131,13 @@ test('prepareAiAgentPreferences enables every default agent on a first pull', as
 			enabledSkillAgents: DEFAULT_SKILL_AGENTS
 		});
 	} finally {
-		await fs.remove(rootPath);
+		await fs.remove(parentDir);
 	}
 });
 
 test('prepareAiAgentPreferences applies include and exclude from an existing file', async () => {
-	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-ai-prefs-prep-'));
-	const configPath = path.join(rootPath, AI_AGENT_PREFERENCES_RELATIVE_PATH);
+	const { parentDir, rootPath } = await makeProjectRoot();
+	const configPath = parentPreferencesPath(parentDir);
 
 	try {
 		await fs.ensureDir(path.dirname(configPath));
@@ -143,6 +154,27 @@ test('prepareAiAgentPreferences applies include and exclude from an existing fil
 			enabledSkillAgents: ['Cursor', 'Windsurf']
 		});
 	} finally {
-		await fs.remove(rootPath);
+		await fs.remove(parentDir);
+	}
+});
+
+test('migrates legacy project-level ai-agent-preferences.json on read', async () => {
+	const { parentDir, rootPath } = await makeProjectRoot();
+	const legacyPath = path.join(rootPath, '.siteglide', 'user', 'ai-agent-preferences.json');
+	await fs.ensureDir(path.dirname(legacyPath));
+	await fs.writeFile(legacyPath, JSON.stringify({
+		pull_behaviour: {
+			include: ['VSCode'],
+			exclude: ['Cursor']
+		}
+	}), 'utf8');
+
+	try {
+		const config = await prepareAiAgentPreferences(rootPath);
+		expect(config.enabledSkillAgents).toEqual(['VSCode']);
+		expect(await fs.pathExists(legacyPath)).toEqual(false);
+		expect(await fs.pathExists(parentPreferencesPath(parentDir))).toEqual(true);
+	} finally {
+		await fs.remove(parentDir);
 	}
 });

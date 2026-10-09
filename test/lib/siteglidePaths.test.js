@@ -7,8 +7,11 @@ const {
 	joinUser,
 	joinProject,
 	joinAboutMe,
+	joinAiAgentPreferences,
 	legacyAboutMePath,
+	legacyAiAgentPreferencesPath,
 	migrateAboutMeToParent,
+	migrateAiAgentPreferencesToParent,
 	migrateLegacySiteglideLayout,
 	rel,
 	SITEGLIDE_USER_IGNORE_ENTRY
@@ -81,7 +84,7 @@ describe('siteglidePaths', () => {
 		assert.equal(rel.pullModulesConfig, '.siteglide/project/modules.json');
 		assert.equal(rel.sourceOfTruthConfig, '.siteglide/project/sourceOfTruth.json');
 		assert.equal(rel.aboutMe, '../.siteglide/user/about-me.json');
-		assert.equal(rel.aiAgentPreferences, '.siteglide/user/ai-agent-preferences.json');
+		assert.equal(rel.aiAgentPreferences, '../.siteglide/user/ai-agent-preferences.json');
 		assert.equal(rel.gitignoreUser, '.siteglide/user/');
 		assert.equal(rel.gitignoreSecrets, '.siteglide-config');
 	});
@@ -95,6 +98,38 @@ describe('siteglidePaths', () => {
 			joinAboutMe(cwd),
 			path.join(parentDir, '.siteglide', 'user', 'about-me.json')
 		);
+	});
+
+	it('joinAiAgentPreferences resolves to parent .siteglide/user/ai-agent-preferences.json', () => {
+		assert.equal(
+			joinAiAgentPreferences(cwd),
+			path.join(parentDir, '.siteglide', 'user', 'ai-agent-preferences.json')
+		);
+	});
+
+	it('migrateAiAgentPreferencesToParent moves legacy project ai-agent-preferences.json to the parent folder', () => {
+		const legacyPath = legacyAiAgentPreferencesPath(cwd);
+		fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+		fs.writeFileSync(
+			legacyPath,
+			`${JSON.stringify({ pull_behaviour: { include: ['Cursor'], exclude: ['Windsurf'] } }, null, 2)}\n`,
+			'utf8'
+		);
+
+		migrateAiAgentPreferencesToParent(cwd);
+
+		const parentPath = path.join(parentDir, '.siteglide', 'user', 'ai-agent-preferences.json');
+		assert.equal(fs.existsSync(legacyPath), false);
+		assert.equal(fs.existsSync(parentPath), true);
+		assert.deepEqual(JSON.parse(fs.readFileSync(parentPath, 'utf8')).pull_behaviour.include, ['Cursor']);
+	});
+
+	it('ensureParentSiteglideUserDir creates parent .siteglide/user without a shell cd', () => {
+		const { ensureParentSiteglideUserDir, parentSiteglideUserDir } = require('../../lib/siteglidePaths');
+		const target = parentSiteglideUserDir(cwd);
+		assert.equal(fs.existsSync(target), false);
+		ensureParentSiteglideUserDir(cwd);
+		assert.equal(fs.existsSync(target), true);
 	});
 
 	it('migrateAboutMeToParent moves legacy project about-me.json to the parent folder', () => {
