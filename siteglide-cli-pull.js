@@ -58,6 +58,8 @@ const program = require('commander'),
 	{ maybeOfferGitSetupHint } = require('./lib/git/maybeGitSetupHint'),
 	{ ensureSiteglideGitignored } = require('./lib/git/siteglideGitignore'),
 	{ ensureAgentPathsGitignored } = require('./lib/git/agentGitignore'),
+	{ syncClaudeFlatSkills } = require('./lib/claudeFlatSkills'),
+	{ ensureSiteglideSkillsNamespaceLink } = require('./lib/agentSkillsNamespaceLink'),
 	{ isWorkingTreeDirty } = require('./lib/git/workingTree'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
@@ -195,49 +197,6 @@ const countSkillMarkdownFiles = async (rootDir) => {
 };
 
 /**
- * Ensure `linkPath` is a directory symlink/junction pointing at `targetPath`
- * (source of truth under `.agents/skills`). Cross-platform: junction on Windows, dir symlink elsewhere.
- *
- * @param {string} linkPath - Relative path for the discovery folder (e.g. `.cursor/skills`).
- * @param {string} targetPath - Relative path to the shared skills tree (e.g. `.agents/skills`).
- * Side effects: may remove an existing link/dir at linkPath; creates parent dirs; creates symlink/junction.
- */
-const ensureSkillsDirLink = async (linkPath, targetPath) => {
-	const linkAbs = path.resolve(linkPath);
-	const targetAbs = path.resolve(targetPath);
-
-	logger.Debug(`[pull] Ensuring skills link: ${linkPath} → ${targetPath}`);
-	await fs.ensureDir(path.dirname(linkAbs));
-	await fs.ensureDir(targetAbs);
-
-	if (await fs.pathExists(linkAbs)) {
-		const linkStat = await fs.lstat(linkAbs);
-		if (linkStat.isSymbolicLink()) {
-			let currentTarget = await fs.readlink(linkAbs);
-			if (!path.isAbsolute(currentTarget)) {
-				currentTarget = path.resolve(path.dirname(linkAbs), currentTarget);
-			}
-			if (path.resolve(currentTarget) === targetAbs) {
-				logger.Debug(`[pull] Skills link already correct: ${linkPath}`);
-				return;
-			}
-			logger.Debug(`[pull] Replacing outdated skills link at ${linkPath}`);
-			await fs.remove(linkAbs);
-		} else {
-			logger.Debug(`[pull] Replacing existing path at ${linkPath} with link to shared ${targetPath}`);
-			await fs.remove(linkAbs);
-		}
-	}
-
-	const linkType = process.platform === 'win32' ? 'junction' : 'dir';
-	const linkTarget = process.platform === 'win32'
-		? targetAbs
-		: path.relative(path.dirname(linkAbs), targetAbs) || '.';
-	await fs.symlink(linkTarget, linkAbs, linkType);
-	logger.Debug(`[pull] Created ${linkType} ${linkPath} → ${targetPath}`);
-};
-
-/**
  * Write a managed text file (overwrite). Used for IDE pointer rules that tell agents
  * how to find `./.agents` when native discovery is missing.
  *
@@ -257,14 +216,14 @@ const writeManagedAgentFile = async (filePath, contents) => {
 const CURSOR_SETUP_RULE = `---
 alwaysApply: true
 ---
-Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents directory for skills on startup and add matching skills in your .cursor/skills directory using symlinks.
+Check if you have access to Siteglide skills automatically. If not, use ./.cursor/skills/siteglide (linked from ./.agents/skills/siteglide on pull) and add your own project skills as sibling folders under ./.cursor/skills/.
 Also follow ./.cursor/rules/setup_siteglide_mcp.mdc for Siteglide MCP (never read .siteglide-config; use envs_list).
 `;
 
 /** Claude project instructions — mirrors Siteglide/Siteglide-AI-Skills `.claude/CLAUDE.md`. */
 const CLAUDE_SETUP_MD = `# Setup Siteglide Skills
 
-Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents/skills/siteglide/ directory for skills on startup and use a single bash command to copy that to your ./.claude/skills/ directory. Then reload your plugins if needed (to import those new skills).
+Check if you have access to Siteglide skills automatically. If not, use the flat skill files siteglide-cli pull writes under ./.claude/skills/ (names like siteglide_studio_build-page.SKILL.md). Claude does not load skills buried in namespace folders, so pull does not symlink the nested ./.agents/skills/siteglide/ tree here. References and the full skill tree remain under ./.agents/skills/.
 
 ## Siteglide MCP
 
@@ -275,21 +234,24 @@ See ./.claude/siteglide-mcp.md. Prefer Siteglide MCP tools. NEVER read .siteglid
 const WINDSURF_SETUP_RULE = `---
 trigger: always_on
 ---
-Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents directory for skills on startup and add matching skills in your .windsurf/skills directory using symlinks (or rely on ./.windsurf/skills if it already links to ./.agents/skills).
+Check if you have access to Siteglide skills automatically. If not, use ./.windsurf/skills/siteglide (linked from ./.agents/skills/siteglide on pull) and add your own project skills as sibling folders under ./.windsurf/skills/.
 Also follow ./.windsurf/rules/setup_siteglide_mcp.md for Siteglide MCP (never read .siteglide-config; use envs_list).
 `;
 
 /** Copilot custom instructions pointing at the shared `.agents` tree. */
 const COPILOT_INSTRUCTIONS_MD = `<!-- Managed by siteglide-cli pull — source of truth is ./.agents/skills -->
-If agent skills are not already available, use the skills under ./.agents/skills/ (also linked from ./.github/skills/). Prefer those over inventing Siteglide/platformOS workflows from memory.
+If agent skills are not already available, use Siteglide skills under ./.agents/skills/siteglide/ (also linked at ./.github/skills/siteglide/). Add your own skills as sibling folders under ./.github/skills/. Prefer those over inventing Siteglide/platformOS workflows from memory.
 Also see ./.github/siteglide-mcp.md: prefer Siteglide MCP tools; NEVER read .siteglide-config — use envs_list for environment names.
 `;
 
 /**
  * When skills exist under `./.agents`, create IDE root folders so Cursor, Claude, Windsurf,
  * and GitHub Copilot can discover them. Skills stay in `./.agents/skills` (source of truth);
- * platform folders get a symlink/junction to that tree plus a small pointer rule/instructions
- * file matching https://github.com/Siteglide/Siteglide-AI-Skills
+ * Cursor, Windsurf, and Copilot get a symlink/junction on `skills/siteglide` only (sibling
+ * folders remain available for project skills). Claude gets flat
+ * `siteglide_<namespace>_<skill>.SKILL.md` files under `.claude/skills/` (see claudeFlatSkills.js).
+ * Each enabled agent also gets a small pointer rule/instructions file matching
+ * https://github.com/Siteglide/Siteglide-AI-Skills
  *
  * Side effects: creates `.cursor`, `.claude`, `.windsurf`, `.github` paths; writes managed
  * pointer files; creates/replaces skills directory links; updates pullSpinner text.
@@ -297,8 +259,16 @@ Also see ./.github/siteglide-mcp.md: prefer Siteglide MCP tools; NEVER read .sit
 const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 	pullSpinner.text = 'AI: Setting up IDE skill folders';
 
-	const skillsTarget = path.join(AGENTS_ROOT, 'skills');
-	await fs.ensureDir(`./${skillsTarget}`);
+	const agentsSkillsRoot = path.join(AGENTS_ROOT, 'skills');
+	await fs.ensureDir(`./${agentsSkillsRoot}`);
+
+	const linkSiteglideSkills = async (agentSkillsDir) => {
+		await ensureSiteglideSkillsNamespaceLink({
+			agentSkillsDir,
+			agentsSkillsRoot,
+			debugLog: (message) => logger.Debug(message)
+		});
+	};
 
 	const ready = [];
 
@@ -307,13 +277,17 @@ const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 			path.join('.cursor', 'rules', 'setup_siteglide_skills.mdc'),
 			CURSOR_SETUP_RULE
 		);
-		await ensureSkillsDirLink(path.join('.cursor', 'skills'), skillsTarget);
+		await linkSiteglideSkills(path.join('.cursor', 'skills'));
 		ready.push('.cursor');
 	}
 
 	if (isSkillAgentEnabled('Claude', enabledSkillAgents)) {
 		await writeManagedAgentFile(path.join('.claude', 'CLAUDE.md'), CLAUDE_SETUP_MD);
-		await ensureSkillsDirLink(path.join('.claude', 'skills'), skillsTarget);
+		await syncClaudeFlatSkills({
+			agentsRoot: AGENTS_ROOT,
+			claudeSkillsDir: path.join('.claude', 'skills'),
+			debugLog: (message) => logger.Debug(message)
+		});
 		ready.push('.claude');
 	}
 
@@ -322,7 +296,7 @@ const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 			path.join('.windsurf', 'rules', 'setup_siteglide_skills.md'),
 			WINDSURF_SETUP_RULE
 		);
-		await ensureSkillsDirLink(path.join('.windsurf', 'skills'), skillsTarget);
+		await linkSiteglideSkills(path.join('.windsurf', 'skills'));
 		ready.push('.windsurf');
 	}
 
@@ -331,12 +305,15 @@ const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 			path.join('.github', 'copilot-instructions.md'),
 			COPILOT_INSTRUCTIONS_MD
 		);
-		await ensureSkillsDirLink(path.join('.github', 'skills'), skillsTarget);
+		await linkSiteglideSkills(path.join('.github', 'skills'));
 		ready.push('.github');
 	}
 
 	if (ready.length > 0) {
-		logger.Info(`[pull] AI: Skill IDE folders ready (${ready.join(', ')} → .agents/skills)`);
+		const claudeNote = isSkillAgentEnabled('Claude', enabledSkillAgents)
+			? '; Claude skills are flat files in .claude/skills'
+			: '';
+		logger.Info(`[pull] AI: Skill IDE folders ready (${ready.join(', ')}; Siteglide → .agents/skills/siteglide${claudeNote})`);
 	} else {
 		logger.Info(`[pull] AI: Skill IDE folders skipped (no agents included in ${AI_AGENT_PREFERENCES_RELATIVE_PATH})`);
 	}
