@@ -69,6 +69,7 @@ const program = require('commander'),
 	{ CANCEL_SKIP_REMOTE_HINT } = require('./lib/remoteConflictPrompt'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	{ runMergeFirstSyncPullBody } = require('./lib/pull/mergeFirstSyncPullBody'),
 	{
 		tempPullLog,
 		tempPullGitSnapshot,
@@ -740,6 +741,26 @@ program
 		false
 	)
 	.option(
+		'--path <physical-path>',
+		'Internal: physical path for selective merge-first sync (repeatable)',
+		(value, previous) => {
+			const list = previous || [];
+			list.push(value);
+			return list;
+		},
+		[]
+	)
+	.option(
+		'--merge-first-fast',
+		'Internal: selective pull for --path only (sync -fast)',
+		false
+	)
+	.option(
+		'--merge-first-compare',
+		'Internal: full pull then selective for one --path; write compare report (sync -compare)',
+		false
+	)
+	.option(
 		'--concurrency <number>',
 		`Max concurrent module pulls (default: ${DEFAULT_MODULE_PULL_CONCURRENCY}, or CONCURRENCY env)`,
 		(value) => {
@@ -1037,26 +1058,41 @@ program
 						logger.Info(`[pull] Modules: Will pull ${moduleTotal} module(s): ${formatModuleListForLog(modulesCounted).join(', ')}`);
 					}
 
-					await pullSiteZip(gateway, siteRoot, ignoredModules);
+					const runFullMergeFirstSyncPull = async () => {
+						await pullSiteZip(gateway, siteRoot, ignoredModules);
 
-					let modulesDone = await pullModulesInParallel(gateway, modulesForNormalPull, modulePullConcurrency, ignoredModules, moduleTotal);
+						let modulesDone = await pullModulesInParallel(gateway, modulesForNormalPull, modulePullConcurrency, ignoredModules, moduleTotal);
 
-					if (!ignoreAssets) {
-						await pullAssets(gateway, siteRoot, ignoredModules);
-					} else {
-						logger.Info('[pull] Skipping assets step');
-					}
-
-					for (let i = 0; i < agentsOnlyModules.length; i++) {
-						await removeLocalModuleCheckout(agentsOnlyModules[i]);
 						if (!ignoreAssets) {
-							modulesDone += 1;
-							logger.Info(`[pull] Modules: ${formatModuleNameForLog(agentsOnlyModules[i])} done (${modulesDone}/${moduleTotal})`);
+							await pullAssets(gateway, siteRoot, ignoredModules);
+						} else {
+							logger.Info('[pull] Skipping assets step');
 						}
-					}
 
-					if (moduleTotal > 0) {
-						logger.Info(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
+						for (let i = 0; i < agentsOnlyModules.length; i++) {
+							await removeLocalModuleCheckout(agentsOnlyModules[i]);
+							if (!ignoreAssets) {
+								modulesDone += 1;
+								logger.Info(`[pull] Modules: ${formatModuleNameForLog(agentsOnlyModules[i])} done (${modulesDone}/${moduleTotal})`);
+							}
+						}
+
+						if (moduleTotal > 0) {
+							logger.Info(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
+						}
+					};
+
+					if (mergeFirstSync) {
+						await runMergeFirstSyncPullBody({
+							gateway,
+							environment,
+							params,
+							siteRoot,
+							ignoredModules,
+							runFullMergeFirstSyncPull
+						});
+					} else {
+						await runFullMergeFirstSyncPull();
 					}
 
 					if (!mergeFirstSync) {

@@ -17,6 +17,14 @@ program
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-l, --livereload', 'Turns on a livereload server')
 	.option('-s, --skip-remote-check', 'Skip remote mtime checks before each upload')
+	.option(
+		'-fast, --fast',
+		'Merge-first sync: selective pull for conflict paths only (not full site zip)'
+	)
+	.option(
+		'-compare, --compare',
+		'Merge-first sync: full pull then selective for one path; write format compare report under .siteglide/user/selective-pull-compare/'
+	)
 	.action(async (environment, params) => {
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
@@ -34,11 +42,26 @@ program
 			logger.Info('[sync] sourceOfTruth is versionControl — remote conflict checks are skipped (same as -s / --skip-remote-check).');
 		}
 		const { buildSyncWatchEnv } = require('./lib/syncWatchEnv');
+		// Commander 8 maps bare `-compare` to `Compare`; long form + `-compare, --compare` → `compare`.
+		const mergeFirstFast = Boolean(params.fast || params.Fast);
+		const mergeFirstCompare = Boolean(params.compare || params.Compare);
+		if (mergeFirstFast && mergeFirstCompare) {
+			logger.Error('[sync] Use only one of -fast or -compare.');
+			process.exit(1);
+		}
+		if (mergeFirstFast) {
+			logger.Info('[sync] -fast: merge-first will use selective pull for conflict paths only.');
+		}
+		if (mergeFirstCompare) {
+			logger.Info('[sync] -compare: merge-first will compare full vs selective pull (one path); see .siteglide/user/selective-pull-compare/.');
+		}
 		const env = buildSyncWatchEnv({
 			processEnv: process.env,
-			authData,
 			environment,
-			skipRemoteCheck
+			authData,
+			skipRemoteCheck,
+			mergeFirstFast,
+			mergeFirstCompare
 		});
 		const options = [];
 		if(params.livereload){

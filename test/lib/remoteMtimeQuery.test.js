@@ -1,6 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildFileMtimeQuery } = require('../../lib/graphql/remoteMtimeQueries');
+const { buildFileContentQuery } = require('../../lib/graphql/remoteFileContentQueries');
 const { buildNestedPullArgs, buildNestedPullEnv } = require('../../lib/pull/spawnNestedPull');
 
 describe('remoteMtimeQueries buildFileMtimeQuery', () => {
@@ -22,6 +23,15 @@ describe('remoteMtimeQueries buildFileMtimeQuery', () => {
 	});
 });
 
+describe('remoteFileContentQueries buildFileContentQuery', () => {
+	it('includes page content and layout fields', () => {
+		const query = buildFileContentQuery('views/pages/a.liquid');
+		assert.match(query, /admin_pages/);
+		assert.match(query, /content/);
+		assert.match(query, /layout/);
+	});
+});
+
 describe('spawnNestedPull helpers', () => {
 	it('adds merge-first-sync flag and env when requested', () => {
 		const args = buildNestedPullArgs('staging', {
@@ -36,5 +46,32 @@ describe('spawnNestedPull helpers', () => {
 		assert.equal(env.SITEGLIDE_PULL_MERGE_FIRST_SYNC, '1');
 		assert.equal(env.SITEGLIDE_PULL_SKIP_COMMIT_BASELINE, '1');
 		assert.equal(env.SITEGLIDE_NESTED_CLI, '1');
+	});
+
+	it('passes fast, compare, and paths to nested pull', () => {
+		const args = buildNestedPullArgs('staging', {
+			mergeFirstSync: true,
+			mergeFirstFast: true,
+			paths: ['views/pages/a.liquid', 'views/partials/b.liquid']
+		});
+		assert.deepEqual(args, [
+			'staging',
+			'-c',
+			'.siteglide-config',
+			'--merge-first-sync',
+			'--merge-first-fast',
+			'--path',
+			'views/pages/a.liquid',
+			'--path',
+			'views/partials/b.liquid'
+		]);
+
+		const env = buildNestedPullEnv({
+			mergeFirstSync: true,
+			mergeFirstCompare: true,
+			paths: ['views/pages/a.liquid']
+		});
+		assert.equal(env.SITEGLIDE_PULL_MERGE_FIRST_COMPARE, '1');
+		assert.equal(env.SITEGLIDE_PULL_PATHS, 'views/pages/a.liquid');
 	});
 });

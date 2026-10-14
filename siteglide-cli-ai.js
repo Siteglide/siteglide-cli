@@ -11,6 +11,7 @@ const logger = require('./lib/logger');
 const { promptAndEnsureSourceOfTruthConfig } = require('./lib/sourceOfTruth');
 const { promptAiAgentPreferencesIfNeeded, resolveEnabledSkillAgents } = require('./lib/aiAgentPreferences');
 const { ensureMcpSetup } = require('./lib/mcpAlpha');
+const { printEnableSiteglideMcpReminder } = require('./lib/ai');
 
 program
 	.version(version, '-v, --version')
@@ -55,6 +56,7 @@ program
 		}
 
 		logger.Success('[ai] MCP setup finished.');
+		printEnableSiteglideMcpReminder();
 	});
 
 program.parse(process.argv);

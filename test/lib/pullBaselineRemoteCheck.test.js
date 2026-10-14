@@ -359,6 +359,28 @@ describe('merge-first safe sync gate', () => {
 		clearMergeManifest('staging', cwd);
 	});
 
+	it('allows sync when remote updated_at has not advanced past fetch (sync_selective_pull)', () => {
+		writeMergeManifest(
+			'staging',
+			{
+				mode: 'sync_selective_pull',
+				paths: ['views/pages/a.liquid'],
+				remoteSnapshotAt: '2026-05-01T12:00:00.000Z'
+			},
+			cwd
+		);
+		assert.equal(
+			isSafeAfterMergeFirst(
+				'staging',
+				'views/pages/a.liquid',
+				'2026-05-01T12:00:00.000Z',
+				cwd
+			),
+			true
+		);
+		clearMergeManifest('staging', cwd);
+	});
+
 	it('allows any path after sync_full_pull snapshot when remote unchanged', () => {
 		writeMergeManifest(
 			'staging',

@@ -21,6 +21,8 @@ const program = require('commander'),
 	version = require('./package.json').version,
 	{ cloneDeep, debounce } = require('lodash'),
 	{ checkFile, fetchRemoteFileMtime, toPhysicalApiPath } = require('./lib/remoteMtimeCheck'),
+	{ shouldSkipRemoteCheckForPath } = require('./lib/sync/skipRemoteCheckForPath'),
+	{ readSourceOfTruthMode } = require('./lib/sourceOfTruth'),
 	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstSyncPull, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
@@ -171,6 +173,10 @@ const isNotInNodeModules = filePath => {
 CONCURRENCY = 3;
 
 const skipRemoteCheck = process.env.SITEGLIDE_SKIP_REMOTE_CHECK === '1';
+const mergeFirstFast = process.env.SITEGLIDE_SYNC_MERGE_FIRST_FAST === '1';
+const mergeFirstCompare = process.env.SITEGLIDE_SYNC_MERGE_FIRST_COMPARE === '1';
+/** @type {'site' | 'versionControl' | null} */
+let cachedSourceOfTruthMode = null;
 
 /** Once true, stop accepting work and exit the watch process. */
 let syncStopping = false;
@@ -248,6 +254,13 @@ const beforeSyncOpCheck = async (syncedFilePath) => {
 	}
 
 	const physicalPath = toPhysicalApiPath(syncedFilePath, siteRoot);
+	if (!cachedSourceOfTruthMode) {
+		cachedSourceOfTruthMode = await readSourceOfTruthMode(process.cwd());
+	}
+	if (shouldSkipRemoteCheckForPath(physicalPath, cachedSourceOfTruthMode)) {
+		noteRemoteCheckPassed(syncedFilePath, physicalPath);
+		return { proceed: true, skipped: true, reason: 'module_private' };
+	}
 	const remoteMeta = await fetchRemoteFileMtime(gateway, physicalPath);
 	if (remoteMeta.found && isSafeAfterMergeFirst(environment, physicalPath, remoteMeta.updatedAt)) {
 		noteRemoteCheckPassed(syncedFilePath, physicalPath);
@@ -341,6 +354,12 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 		syncFileWatcher.pause();
 		try {
 			const conflictPath = (conflictMeta.path || '').replace(/\\/g, '/');
+			const wavePaths = collectWavePaths(waveEntries);
+			if (mergeFirstCompare && wavePaths.length !== 1) {
+				logger.Error('[Sync] -compare requires exactly one conflict path in the wave.', { exit: false });
+				clearSyncConflictRecords(environment);
+				return { action: 'merge_first_failed' };
+			}
 			const mf = await mergeFirstSyncPull({
 				environment,
 				wipMessage: `siteglide: WIP before merge-first sync (${conflictPath})`,
@@ -349,7 +368,10 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 						environment,
 						configFile: process.env.CONFIG_FILE_PATH || '.siteglide-config',
 						mergeFirstSync: true,
-						skipCommitBaseline: true
+						skipCommitBaseline: true,
+						paths: wavePaths,
+						mergeFirstFast: mergeFirstFast,
+						mergeFirstCompare: mergeFirstCompare
 					});
 				}
 			});

@@ -1,0 +1,41 @@
+---
+layout: templates/1
+max_deep_level: 1
+metadata:
+  name: Blog
+  studio:
+    order:
+    - default-blog-card
+    sections:
+      default-blog-card:
+        id: default-blog-card
+        data: {}
+        name: Default blog card
+        type: legacy_dynamic
+        title: default-blog-card
+        system:
+          id: '3'
+          type: list
+          layout: default-blog-card
+          admin_link: "/modules/3"
+          liquid_tag: module
+          live_updates: true
+          section_name: Default blog card
+          schema_selector:
+            module_id: module_3
+            sub_module_id: '0'
+          physical_file_path: views/partials/layouts/modules/module_3/default-blog-card/list/wrapper.liquid
+        mapping: {}
+        settings: {}
+        components: {}
+        component_order: []
+  enabled: true
+  file_type: page
+  last_edit: 1789391416768
+redirect_to: ''
+redirect_url: ''
+searchable: true
+---
+{% include 'modules/siteglide_system/constants' -%}
+
+{% include 'modules/module_357/render_page' %}
