@@ -29,7 +29,7 @@ const program = require('commander'),
 	{ collectDeployManifestPaths } = require('./lib/deployManifestPaths'),
 	{ clearConflictLog, writeConflictLog } = require('./lib/remoteCheckConflictLog'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
-	{ commitAllSafe } = require('./lib/git/commit'),
+	{ commitAllSafe, hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstDeploy } = require('./lib/git/mergeFirst'),
 	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
@@ -171,13 +171,27 @@ program
 
 		const classification = classifyEnvironment(authData);
 		const git = getGitReadiness();
-		if (classification === 'production' && git.repoInitialized && process.stdin.isTTY && !process.env.CI) {
+		if (
+			classification === 'production'
+			&& git.repoInitialized
+			&& process.stdin.isTTY
+			&& !process.env.CI
+			&& hasStagedOrUnstagedChanges()
+		) {
 			const commitFirst = await Confirm('Production deploy: commit your working tree first? (Y/n)\n');
 			if (commitFirst === 'Y') {
-				const msg = await Confirm('Commit message:\n');
-				const committed = commitAllSafe(msg.trim() || `siteglide deploy ${environment} ${new Date().toISOString()}`);
-				if (!committed.ok && !/nothing to commit/i.test(committed.stdout + committed.stderr)) {
-					logger.Warn(`[deploy] Commit failed: ${committed.stderr || committed.stdout}`, { exit: false });
+				if (!hasStagedOrUnstagedChanges()) {
+					logger.Info('[deploy] User committed files manually, working tree is clean');
+				} else {
+					const msg = await Confirm('Commit message:\n');
+					if (!hasStagedOrUnstagedChanges()) {
+						logger.Info('[deploy] User committed files manually, working tree is clean');
+					} else {
+						const committed = commitAllSafe(msg.trim() || `siteglide deploy ${environment} ${new Date().toISOString()}`);
+						if (!committed.ok && !/nothing to commit/i.test(committed.stdout + committed.stderr)) {
+							logger.Warn(`[deploy] Commit failed: ${committed.stderr || committed.stdout}`, { exit: false });
+						}
+					}
 				}
 			}
 		}
