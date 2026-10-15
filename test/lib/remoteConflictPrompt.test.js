@@ -1,6 +1,15 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { formatSyncConflictFileLabel } = require('../../lib/remoteConflictPrompt');
+const {
+	formatSyncConflictFileLabel,
+	CANCEL_SKIP_REMOTE_HINT
+} = require('../../lib/remoteConflictPrompt');
+
+describe('CANCEL_SKIP_REMOTE_HINT', () => {
+	it('uses muted skip-remote wording', () => {
+		assert.equal(CANCEL_SKIP_REMOTE_HINT, '-s Skipping conflict checks');
+	});
+});
 
 describe('formatSyncConflictFileLabel', () => {
 	it('prefers API physical path over local path', () => {

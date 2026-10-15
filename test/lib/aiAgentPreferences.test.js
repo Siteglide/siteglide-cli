@@ -75,7 +75,7 @@ test('ensureAiAgentPreferences creates the file when missing and does not overwr
 		expect(parsed.pull_behaviour.include).toEqual(DEFAULT_SKILL_AGENTS);
 		expect(parsed.pull_behaviour.exclude).toEqual([]);
 		expect(parsed.pull_behaviour.usage).toEqual(
-			'By default, pull will create folders in your project to support skills and MCP for multiple AI agents. You can move agents from include to exclude to stop those folders (and that agent\'s mcp.json) being created. The MCP package can still be installed globally.'
+			'Pull always updates ./.agents/skills (canonical skill tree). include/exclude only control per-IDE scaffolding (.cursor, .claude, …) and MCP registration — you may exclude every agent and keep ./.agents only. The MCP package can still be installed globally.'
 		);
 
 		await fs.writeFile(configPath, '{"pull_behaviour":{"include":["Cursor"],"exclude":["Claude"]}}\n', 'utf8');
@@ -114,7 +114,7 @@ test('writeAiAgentPreferences updates include and exclude while preserving usage
 		expect(parsed.pull_behaviour.include).toEqual(['Cursor', 'VSCode']);
 		expect(parsed.pull_behaviour.exclude).toEqual(['Claude', 'Windsurf', 'Github Copilot']);
 		expect(parsed.pull_behaviour.usage).toEqual(
-			'By default, pull will create folders in your project to support skills and MCP for multiple AI agents. You can move agents from include to exclude to stop those folders (and that agent\'s mcp.json) being created. The MCP package can still be installed globally.'
+			'Pull always updates ./.agents/skills (canonical skill tree). include/exclude only control per-IDE scaffolding (.cursor, .claude, …) and MCP registration — you may exclude every agent and keep ./.agents only. The MCP package can still be installed globally.'
 		);
 	} finally {
 		await fs.remove(parentDir);

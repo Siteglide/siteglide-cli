@@ -91,3 +91,11 @@ test('deploy source documents -s / --skip-remote-check option', () => {
 	);
 	expect(deploySource).toMatch(/\.option\('-s, --skip-remote-check'/);
 });
+
+test('package.json does not ship siteglide-cli-remote-check bin', () => {
+	const fs = require('fs');
+	const path = require('path');
+	const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8'));
+	expect(pkg.bin['siteglide-cli-remote-check']).toBeUndefined();
+	expect(fs.existsSync(path.join(__dirname, '../../siteglide-cli-remote-check.js'))).toEqual(false);
+});

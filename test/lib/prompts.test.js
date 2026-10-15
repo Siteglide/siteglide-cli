@@ -8,8 +8,8 @@ describe('prompt hints', () => {
 		assert.match(PROMPT_HINTS.select, /Enter/i);
 		assert.match(PROMPT_HINTS.checkbox, /arrow keys/i);
 		assert.match(PROMPT_HINTS.checkbox, /Space/i);
-		assert.match(PROMPT_HINTS.checkbox, /select\/deselect/i);
-		assert.match(PROMPT_HINTS.confirm, /Press Y or n/);
+		assert.match(PROMPT_HINTS.checkbox, /space to toggle/i);
+		assert.match(PROMPT_HINTS.confirm, /Enter Y or n/);
 		assert.doesNotMatch(PROMPT_HINTS.confirm, /default/i);
 		assert.match(PROMPT_HINTS.input, /Enter/i);
 	});

@@ -349,6 +349,10 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 		conflicts: [conflictMeta]
 	});
 
+	if (decision === 'skip_remote_for_wave') {
+		clearSyncConflictRecords(environment);
+		return { action: 'skip_remote_for_wave' };
+	}
 	if (decision === 'merge_first') {
 		resolveSyncCurrentConflict('merge_first');
 		syncFileWatcher.pause();
@@ -436,8 +440,7 @@ const handleGitBlockAsLeader = async (gitOpen) => {
 		await offerMergeConflictAiHelp({
 			environment: environment || 'unknown',
 			command: 'sync',
-			warnMessage:
-				`[Sync] Refusing while ${gitOpen.reason}. Sync is paused until conflict markers are resolved.`
+			warnMessage: '[Sync] Sync is paused until conflict markers are resolved.'
 		});
 		logger.Warn(`[Sync] ${MERGE_CONFLICT_CLI_WAIT_HINT}`, { exit: false });
 	}
@@ -506,6 +509,16 @@ const uploadWaveEntriesAsLeader = async (entries) => {
 	const uploads = entries
 		.filter((entry) => checkAllowsUpload(entry.checkResult))
 		.map((entry) => performSyncOp({ path: entry.path, op: entry.op }));
+	await Promise.all(uploads);
+};
+
+/**
+ * Upload wave entries without re-running remote mtime checks (user chose Sync without git).
+ * @param {object[]} entries
+ * @returns {Promise<void>}
+ */
+const forceUploadWaveEntriesAsLeader = async (entries) => {
+	const uploads = entries.map((entry) => performSyncOp({ path: entry.path, op: entry.op }));
 	await Promise.all(uploads);
 };
 
@@ -613,6 +626,12 @@ const processSyncTask = async (task, callback) => {
 				} else if (resolution.action === 'merge_first') {
 					conflictGate.allowUploads();
 					await finishConflictWaveUpload(decision.entries);
+				} else if (resolution.action === 'skip_remote_for_wave') {
+					conflictGate.allowUploads();
+					syncWaveLog(
+						`[Sync wave ${syncUploadWave.getCurrentWaveId()}] force upload after skip-remote choice`
+					);
+					await forceUploadWaveEntriesAsLeader(decision.entries);
 				}
 			} else {
 				await conflictGate.waitForLeader();

@@ -178,12 +178,15 @@ program
 			&& !process.env.CI
 			&& hasStagedOrUnstagedChanges()
 		) {
-			const commitFirst = await Confirm('Production deploy: commit your working tree first? (Y/n)\n');
+			const envLabel = environment || 'this environment';
+			const commitFirst = await Confirm(
+				`Before we deploy to ${envLabel}, let's "commit" a snapshot of the code. (Y/n)\n`
+			);
 			if (commitFirst === 'Y') {
 				if (!hasStagedOrUnstagedChanges()) {
 					logger.Info('[deploy] User committed files manually, working tree is clean');
 				} else {
-					const msg = await Confirm('Commit message:\n');
+					const msg = await Confirm('Commit message:\n(Press enter to confirm)\n');
 					if (!hasStagedOrUnstagedChanges()) {
 						logger.Info('[deploy] User committed files manually, working tree is clean');
 					} else {
@@ -292,7 +295,7 @@ program
 					consoleHint: 'Remote files exist that were not in this deploy.'
 				});
 				const pullNow = await Confirm(
-					'After your latest deploy there are still a few files on the site which are not tracked locally, pull now to track them? (Y/n)\n'
+					'After your latest deploy, there are still a few files on the site which are not tracked locally. Pull now? (Y/n)\n'
 				);
 				if (pullNow === 'Y') {
 					await new Promise((resolve) => {

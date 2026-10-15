@@ -40,7 +40,7 @@ describe('projectPreferences', () => {
 		const second = readProjectPreferences(cwd);
 		expect(second.target_audience.role).toBe('designer');
 		expect(second.target_audience.git).toBe('extra help');
-		expect(second.target_audience.siteglideCli).toBe(null);
+		expect(second.target_audience.siteglideCli).toBe('extra help');
 	});
 
 	test('stores file under parent .siteglide/user/about-me.json', () => {

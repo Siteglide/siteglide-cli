@@ -24,11 +24,14 @@ describe('target audience preferences', () => {
 		fs.rmSync(parentDir, { recursive: true, force: true });
 	});
 
-	test('missingAudienceFields lists only null keys', () => {
-		expect(missingAudienceFields({ role: 'developer', git: null, siteglideCli: 'advanced' })).toEqual([
-			'git'
+	test('missingAudienceFields ignores role and pairs git with siteglideCli', () => {
+		expect(missingAudienceFields({ role: null, git: null, siteglideCli: null })).toEqual([
+			'git',
+			'siteglideCli'
 		]);
-		expect(needsAudiencePrompt({ role: 'developer', git: 'beginner', siteglideCli: 'advanced' })).toEqual(false);
+		expect(missingAudienceFields({ role: 'developer', git: 'familiar', siteglideCli: 'familiar' })).toEqual([]);
+		expect(missingAudienceFields({ role: null, git: null, siteglideCli: 'familiar' })).toEqual([]);
+		expect(needsAudiencePrompt({ role: null, git: 'extra help', siteglideCli: 'extra help' })).toEqual(false);
 	});
 
 	test('writeProjectPreferences merges without clobbering existing values', () => {

@@ -51,6 +51,7 @@ const program = require('commander'),
 		assertVersionControlPullEnvironment
 	} = require('./lib/sourceOfTruth'),
 	{ promptTargetAudienceIfNeeded } = require('./lib/targetAudience'),
+	{ audiencePromptText } = require('./lib/promptAudience'),
 	{ selectChoice, inputText, confirmYesNo } = require('./lib/prompts'),
 	{ recordPullBaselineAfterPull } = require('./lib/recordPullBaseline'),
 	{ readPullBaseline } = require('./lib/pullBaseline'),
@@ -924,7 +925,7 @@ program
 					}
 					const agentPrefs = await promptAiAgentPreferencesIfNeeded(pullCwd);
 					if (agentPrefs.cancelled) {
-						logger.Error('[Cancelled] Pull not executed — choose at least one AI agent or press Ctrl+C to cancel.');
+						logger.Error('[Cancelled] Pull not executed — finish the AI agent choice or press Ctrl+C to cancel.');
 						process.exit(1);
 					}
 				}
@@ -952,14 +953,20 @@ program
 							process.exit(1);
 						}
 						const chalk = require('chalk');
-						const message = chalk.yellow.bold('Commit your working tree before pulling.') +
-							' How shall we proceed?';
+						const message = audiencePromptText(
+							chalk.yellow.bold('Commit your working tree before pulling.'),
+							'Let\'s save a snapshot of your work before pulling.',
+							pullCwd
+						) + ' How shall we proceed?';
+						const mergeDescStandard =
+							'We\'ll commit, then pull to a temporary branch and merge. Your files will be safe from accidental overwrite.';
+						const mergeDescExtra =
+							'We\'ll check the difference between your files and the site first. Your files will be safe from accidental overwrite.';
 						const ans = await selectChoice(message, [
 							{
 								name: 'Pull and merge',
 								value: 'merge',
-								description:
-									'Commit changes now, pull on a new branch, then merge back. Conflicts stay in files for manual or AI resolution.'
+								description: audiencePromptText(mergeDescStandard, mergeDescExtra, pullCwd)
 							},
 							{
 								name: 'Cancel pull',
@@ -974,7 +981,12 @@ program
 						}
 						const shortDate = new Date().toISOString().slice(0, 10);
 						const defaultBeforeMsg = `Snapshot before pulling from ${environment} environment ${shortDate}`;
-						const msg = await inputText('Commit message for your current work', { default: defaultBeforeMsg });
+						const commitPrompt = audiencePromptText(
+							'Commit message for your current work',
+							'Press enter to continue',
+							pullCwd
+						);
+						const msg = await inputText(commitPrompt, { default: defaultBeforeMsg });
 						if (msg == null) {
 							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
 							process.exit(1);
@@ -1236,14 +1248,17 @@ program
 						'[pull] No pull baseline yet for this environment — Pull and merge seeds lastPullCommit for merge-first sync/deploy checks.'
 					);
 				}
+				const mergeDescStandard =
+					'We\'ll pull to a temporary branch and merge. Your files will be safe from accidental overwrite.';
+				const mergeDescExtra =
+					'We\'ll check the difference between your files and the site first. Your files will be safe from accidental overwrite.';
 				const answer = await selectChoice(
-					'Are you sure you would like to pull? Your work is committed to git, so you can check history or revert later.',
+					'Confirm pull',
 					[
 						{
 							name: 'Pull and merge',
 							value: 'merge',
-							description:
-								'Pull changes to a new branch and merge back into your current branch. Conflicts stay in files for manual or AI resolution.'
+							description: audiencePromptText(mergeDescStandard, mergeDescExtra, process.cwd())
 						},
 						{
 							name: 'Cancel pull',

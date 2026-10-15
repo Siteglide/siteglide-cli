@@ -36,7 +36,7 @@ program
 			logPrefix: '[ai]'
 		});
 		if (agentPrefs.cancelled) {
-			logger.Error('[Cancelled] AI setup not executed — choose at least one AI agent or press Ctrl+C to cancel.');
+			logger.Error('[Cancelled] AI setup not executed — finish the AI agent choice or press Ctrl+C to cancel.');
 			process.exit(1);
 		}
 
