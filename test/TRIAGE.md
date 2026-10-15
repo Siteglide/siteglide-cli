@@ -2,6 +2,8 @@
 
 Run: `npm test` from repo root (`CI=true` optional; avoids slow update-notifier paths).
 
+**Two runners:** Jest (`test/**/*.test.js` except files in `test/nodeRunnerManifest.js`) and Node's built-in runner (`node scripts/run-node-tests.js`). Add new `node:test` suites to the manifest only — Jest will otherwise report "must contain at least one test".
+
 | Test file | Failure | Verdict | Action |
 |-----------|---------|---------|--------|
 | `commands.test.js` | `./siteglide-cli.js` on Windows | **Wrong test** | `runCli` harness (`node` + absolute path) |

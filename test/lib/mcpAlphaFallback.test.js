@@ -35,6 +35,10 @@ jest.mock('../../lib/ai', () => {
 });
 
 const logger = require('../../lib/logger');
+const pkg = require('../../package.json');
+const compatibleRange = pkg.siteglideMcp && pkg.siteglideMcp.compatibleRange
+	? pkg.siteglideMcp.compatibleRange
+	: '^0.2.0-0';
 const {
 	DEFAULT_PACKAGE,
 	MCP_UPDATE_DECLINED_KEY,
@@ -145,10 +149,10 @@ test('ensureMcpOnPull stores reminder when user declines global MCP install', as
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.1.0': {}
+					'0.2.0': {}
 				},
 				'dist-tags': {
-					latest: '0.1.0'
+					latest: '0.2.0'
 				}
 			})
 		});
@@ -157,14 +161,15 @@ test('ensureMcpOnPull stores reminder when user declines global MCP install', as
 
 		const result = await ensureMcpOnPull({
 			rootPath,
-			interactive: true
+			interactive: true,
+			enabledSkillAgents: []
 		});
 
 		expect(result).toEqual({
 			skipped: true,
 			reason: 'mcp-not-installed',
 			installedVersion: null,
-			latestVersion: '0.1.0'
+			latestVersion: '0.2.0'
 		});
 		expect(mockConfirm).toHaveBeenCalled();
 		const reminders = JSON.parse(await fs.readFile(path.join(rootPath, '.siteglide', 'user', 'reminders.json'), 'utf8'));
@@ -194,19 +199,20 @@ test('ensureMcpOnPull suppresses prompt within 7 days of declining MCP update', 
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.1.0': {},
-					'0.1.1': {}
+					'0.2.0': {},
+					'0.2.1': {}
 				},
 				'dist-tags': {
-					latest: '0.1.1'
+					latest: '0.2.1'
 				}
 			})
 		});
-		mockGlobalMcpVersion('0.1.0');
+		mockGlobalMcpVersion('0.2.0');
 
 		await ensureMcpOnPull({
 			rootPath,
-			interactive: true
+			interactive: true,
+			enabledSkillAgents: []
 		});
 
 		expect(mockConfirm).not.toHaveBeenCalled();
@@ -228,22 +234,22 @@ test('ensureMcpOnPull installs globally when user accepts update', async () => {
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.1.0': {},
-					'0.1.1': {}
+					'0.2.0': {},
+					'0.2.1': {}
 				},
 				'dist-tags': {
-					latest: '0.1.1'
+					latest: '0.2.1'
 				}
 			})
 		});
 
-		let globalVersion = '0.1.0';
+		let globalVersion = '0.2.0';
 		mockExecFileSync.mockImplementation((cmd, args) => {
 			if (Array.isArray(args) && args[0] === 'list' && args[1] === '-g') {
 				return npmListStdout(globalVersion);
 			}
 			if (Array.isArray(args) && args[0] === 'install' && args[1] === '-g') {
-				globalVersion = '0.1.1';
+				globalVersion = '0.2.1';
 				return '';
 			}
 			throw new Error(`Unexpected execFileSync: ${JSON.stringify(args)}`);
@@ -263,14 +269,15 @@ test('ensureMcpOnPull installs globally when user accepts update', async () => {
 
 		const result = await ensureMcpOnPull({
 			rootPath,
-			interactive: true
+			interactive: true,
+			enabledSkillAgents: []
 		});
 
 		expect(result.skipped).toEqual(false);
-		expect(result.installedVersion).toEqual('0.1.1');
+		expect(result.installedVersion).toEqual('0.2.1');
 		expect(mockExecFileSync).toHaveBeenCalledWith(
 			expect.anything(),
-			['install', '-g', `${DEFAULT_PACKAGE}@0.1.1`],
+			['install', '-g', `${DEFAULT_PACKAGE}@0.2.1`],
 			expect.any(Object)
 		);
 	} finally {
@@ -288,25 +295,25 @@ test('ensureMcpOnPull caps install offer when npm latest exceeds CLI compatible 
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.1.0': {},
-					'0.1.1': {},
-					'0.2.0': {}
+					'0.2.0': {},
+					'0.2.1': {},
+					'0.3.0': {}
 				},
 				'dist-tags': {
-					latest: '0.2.0'
+					latest: '0.3.0'
 				}
 			})
 		});
-		mockGlobalMcpVersion('0.1.0');
+		mockGlobalMcpVersion('0.2.0');
 		mockConfirm.mockResolvedValue('Y');
 
-		let globalVersion = '0.1.0';
+		let globalVersion = '0.2.0';
 		mockExecFileSync.mockImplementation((cmd, args) => {
 			if (Array.isArray(args) && args[0] === 'list' && args[1] === '-g') {
 				return npmListStdout(globalVersion);
 			}
 			if (Array.isArray(args) && args[0] === 'install' && args[1] === '-g') {
-				globalVersion = '0.1.1';
+				globalVersion = '0.2.1';
 				return '';
 			}
 			throw new Error(`Unexpected execFileSync: ${JSON.stringify(args)}`);
@@ -324,13 +331,14 @@ test('ensureMcpOnPull caps install offer when npm latest exceeds CLI compatible 
 
 		const result = await ensureMcpOnPull({
 			rootPath,
-			interactive: true
+			interactive: true,
+			enabledSkillAgents: []
 		});
 
-		expect(result.latestVersion).toEqual('0.1.1');
+		expect(result.latestVersion).toEqual('0.2.1');
 		expect(mockExecFileSync).toHaveBeenCalledWith(
 			expect.anything(),
-			['install', '-g', `${DEFAULT_PACKAGE}@0.1.1`],
+			['install', '-g', `${DEFAULT_PACKAGE}@0.2.1`],
 			expect.any(Object)
 		);
 	} finally {
@@ -348,23 +356,23 @@ test('ensureMcpOnPull warns when globally installed MCP exceeds CLI compatible r
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.1.0': {},
-					'0.1.1': {},
-					'0.2.0': {}
+					'0.2.0': {},
+					'0.2.1': {},
+					'0.3.0': {}
 				},
 				'dist-tags': {
-					latest: '0.2.0'
+					latest: '0.3.0'
 				}
 			})
 		});
 
-		mockGlobalMcpVersion('0.2.0');
+		mockGlobalMcpVersion('0.3.0');
 		mockExecFile.mockImplementation((cmd, args, opts, cb) => {
 			if (typeof opts === 'function') {
 				cb = opts;
 			}
 			if (cmd === process.execPath && Array.isArray(args) && args[0] === '-e') {
-				cb(null, { stdout: '0.2.0' });
+				cb(null, { stdout: '0.3.0' });
 				return;
 			}
 			cb(null, { stdout: '' });
@@ -372,15 +380,19 @@ test('ensureMcpOnPull warns when globally installed MCP exceeds CLI compatible r
 
 		await ensureMcpOnPull({
 			rootPath,
-			interactive: true
+			interactive: true,
+			enabledSkillAgents: []
 		});
 
+		const rangePattern = compatibleRange.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		expect(logger.Warn).toHaveBeenCalledWith(
-			expect.stringMatching(/\[pull\] AI:.*0\.2\.0 is newer than this CLI supports \(\^0\.1\.0-0\)/),
+			expect.stringMatching(
+				new RegExp(`\\[pull\\] AI:.*0\\.3\\.0 is newer than this CLI supports \\(${rangePattern}\\)`)
+			),
 			{ exit: false }
 		);
 		expect(logger.Warn).toHaveBeenCalledWith(
-			expect.stringMatching(/\[pull\] AI:.*npm install -g @siteglide\/siteglide-mcp@0\.1\.1/),
+			expect.stringMatching(/\[pull\] AI:.*npm install -g @siteglide\/siteglide-mcp@0\.2\.1/),
 			{ exit: false }
 		);
 	} finally {

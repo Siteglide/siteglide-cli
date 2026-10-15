@@ -80,7 +80,7 @@ describe('waitForMergeResolution', () => {
 		let stop = false;
 		setTimeout(() => {
 			stop = true;
-		}, 80);
+		}, 100);
 
 		try {
 			await waitForMergeResolution({
