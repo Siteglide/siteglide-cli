@@ -6,7 +6,7 @@ const program = require('commander'),
 	command = require('./lib/command'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	logger = require('./lib/logger'),
-	{ addDebugOption, applyDebugFlag, shouldPassDebugToChild } = require('./lib/cliDebug'),
+	{ addDebugOption, applyDebugFlag, shouldPassDebugToChild, DEBUG_CLI_FLAG } = require('./lib/cliDebug'),
 	version = require('./package.json').version;
 
 program
@@ -74,7 +74,7 @@ program
 			options.push('-l');
 		}
 		if (shouldPassDebugToChild()) {
-			options.push('--debug');
+			options.push(DEBUG_CLI_FLAG);
 		}
 		const p = spawn(command('siteglide-cli-watch'), options, {
 			stdio: 'inherit',

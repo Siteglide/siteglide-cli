@@ -37,6 +37,13 @@ describe('cliDebug', () => {
 		assert.equal(applyDebugFlag({}), false);
 		assert.equal(isCliDebug(), false);
 	});
+
+	it('argvHasDebugFlag detects -debug on argv', () => {
+		const { argvHasDebugFlag, DEBUG_CLI_FLAG } = require('../../lib/cliDebug');
+		assert.equal(DEBUG_CLI_FLAG, '-debug');
+		assert.equal(argvHasDebugFlag(['node', 'pull.js', '-debug']), true);
+		assert.equal(argvHasDebugFlag(['node', 'pull.js']), false);
+	});
 });
 
 describe('logger quiet gating', () => {

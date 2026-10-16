@@ -6,9 +6,9 @@ process.noDeprecation = true;
  */
 const { spawn } = require('child_process');
 const { resolveGlobalMcpBin } = require('./lib/resolveGlobalMcpBin');
-const { enableCliDebug } = require('./lib/cliDebug');
+const { enableCliDebug, argvHasDebugFlag } = require('./lib/cliDebug');
 
-if (process.argv.includes('--debug')) {
+if (argvHasDebugFlag()) {
 	enableCliDebug();
 }
 
