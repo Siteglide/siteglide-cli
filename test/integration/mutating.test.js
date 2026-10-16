@@ -42,7 +42,7 @@ describeMutating('mutating integration (sync, deploy, pull — dedicated test si
 		);
 
 		expect(result.code).toEqual(0);
-		expect(result.output).toMatch(new RegExp(`\\[deploy\\] Deploy finished for ${ctx.envName}\\.`));
+		expect(result.output).toMatch(new RegExp(`\\[deploy\\] Deploy to ${ctx.envName} finished\\.`));
 		expect(result.output).not.toMatch(ctx.auth.token);
 	});
 

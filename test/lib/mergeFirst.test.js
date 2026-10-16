@@ -87,6 +87,39 @@ describe('mergeFirst last-pull base', () => {
 		assert.equal(hasConflicts(cwd).open, true);
 	});
 
+	it('commits a dirty tree with the given wipMessage before the temp branch exists, in every mode', async () => {
+		for (const mode of ['deploy_full_pull', 'sync_full_pull']) {
+			const repo = fs.mkdtempSync(path.join(os.tmpdir(), `sg-wip-${mode}-`));
+			try {
+				gitInit(repo);
+				fs.writeFileSync(path.join(repo, 'a.txt'), 'base\n');
+				const b = commitAll(repo, 'base');
+				writePullBaseline('staging', { cwd: repo, lastPulledAt: '2026-01-01T00:00:00.000Z', lastPullCommit: b });
+				fs.writeFileSync(path.join(repo, 'wip.txt'), 'half done\n');
+
+				let wipSubjectDuringPull = null;
+				const result = await mergeFirstDeploy({
+					environment: 'staging',
+					cwd: repo,
+					mode,
+					wipMessage: 'Snapshot before merging staging 2026-10-16',
+					pullFn: async () => {
+						// On the temp branch now: the WIP commit must already be on the home branch.
+						wipSubjectDuringPull = run('git', ['log', '-1', '--format=%s', 'main'], { cwd: repo }).stdout;
+						fs.writeFileSync(path.join(repo, 'a.txt'), 'remote\n');
+					}
+				});
+				assert.equal(result.ok, true, `${mode}: ${result.error || ''}`);
+				assert.equal(wipSubjectDuringPull, 'Snapshot before merging staging 2026-10-16', mode);
+				const subjects = run('git', ['log', '--format=%s', 'main'], { cwd: repo }).stdout.split('\n');
+				assert.ok(subjects.includes('Snapshot before merging staging 2026-10-16'), `${mode}: ${subjects.join(' | ')}`);
+				assert.equal(fs.readFileSync(path.join(repo, 'wip.txt'), 'utf8').replace(/\r\n/g, '\n'), 'half done\n');
+			} finally {
+				fs.rmSync(repo, { recursive: true, force: true });
+			}
+		}
+	});
+
 	it('auto-takes remote-only change since lastPullCommit with no conflict', async () => {
 		fs.writeFileSync(path.join(cwd, 'a.txt'), 'base\n');
 		fs.writeFileSync(path.join(cwd, 'b.txt'), 'keep\n');

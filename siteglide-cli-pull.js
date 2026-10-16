@@ -51,7 +51,7 @@ const program = require('commander'),
 	} = require('./lib/sourceOfTruth'),
 	{ promptTargetAudienceIfNeeded } = require('./lib/targetAudience'),
 	{ audiencePromptText } = require('./lib/promptAudience'),
-	{ selectChoice, inputText, confirmYesNo } = require('./lib/prompts'),
+	{ selectChoice, confirmYesNo } = require('./lib/prompts'),
 	{ recordPullBaselineAfterPull } = require('./lib/recordPullBaseline'),
 	{ readPullBaseline } = require('./lib/pullBaseline'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
@@ -63,6 +63,7 @@ const program = require('commander'),
 	{ isWorkingTreeDirty } = require('./lib/git/workingTree'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
+	{ promptCommitMessage } = require('./lib/git/commitPrompt'),
 	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
 	{ MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
 	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
@@ -996,19 +997,15 @@ program
 							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
 							process.exit(1);
 						}
-						const shortDate = new Date().toISOString().slice(0, 10);
-						const defaultBeforeMsg = `Snapshot before pulling from ${environment} environment ${shortDate}`;
-						const commitPrompt = audiencePromptText(
-							'Commit message for your current work',
-							'Press enter to continue',
-							pullCwd
-						);
-						const msg = await inputText(commitPrompt, { default: defaultBeforeMsg });
-						if (msg == null) {
+						const wipMessage = await promptCommitMessage({
+							environment,
+							action: 'pulling from',
+							cwd: pullCwd
+						});
+						if (wipMessage == null) {
 							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
 							process.exit(1);
 						}
-						const wipMessage = msg.trim() || defaultBeforeMsg;
 						tempPullLog('dirty_inner_merge_prompt:run_merge_first', { wipMessageLen: wipMessage.length });
 						await runMergeFirstPull(wipMessage);
 						return;

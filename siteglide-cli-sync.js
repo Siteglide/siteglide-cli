@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 process.noDeprecation = true;
 
+require('./lib/fatalError').installFatalErrorHandlers('[Sync] Sync stopped because of an unexpected error');
+
 const program = require('commander'),
 	spawn = require('child_process').spawn,
 	command = require('./lib/command'),
@@ -8,6 +10,7 @@ const program = require('commander'),
 	logger = require('./lib/logger'),
 	{ addDebugOption, applyDebugFlag, shouldPassDebugToChild, DEBUG_CLI_FLAG } = require('./lib/cliDebug'),
 	{ assertNotOnTemporaryBranch } = require('./lib/git/homeBranch'),
+	{ unreportedChildExitMessage } = require('./lib/fatalError'),
 	version = require('./package.json').version;
 
 program
@@ -85,7 +88,17 @@ program
 			liveReload: params.livereload,
 			shell: true
 		});
-		p.on('error', logger.Error);
+		p.on('error', (err) => {
+			logger.Error(`[Sync] Could not start the sync watcher: ${logger.describeError(err)}`);
+		});
+		p.on('exit', (code, signal) => {
+			const unreported = unreportedChildExitMessage('[Sync] Sync', code, signal);
+			if (unreported) {
+				const rerun = ['siteglide-cli sync', environment, '-debug'].filter(Boolean).join(' ');
+				logger.Error(`${unreported} Run ${rerun} for details.`, { exit: false });
+			}
+			process.exitCode = code === null ? 1 : code;
+		});
 	});
 
 program.parse(process.argv);

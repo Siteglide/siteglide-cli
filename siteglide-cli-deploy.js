@@ -3,7 +3,7 @@ process.noDeprecation = true;
 
 /**
  * Deploy: optional prod commit → remote-mtime pre-check (Merge first / continue) →
- * homepage pre-sync → archive/push → deploy path manifest → post-check clean/dirty.
+ * homepage pre-sync → archive/push → tidy up .tmp archives → deploy path manifest.
  */
 
 const program = require('commander'),
@@ -23,15 +23,17 @@ const program = require('commander'),
 	{ assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory'),
 	version = require('./package.json').version,
 	{ classifyEnvironment } = require('./lib/envClassification'),
-	{ collectDeployPreConflicts, collectDeployPostLeftovers } = require('./lib/remoteMtimeCheck'),
+	{ collectDeployPreConflicts } = require('./lib/remoteMtimeCheck'),
 	{ promptDeployConfirm } = require('./lib/remoteConflictPrompt'),
 	{ replaceDeployManifest, advancePullBaseline } = require('./lib/pullBaseline'),
 	{ collectDeployManifestPaths } = require('./lib/deployManifestPaths'),
+	{ tidyUpAfterDeploy } = require('./lib/deployTidyUp'),
 	{ clearConflictLog, writeConflictLog } = require('./lib/remoteCheckConflictLog'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
 	{ commitAllSafe, hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstDeploy } = require('./lib/git/mergeFirst'),
+	{ promptCommitMessage } = require('./lib/git/commitPrompt'),
 	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
 	{ MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
 	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
@@ -150,13 +152,14 @@ program
 		}
 
 		if (!params.withAssets) {
-			const chalk = require('chalk');
+			const { applyCliColour } = require('./lib/cliColour');
 			const { localTimeZoneLabel } = require('./lib/formatLocalDateTime');
 			const now = new Date();
 			const HHMMSS = now.toTimeString().split(' ')[0];
 			const tz = localTimeZoneLabel(now);
 			logger.Print(
-				chalk.blue(
+				applyCliColour(
+					'info',
 					`[${HHMMSS} ${tz}] [deploy] Assets like JS and CSS will not be deployed unless you use the -w / --with-assets flag.\n`
 				)
 			);
@@ -194,13 +197,15 @@ program
 				if (!hasStagedOrUnstagedChanges()) {
 					logger.Quiet('[deploy] User committed files manually, working tree is clean');
 				} else {
-					const msg = await Confirm(
-						'Commit message:\nSummarise your latest changes with a few words, then press enter.\n'
-					);
+					const msg = await promptCommitMessage({ environment: envLabel, action: 'deploying to' });
+					if (msg == null) {
+						logger.Error('[Cancelled] Deploy not executed — commit your work first, then deploy again.');
+						process.exit(1);
+					}
 					if (!hasStagedOrUnstagedChanges()) {
 						logger.Quiet('[deploy] User committed files manually, working tree is clean');
 					} else {
-						const committed = commitAllSafe(msg.trim() || `siteglide deploy ${environment} ${new Date().toISOString()}`);
+						const committed = commitAllSafe(msg);
 						if (!committed.ok && !/nothing to commit/i.test(committed.stdout + committed.stderr)) {
 							logger.Warn(`[deploy] Commit failed: ${committed.stderr || committed.stdout}`, { exit: false });
 						}
@@ -236,10 +241,24 @@ program
 			skipRemoteCheck
 		});
 
-		if (decision === 'merge_first') {
+		const mergedFirst = decision === 'merge_first';
+		if (mergedFirst) {
 			logger.Quiet('[deploy] Merge first: full pull on a temporary branch, then merge (AI can resolve conflicts).');
+			let wipMessage;
+			if (
+				process.stdin.isTTY
+				&& !process.env.CI
+				&& hasStagedOrUnstagedChanges()
+			) {
+				wipMessage = await promptCommitMessage({ environment, action: 'merging' });
+				if (wipMessage == null) {
+					logger.Error('[Cancelled] Deploy not executed — commit your work first, then deploy again.');
+					process.exit(1);
+				}
+			}
 			const result = await mergeFirstDeploy({
 				environment,
+				wipMessage,
 				pullFn: async () => {
 					await spawnNestedPull({
 						environment,
@@ -288,39 +307,29 @@ program
 
 		try {
 			await Promise.all([deploy(env, authData, params)]);
+			// The archive/push children leave .tmp/marketplace-release.zip (and assets.zip) behind;
+			// remove them on every path or the next `git add -A` snapshot commits them.
+			tidyUpAfterDeploy();
 			const deployedAt = new Date().toISOString();
 			const paths = collectDeployManifestPaths({ withAssets: params.withAssets });
 			replaceDeployManifest(environment, { deployedAt, paths });
 			clearConflictLog(environment);
 
-			const post = await collectDeployPostLeftovers(gateway, environment, deployedAt);
-			if (!post.leftovers.length) {
+			// Only a merge-first deploy has actually pulled the site, so only it moves the last-pull
+			// baseline. A plain deploy leaves it alone: files the site has that this folder does not
+			// should still show up on the next pre-deploy check.
+			if (mergedFirst) {
 				advancePullBaseline(environment, deployedAt);
-				logger.Quiet('[deploy] No untracked remote leftovers — advanced last-pull baseline.');
-			} else if (process.stdin.isTTY && !process.env.CI) {
-				writeConflictLog(environment, {
-					command: 'deploy_post',
-					reason: 'deploy_post_untracked',
-					conflicts: post.leftovers,
-					consoleHint: 'Remote files exist that were not in this deploy.'
-				});
-				const pullNow = await Confirm(
-					'After your latest deploy, there are still a few files on the site which are not tracked locally. Pull now? (Y/n)\n'
-				);
-				if (pullNow === 'Y') {
-					await new Promise((resolve) => {
-						const child = spawn(command('siteglide-cli-pull'), [environment, '-c', params.configFile], {
-							stdio: 'inherit',
-							shell: true,
-							env: Object.assign({}, process.env, nestedCliEnv())
-						});
-						child.on('close', () => resolve());
-					});
-				}
+				logger.Quiet('[deploy] Merged before deploy — advanced last-pull baseline.');
 			}
-			logger.Success(`[deploy] Deploy finished for ${environment}.`);
+			logger.Success(`[deploy] Deploy to ${environment} finished.`);
 			process.exit(0);
-		} catch {
+		} catch (err) {
+			tidyUpAfterDeploy();
+			// uploadArchive rejects with nothing after it has already printed its own red line.
+			if (err) {
+				logger.Error(`[deploy] Deploy stopped because of an unexpected error: ${logger.describeError(err)}`, { exit: false });
+			}
 			process.exit(1);
 		}
 	});

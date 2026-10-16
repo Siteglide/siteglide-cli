@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
+require('./lib/fatalError').installFatalErrorHandlers('[Sync] Sync stopped because of an unexpected error');
+
 const program = require('commander'),
 	Gateway = require('./lib/proxy'),
 	fs = require('fs'),
 	path = require('path'),
 	Queue = require('async/queue'),
 	logger = require('./lib/logger'),
+	{ applyCliColour } = require('./lib/cliColour'),
 	validate = require('./lib/validators'),
 	watchFilesExtensions = require('./lib/watch-files-extensions'),
 	templates = require('./lib/templates'),
@@ -31,6 +34,8 @@ const program = require('commander'),
 	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstSyncPull, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
+	{ promptCommitMessage, defaultSnapshotMessage } = require('./lib/git/commitPrompt'),
+	{ hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
 	{ applySiteglideUserGitIgnorePolicy } = require('./lib/git/siteglideGitignore'),
 	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug'),
@@ -120,7 +125,7 @@ const isEmpty = filePath => {
 		if (err.code === 'ENOENT') {
 			return false;
 		}
-		logger.Error(err);
+		logger.Error(`[Sync] Sync stopped: could not read ${displayPath(filePath)}: ${logger.describeError(err)}`);
 	}
 
 	return isEmpty;
@@ -372,9 +377,22 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 				clearSyncConflictRecords(environment);
 				return { action: 'merge_first_failed' };
 			}
+			// The merge pulls the whole site, so every uncommitted change is committed first.
+			// -fast scopes the pull to the conflicting file; its default message says so.
+			const scopePath = mergeFirstFast ? conflictPath : null;
+			let wipMessage = defaultSnapshotMessage(environment, 'merging', { scopePath });
+			if (hasStagedOrUnstagedChanges()) {
+				const answer = await promptCommitMessage({ environment, action: 'merging', scopePath });
+				if (answer == null) {
+					resolveSyncCurrentConflict('cancel');
+					clearSyncConflictRecords(environment);
+					return { action: 'cancel' };
+				}
+				wipMessage = answer;
+			}
 			const mf = await mergeFirstSyncPull({
 				environment,
-				wipMessage: `siteglide: WIP before merge-first sync (${conflictPath})`,
+				wipMessage,
 				pullFn: async () => {
 					await spawnNestedPull({
 						environment,
@@ -883,8 +901,12 @@ gateway.ping().then(async () => {
 
 	await fetchDirectUploadData(gateway);
 
-	logger.Quiet(`Enabled sync to: ${program.opts().url}`);
-	logger.Quiet(`[Sync] Watching: ${watchDirectories.join(', ')}`);
+	const syncTarget = process.env.SITEGLIDE_ENV
+		? `${process.env.SITEGLIDE_ENV} (${program.opts().url})`
+		: program.opts().url;
+	logger.Muted(`[Sync] Enabled sync to: ${syncTarget}`);
+	const folderNoun = watchDirectories.length === 1 ? 'folder' : 'folders';
+	logger.Info(applyCliColour('info', `[Sync] Watching: ${watchDirectories.join(' and ')} ${folderNoun}`));
 
 	let liveReloadServer;
   if (program.opts().livereload) {
@@ -938,5 +960,5 @@ gateway.ping().then(async () => {
 	} catch {
 		// ignore
 	}
-	logger.Error(error);
+	logger.Error(`[Sync] Could not start sync: ${error instanceof Error ? logger.describeError(error) : String(error)}`);
 });
