@@ -70,6 +70,7 @@ const program = require('commander'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
 	{ runMergeFirstSyncPullBody } = require('./lib/pull/mergeFirstSyncPullBody'),
+	{ promptNoGitOverwriteConfirmIfNeeded } = require('./lib/pull/noGitOverwriteConfirm'),
 	{
 		tempPullLog,
 		tempPullGitSnapshot,
@@ -1023,6 +1024,20 @@ program
 						}
 						process.exit(1);
 					}
+					const gitAfterSetup = getGitReadiness({ cwd: pullCwd });
+					const overwriteConfirmed = await promptNoGitOverwriteConfirmIfNeeded({
+						cwd: pullCwd,
+						mergeFirstSync,
+						repoInitialized: gitAfterSetup.repoInitialized,
+						assumeYes,
+						log: (event, data) => tempPullLog(event, data),
+						onCancel: () => {
+							logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+						}
+					});
+					if (!overwriteConfirmed) {
+						return;
+					}
 				}
 
 				pullSpinner.start();
@@ -1199,6 +1214,12 @@ program
 					await startPull();
 					return;
 				}
+				const gitForSkipRemote = getGitReadiness();
+				if (!gitForSkipRemote.repoInitialized) {
+					tempPullLog('route', { name: 'skip_remote_check:no_git_deferred_confirm' });
+					await startPull();
+					return;
+				}
 				const response = await confirmYesNo(
 					'Are you sure you would like to pull? This will overwrite your local files immediately!'
 				);
@@ -1278,16 +1299,8 @@ program
 				return;
 			}
 
-			tempPullLog('route', { name: 'no_git_overwrite_confirm' });
-			const response = await confirmYesNo(
-				'Are you sure you would like to pull? This will overwrite your local files immediately!'
-			);
-			tempPullLog('no_git_overwrite_confirm:choice', { confirmed: Boolean(response) });
-			if (response) {
-				await startPull();
-			} else {
-				logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
-			}
+			tempPullLog('route', { name: 'no_git_deferred_confirm' });
+			await startPull();
 		})();
 	});
 

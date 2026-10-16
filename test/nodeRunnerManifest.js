@@ -13,6 +13,7 @@ module.exports = [
 	'test/lib/finalizePullBaseline.test.js',
 	'test/lib/listModulesWithRetry.test.js',
 	'test/lib/maybeGitSetupHint.test.js',
+	'test/lib/noGitOverwriteConfirm.test.js',
 	'test/lib/mergeFirst.test.js',
 	'test/lib/normalizeSyncResponse.test.js',
 	'test/lib/parseSelectivePullOptions.test.js',

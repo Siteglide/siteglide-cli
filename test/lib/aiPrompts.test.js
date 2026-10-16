@@ -8,6 +8,6 @@ describe('buildGitSetupAiPrompt', () => {
 		assert.match(prompt, /To-do list:/);
 		assert.match(prompt, /git_status/);
 		assert.match(prompt, /siteglide-cli pull command again/);
-		assert.match(prompt, /AI agentic assistant/);
+		assert.match(prompt, /Siteglide MCP audience tool/);
 	});
 });
