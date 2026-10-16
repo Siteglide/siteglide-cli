@@ -31,6 +31,8 @@ const program = require('commander'),
 	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstSyncPull, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
+	{ getGitReadiness } = require('./lib/git/readiness'),
+	{ applySiteglideUserGitIgnorePolicy } = require('./lib/git/siteglideGitignore'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
 	syncFileWatcher = require('./lib/sync/syncFileWatcher'),
 	{ createSyncUploadWave, checkAllowsUpload, checkHasGitBlock } = require('./lib/sync/syncUploadWave'),
@@ -869,6 +871,10 @@ gateway.ping().then(async () => {
 		logger.Error(
 			`${dir.SITE_ROOT}/ or ${dir.APP}/ has to exist! Please make sure you have the correct folder structure.`
 		);
+	}
+
+	if (getGitReadiness().repoInitialized) {
+		applySiteglideUserGitIgnorePolicy({ logPrefix: '[sync]' });
 	}
 
 	await fetchDirectUploadData(gateway);

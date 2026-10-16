@@ -824,10 +824,6 @@ program
 			});
 			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_start', { environment });
 			logger.Quiet('[pull] Pull and merge: committing local work if needed, pulling on a temporary branch, then merging back.');
-			const gitReady = getGitReadiness();
-			if (gitReady.repoInitialized) {
-				await ensureSiteglideGitignored();
-			}
 			const result = await mergeFirstPull({
 				environment,
 				wipMessage,
@@ -937,9 +933,7 @@ program
 						logger.Error(`[pull] Refusing pull while ${open.reason}. Ask AI + MCP to help resolve conflict markers first.`);
 						process.exit(1);
 					}
-					if (!mergeFirstSync) {
-						await ensureSiteglideGitignored();
-					}
+					await ensureSiteglideGitignored();
 					if (
 						!mergeFirstSync
 						&& !skipRemoteCheck

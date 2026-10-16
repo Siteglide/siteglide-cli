@@ -6,6 +6,7 @@ const path = require('path');
 const { run } = require('../../lib/git/readiness');
 const { writePullBaseline, resolveLastPullCommit, resolveMergeBase, readPullBaseline } = require('../../lib/pullBaseline');
 const { mergeFirstDeploy, checkoutTempBranchForRemote } = require('../../lib/git/mergeFirst');
+const { listTrackedSiteglideUserFiles } = require('../../lib/git/siteglideGitignore');
 const { finalizePullBaseline } = require('../../lib/git/finalizePullBaseline');
 const { hasOpenGitConflicts: hasConflicts } = require('../../lib/git/workingTree');
 
@@ -151,6 +152,43 @@ describe('mergeFirst last-pull base', () => {
 			fs.readFileSync(path.join(cwd, 'README.md'), 'utf8').replace(/\r\n/g, '\n'),
 			'from second pull\n'
 		);
+	});
+
+	it('clears tracked .siteglide/user from merge base so checkout original branch succeeds', async () => {
+		const userFile = path.join(cwd, '.siteglide', 'user', 'pull', 'foo.json');
+		fs.mkdirSync(path.dirname(userFile), { recursive: true });
+		fs.writeFileSync(userFile, '{"v":1}');
+		fs.writeFileSync(path.join(cwd, 'keep.txt'), 'base\n');
+		const oldBase = commitAll(cwd, 'track user in base');
+		writePullBaseline('staging', {
+			cwd,
+			lastPulledAt: '2026-01-01T00:00:00.000Z',
+			lastPullCommit: oldBase
+		});
+
+		fs.writeFileSync(path.join(cwd, '.gitignore'), '.siteglide/user/\n');
+		assert.equal(
+			run('git', ['rm', '-r', '--cached', '--ignore-unmatch', '--', '.siteglide/user'], { cwd }).ok,
+			true
+		);
+		fs.writeFileSync(path.join(cwd, 'keep.txt'), 'local\n');
+		commitAll(cwd, 'stop tracking user on main');
+
+		const result = await mergeFirstDeploy({
+			environment: 'staging',
+			cwd,
+			mode: 'pull_full',
+			pullFn: async () => {
+				fs.writeFileSync(userFile, '{"v":2}');
+			}
+		});
+		assert.equal(result.ok, true);
+		assert.equal(result.originalBranch, 'main');
+		assert.equal(run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout, 'main');
+		assert.deepEqual(listTrackedSiteglideUserFiles(cwd), []);
+		const tempRef = run('git', ['show-ref', '--verify', `refs/heads/${result.tempBranch}`], { cwd });
+		assert.equal(tempRef.ok, false);
+		assert.equal(fs.existsSync(userFile), true);
 	});
 
 	it('uses initial commit as base when no lastPullCommit and both sides diverge', async () => {
