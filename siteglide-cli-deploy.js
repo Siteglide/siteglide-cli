@@ -15,7 +15,7 @@ const program = require('commander'),
 	logger = require('./lib/logger'),
 	Confirm = require('./lib/confirm'),
 	templates = require('./lib/templates'),
-	glob = require('globby'),
+	{ glob } = require('tinyglobby'),
 	fs = require('fs'),
 	path = require('path'),
 	getFile = require('./lib/get-file'),
@@ -184,11 +184,11 @@ program
 			);
 			if (commitFirst === 'Y') {
 				if (!hasStagedOrUnstagedChanges()) {
-					logger.Info('[deploy] User committed files manually, working tree is clean');
+					logger.Quiet('[deploy] User committed files manually, working tree is clean');
 				} else {
 					const msg = await Confirm('Commit message:\n(Press enter to confirm)\n');
 					if (!hasStagedOrUnstagedChanges()) {
-						logger.Info('[deploy] User committed files manually, working tree is clean');
+						logger.Quiet('[deploy] User committed files manually, working tree is clean');
 					} else {
 						const committed = commitAllSafe(msg.trim() || `siteglide deploy ${environment} ${new Date().toISOString()}`);
 						if (!committed.ok && !/nothing to commit/i.test(committed.stdout + committed.stderr)) {
@@ -210,7 +210,7 @@ program
 			&& skipRemoteCheck
 			&& !params.skipRemoteCheck
 		) {
-			logger.Info('[deploy] sourceOfTruth is versionControl — remote conflict checks are skipped (same as -s / --skip-remote-check).');
+			logger.Quiet('[deploy] sourceOfTruth is versionControl — remote conflict checks are skipped (same as -s / --skip-remote-check).');
 		}
 
 		const gateway = new Gateway(authData);
@@ -227,7 +227,7 @@ program
 		});
 
 		if (decision === 'merge_first') {
-			logger.Info('[deploy] Merge first: full pull on a temporary branch, then merge (AI can resolve conflicts).');
+			logger.Quiet('[deploy] Merge first: full pull on a temporary branch, then merge (AI can resolve conflicts).');
 			const result = await mergeFirstDeploy({
 				environment,
 				pullFn: async () => {
@@ -286,7 +286,7 @@ program
 			const post = await collectDeployPostLeftovers(gateway, environment, deployedAt);
 			if (!post.leftovers.length) {
 				advancePullBaseline(environment, deployedAt);
-				logger.Info('[deploy] No untracked remote leftovers — advanced last-pull baseline.');
+				logger.Quiet('[deploy] No untracked remote leftovers — advanced last-pull baseline.');
 			} else if (process.stdin.isTTY && !process.env.CI) {
 				writeConflictLog(environment, {
 					command: 'deploy_post',

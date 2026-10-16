@@ -112,5 +112,5 @@ if (!siteRoot && !fs.existsSync(dir.MODULES)) {
 		{ hideTimestamp: true }
 	);
 }
-logger.Info(`[Deploy] Archiving from: ${siteRoot || '(modules only)'}`);
+logger.Quiet(`[Deploy] Archiving from: ${siteRoot || '(modules only)'}`);
 makeArchive(program.opts().target, siteRoot, program);

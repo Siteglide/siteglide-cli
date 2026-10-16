@@ -315,9 +315,9 @@ const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 		const claudeNote = isSkillAgentEnabled('Claude', enabledSkillAgents)
 			? '; Claude skills are flat files in .claude/skills'
 			: '';
-		logger.Info(`[pull] AI: Skill IDE folders ready (${ready.join(', ')}; Siteglide → .agents/skills/siteglide${claudeNote})`);
+		logger.Quiet(`[pull] AI: Skill IDE folders ready (${ready.join(', ')}; Siteglide → .agents/skills/siteglide${claudeNote})`);
 	} else {
-		logger.Info(`[pull] AI: Skill IDE folders skipped (no agents included in ${AI_AGENT_PREFERENCES_RELATIVE_PATH})`);
+		logger.Quiet(`[pull] AI: Skill IDE folders skipped (no agents included in ${AI_AGENT_PREFERENCES_RELATIVE_PATH})`);
 	}
 };
 
@@ -453,7 +453,7 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
 const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Site: Downloading main site zip → ${siteRoot}/`);
+	logger.Quiet(`[pull] Site: Downloading main site zip → ${siteRoot}/`);
 	const filename = `${siteRoot}.zip`;
 	pullSpinner.text = 'Pulling site files';
 	const pullTask = await gateway.pullZip();
@@ -470,7 +470,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
 	}
 	await fs.remove(`./${siteRoot}/app`);
 	await cleanupEmptyDirs(siteRoot);
-	logger.Info('[pull] Site: Files pulled');
+	logger.Quiet('[pull] Site: Files pulled');
 };
 
 /**
@@ -484,7 +484,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
  * uses then deletes a temp zip and `.tmp/pull-<moduleName>` work directory.
  */
 const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Modules: Starting pull - ${formatModuleNameForLog(moduleName)}`);
+	logger.Quiet(`[pull] Modules: Starting pull - ${formatModuleNameForLog(moduleName)}`);
 	const filename = `${dir.MODULES}-${moduleName}.zip`;
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
 	const pullTask = await gateway.pullZip({ module_name: moduleName });
@@ -567,14 +567,14 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignore
 	}
 
 	const limit = Math.max(1, concurrency);
-	logger.Info(`[pull] Modules: Pulling ${total} module(s)`);
+	logger.Quiet(`[pull] Modules: Pulling ${total} module(s)`);
 	pullSpinner.text = 'Pulling modules';
 
 	let completed = 0;
 	await mapLimit(modulesToPull, limit, async (moduleName) => {
 		await pullModuleZip(gateway, moduleName, ignoredModules);
 		completed += 1;
-		logger.Info(`[pull] Modules: ${formatModuleNameForLog(moduleName)} done (${completed}/${total})`);
+		logger.Quiet(`[pull] Modules: ${formatModuleNameForLog(moduleName)} done (${completed}/${total})`);
 		pullSpinner.text = `Pulling modules (${completed}/${total} done)`;
 	});
 
@@ -666,7 +666,7 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 		}
 		wroteCount++;
 	});
-	logger.Info(`[pull] Assets: wrote ${wroteCount} file(s) (${moduleAssetCount} under modules)`);
+	logger.Quiet(`[pull] Assets: wrote ${wroteCount} file(s) (${moduleAssetCount} under modules)`);
 };
 
 /**
@@ -678,7 +678,7 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
  * updates `pullSpinner` text and writes tidying-up logs.
  */
 const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info('[pull] Tidying up local files');
+	logger.Quiet('[pull] Tidying up local files');
 	pullSpinner.text = 'Tidying up...';
 
 	const siteZips = [`./${dir.SITE_ROOT}.zip`, `./${dir.APP}.zip`];
@@ -720,7 +720,7 @@ const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) =>
 			await cleanupEmptyDirs(appRoot);
 		}
 	}
-	logger.Info('[pull] Tidying up complete');
+	logger.Quiet('[pull] Tidying up complete');
 };
 
 program
@@ -823,7 +823,7 @@ program
 				wipMessageLen: wipMessage ? wipMessage.length : 0
 			});
 			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_start', { environment });
-			logger.Info('[pull] Pull and merge: committing local work if needed, pulling on a temporary branch, then merging back.');
+			logger.Quiet('[pull] Pull and merge: committing local work if needed, pulling on a temporary branch, then merging back.');
 			const gitReady = getGitReadiness();
 			if (gitReady.repoInitialized) {
 				await ensureSiteglideGitignored();
@@ -999,14 +999,14 @@ program
 				}
 
 					const siteRoot = await resolveSiteAppRoot();
-					// logger.Info(`[pull] Site files root: ${siteRoot}/`);
+					// logger.Quiet(`[pull] Site files root: ${siteRoot}/`);
 
 					pullSpinner.start();
 					if (moduleFilter) {
-						logger.Info(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
+						logger.Quiet(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
 					}
 					if (ignoreAssets) {
-						logger.Info('[pull] --ignore-assets set; asset download step will be skipped');
+						logger.Quiet('[pull] --ignore-assets set; asset download step will be skipped');
 					}
 
 					pullSpinner.text = 'Fetching installed modules';
@@ -1042,10 +1042,10 @@ program
 						const installedForLog = installedModules.map((name) => {
 							return isPullIgnoredModule(name, effectiveIgnoredModules) ? `${name} (skipped)` : name;
 						});
-						logger.Info(`[pull] Modules: ${installedModules.length} installed on this site: ${installedForLog.join(', ')}`);
+						logger.Quiet(`[pull] Modules: ${installedModules.length} installed on this site: ${installedForLog.join(', ')}`);
 					}
 					if (moduleSelection.ignored.length > 0) {
-						logger.Info(`[pull] Modules: Change what is skipped via pull_behaviour include/exclude in ./${PULL_MODULES_CONFIG_RELATIVE_PATH}`);
+						logger.Quiet(`[pull] Modules: Change what is skipped via pull_behaviour include/exclude in ./${PULL_MODULES_CONFIG_RELATIVE_PATH}`);
 					}
 
 					if (moduleFilter && modulesToPull === null) {
@@ -1055,7 +1055,7 @@ program
 					}
 
 					// if (!moduleFilter && moduleSelection.ignored.length > 0) {
-					// 	logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
+					// 	logger.Quiet(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
 					// }
 
 					const agentsOnlyModules = modulesToPull.filter(isAgentsOnlyPullModule);
@@ -1065,9 +1065,9 @@ program
 					const moduleTotal = modulesCounted.length;
 
 					if (moduleTotal === 0) {
-						logger.Info('[pull] No modules selected to pull');
+						logger.Quiet('[pull] No modules selected to pull');
 					} else {
-						logger.Info(`[pull] Modules: Will pull ${moduleTotal} module(s): ${formatModuleListForLog(modulesCounted).join(', ')}`);
+						logger.Quiet(`[pull] Modules: Will pull ${moduleTotal} module(s): ${formatModuleListForLog(modulesCounted).join(', ')}`);
 					}
 
 					const runFullMergeFirstSyncPull = async () => {
@@ -1078,19 +1078,19 @@ program
 						if (!ignoreAssets) {
 							await pullAssets(gateway, siteRoot, ignoredModules);
 						} else {
-							logger.Info('[pull] Skipping assets step');
+							logger.Quiet('[pull] Skipping assets step');
 						}
 
 						for (let i = 0; i < agentsOnlyModules.length; i++) {
 							await removeLocalModuleCheckout(agentsOnlyModules[i]);
 							if (!ignoreAssets) {
 								modulesDone += 1;
-								logger.Info(`[pull] Modules: ${formatModuleNameForLog(agentsOnlyModules[i])} done (${modulesDone}/${moduleTotal})`);
+								logger.Quiet(`[pull] Modules: ${formatModuleNameForLog(agentsOnlyModules[i])} done (${modulesDone}/${moduleTotal})`);
 							}
 						}
 
 						if (moduleTotal > 0) {
-							logger.Info(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
+							logger.Quiet(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
 						}
 					};
 
@@ -1133,7 +1133,7 @@ program
 					recordPullBaseline();
 					await ensureSharedUserPreferencesAfterPull(pullCwd);
 
-					logger.Info('[pull] All steps finished');
+					logger.Quiet('[pull] All steps finished');
 					pullSpinner.succeed('Pulled files');
 				} catch (e) {
 					logger.Debug(e);
@@ -1244,7 +1244,7 @@ program
 					lastPullCommit: baseline && baseline.lastPullCommit ? baseline.lastPullCommit.slice(0, 12) : ''
 				});
 				if (!baseline || !baseline.lastPullCommit) {
-					logger.Info(
+					logger.Quiet(
 						'[pull] No pull baseline yet for this environment — Pull and merge seeds lastPullCommit for merge-first sync/deploy checks.'
 					);
 				}

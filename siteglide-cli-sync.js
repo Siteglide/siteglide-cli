@@ -39,7 +39,7 @@ program
 			&& skipRemoteCheck
 			&& !params.skipRemoteCheck
 		) {
-			logger.Info('[sync] sourceOfTruth is versionControl — remote conflict checks are skipped (same as -s / --skip-remote-check).');
+			logger.Quiet('[sync] sourceOfTruth is versionControl — remote conflict checks are skipped (same as -s / --skip-remote-check).');
 		}
 		const { buildSyncWatchEnv } = require('./lib/syncWatchEnv');
 		// Commander 8 maps bare `-compare` to `Compare`; long form + `-compare, --compare` → `compare`.
@@ -50,10 +50,10 @@ program
 			process.exit(1);
 		}
 		if (mergeFirstFast) {
-			logger.Info('[sync] -fast: merge-first will use selective pull for conflict paths only.');
+			logger.Quiet('[sync] -fast: merge-first will use selective pull for conflict paths only.');
 		}
 		if (mergeFirstCompare) {
-			logger.Info('[sync] -compare: merge-first will compare full vs selective pull (one path); see .siteglide/user/selective-pull-compare/.');
+			logger.Quiet('[sync] -compare: merge-first will compare full vs selective pull (one path); see .siteglide/user/selective-pull-compare/.');
 		}
 		const env = buildSyncWatchEnv({
 			processEnv: process.env,

@@ -19,7 +19,7 @@
 	},
 	"homepage": "https://docs.siteglide.com/articles/1541403-introduction-to-the-command-line-interface-cli",
 	"engines": {
-		"node": ">=20"
+		"node": ">=22.12.0"
 	},
 	"siteglideMcp": {
 		"usage": "Allows siteglide-cli pull to recommend auto updates to the MCP within the same semantic version range only. The -0 suffix includes prereleases (e.g. 0.1.0-alpha.0) until a stable 0.1.x exists.",
@@ -36,16 +36,15 @@
 		"async": "^3.2.3",
 		"body-parser": "^1.20.8",
 		"chalk": "^4.1.2",
-		"chokidar": "^3.5.3",
+		"chokidar": "^5.0.0",
 		"commander": "^8.3.0",
 		"compression": "^1.8.1",
 		"degit": "^2.8.6",
 		"email-validator": "^2.0.4",
 		"express": "^4.22.3",
 		"fs-extra": "^10.0.1",
-		"globby": "^11",
 		"js-yaml": "^4.3.2",
-		"livereload": "^0.9.3",
+		"livereload": "^0.10.3",
 		"mime-types": "^2.1.35",
 		"minimist": "^1.2.6",
 		"mustache": "^4.2.0",
@@ -57,6 +56,7 @@
 		"semver": "^7.8.5",
 		"sharp": "^0.35.3",
 		"shelljs": "^0.8.5",
+		"tinyglobby": "^0.2.17",
 		"update-notifier": "^7.3.1",
 		"uuid": "11.1.1",
 		"valid-url": "^1.0.9",
@@ -97,7 +97,7 @@
 		"minimatch": "^3.1.4",
 		"brace-expansion": "^1.1.18",
 		"cross-spawn": "^7.0.6",
-		"ws": "^7.5.11",
+		"ws": "^8.18.0",
 		"archiver-promise": {
 			"async": "^3.2.6"
 		},

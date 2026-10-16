@@ -708,7 +708,7 @@ const deleteFile = (gateway, syncedFilePath) => {
 
 	return gateway.delete(formData).then(body => {
 		if (body) {
-			logger.Info(`[Sync] Deleted: ${filePath}`);
+			logger.Quiet(`[Sync] Deleted: ${filePath}`);
 		}
 	});
 };
@@ -873,8 +873,8 @@ gateway.ping().then(async () => {
 
 	await fetchDirectUploadData(gateway);
 
-	logger.Info(`Enabled sync to: ${program.opts().url}`);
-	logger.Info(`[Sync] Watching: ${watchDirectories.join(', ')}`);
+	logger.Quiet(`Enabled sync to: ${program.opts().url}`);
+	logger.Quiet(`[Sync] Watching: ${watchDirectories.join(', ')}`);
 
 	let liveReloadServer;
   if (program.opts().livereload) {
@@ -893,7 +893,7 @@ gateway.ping().then(async () => {
 
     liveReloadServer.watch(liveReloadDirectories);
 
-    logger.Info('LiveReload Enabled');
+    logger.Quiet('LiveReload Enabled');
   }
 
 	syncFileWatcher.attach({

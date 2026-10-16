@@ -14,21 +14,21 @@ describe('parentUserFsLog', () => {
 		fs.rmSync(parentDir, { recursive: true, force: true });
 	});
 
-	test('ensureDirWithLog reports created shared folder at Info', () => {
+	test('ensureDirWithLog reports created shared folder at Quiet', () => {
 		const target = path.join(parentDir, '.siteglide', 'user');
 		const logger = require('../../lib/logger');
-		const infoSpy = jest.spyOn(logger, 'Info').mockImplementation(() => {});
+		const quietSpy = jest.spyOn(logger, 'Quiet').mockImplementation(() => {});
 
 		const result = ensureDirWithLog(target, 'test context');
 
 		expect(result.ok).toBe(true);
 		expect(result.created).toBe(true);
 		expect(fs.existsSync(target)).toBe(true);
-		expect(infoSpy).toHaveBeenCalledWith(
+		expect(quietSpy).toHaveBeenCalledWith(
 			expect.stringContaining('created shared folder'),
 			{ exit: false }
 		);
 
-		infoSpy.mockRestore();
+		quietSpy.mockRestore();
 	});
 });
