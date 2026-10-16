@@ -7,7 +7,10 @@ const {
 	claimSyncStatus,
 	clearSyncStatus,
 	syncStatusDir,
-	syncStatusPath
+	syncStatusPath,
+	readStatusFile,
+	appendSyncStatusError,
+	MAX_SYNC_ERRORS
 } = require('../../lib/syncStatus');
 
 describe('claimSyncStatus / clearSyncStatus', () => {
@@ -109,5 +112,86 @@ describe('claimSyncStatus / clearSyncStatus', () => {
 		clearSyncStatus({ cwd, pid: 4001 });
 		assert.equal(fs.existsSync(syncStatusPath(cwd, 4001)), false);
 		assert.equal(fs.existsSync(syncStatusPath(cwd, 4002)), true);
+	});
+});
+
+describe('appendSyncStatusError', () => {
+	let cwd;
+
+	beforeEach(() => {
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-cli-sync-err-'));
+	});
+
+	afterEach(() => {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it('appends to syncErrors and preserves claim fields', () => {
+		claimSyncStatus({
+			environment: 'staging',
+			cwd,
+			pid: 5001,
+			isAlive: () => false
+		});
+		appendSyncStatusError({
+			cwd,
+			pid: 5001,
+			entry: {
+				at: '2026-10-16T10:00:00.000Z',
+				path: 'marketplace_builder/views/pages/a.liquid',
+				kind: 'validation',
+				message: 'Guide: syntax error'
+			}
+		});
+		const entry = readStatusFile(syncStatusPath(cwd, 5001));
+		assert.equal(entry.environment, 'staging');
+		assert.equal(entry.pid, 5001);
+		assert.deepEqual(entry.syncErrors, [
+			{
+				at: '2026-10-16T10:00:00.000Z',
+				path: 'marketplace_builder/views/pages/a.liquid',
+				kind: 'validation',
+				message: 'Guide: syntax error'
+			}
+		]);
+	});
+
+	it('caps syncErrors at MAX_SYNC_ERRORS', () => {
+		claimSyncStatus({
+			environment: 'staging',
+			cwd,
+			pid: 5002,
+			isAlive: () => false
+		});
+		for (let i = 0; i < MAX_SYNC_ERRORS + 5; i++) {
+			appendSyncStatusError({
+				cwd,
+				pid: 5002,
+				entry: {
+					at: `2026-10-16T10:00:0${i % 10}.000Z`,
+					path: `path/${i}.liquid`,
+					kind: 'validation',
+					message: `msg ${i}`
+				}
+			});
+		}
+		const entry = readStatusFile(syncStatusPath(cwd, 5002));
+		assert.equal(entry.syncErrors.length, MAX_SYNC_ERRORS);
+		assert.equal(entry.syncErrors[0].message, 'msg 5');
+		assert.equal(entry.syncErrors[MAX_SYNC_ERRORS - 1].message, `msg ${MAX_SYNC_ERRORS + 4}`);
+	});
+
+	it('does nothing when status file is missing', () => {
+		appendSyncStatusError({
+			cwd,
+			pid: 99999,
+			entry: {
+				at: '2026-10-16T10:00:00.000Z',
+				path: 'a.liquid',
+				kind: 'validation',
+				message: 'x'
+			}
+		});
+		assert.equal(fs.existsSync(syncStatusPath(cwd, 99999)), false);
 	});
 });

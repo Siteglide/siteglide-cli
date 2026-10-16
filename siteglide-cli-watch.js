@@ -17,6 +17,11 @@ const program = require('commander'),
 	manifestGenerateForAssets = require('./lib/assets/generateManifest').manifestGenerateForAssets,
 	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
 	{ claimSyncStatus, clearSyncStatus, registerSyncStatusCleanup } = require('./lib/syncStatus'),
+	{
+		syncErrorFromPushBody,
+		syncErrorFromAssetFailure,
+		recordSyncUploadError
+	} = require('./lib/syncUploadError'),
 	{ logCommandLockRefusal } = require('./lib/commandLock'),
 	version = require('./package.json').version,
 	{ cloneDeep, debounce } = require('lodash'),
@@ -723,31 +728,25 @@ const pushFile = (gateway, syncedFilePath) => {
 
 	return gateway.sync(formData).then(async (body) => {
 		if(!body){
-			logger.Error(`[Sync] Error: unhandled.`, { exit: false });
+			recordSyncUploadError(syncErrorFromPushBody(filePath, body));
 			return false;
 		}
 
-		if(body.error){
-			logger.Error(`[Sync] Error: ${filePath}\n${body.error}`, { exit: false });
-		}else if(
-			(body.reason)||
-			(body.message)
+		if(
+			body.error
+			|| body.reason
+			|| body.message
 		){
-			let error_msg = `[Sync] Error: ${filePath}`;
-			let error_name = body.name? body.name : 'Error';
-			error_msg += body.mark? `\nLocation: ${error_name} on line ${body.mark.line}, column ${body.mark.column}.` : '';
-			error_msg += `\nGuide: ${body.message || body.reason}`;
-
-			logger.Error(error_msg, { exit: false });
-		}else{
-			logger.Success(`[Sync] Uploaded: ${filePath}`);
-			await noteSyncUploadSuccess(gateway, syncedFilePath);
-
-			if(body.refresh_index){
-				logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
-			}
+			recordSyncUploadError(syncErrorFromPushBody(filePath, body));
+			return;
 		}
 
+		logger.Success(`[Sync] Uploaded: ${filePath}`);
+		await noteSyncUploadSuccess(gateway, syncedFilePath);
+
+		if(body.refresh_index){
+			logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
+		}
 	});
 };
 
@@ -815,7 +814,8 @@ const sendAsset = async (gateway, filePath) => {
 				sendAsset(gateway,filePath);
 			})
 		}else{
-			logger.Error(`[Sync] Error: ${displayPath(filePath)} - Failed to sync`);
+			const failure = syncErrorFromAssetFailure(displayPath(filePath), e && e.message ? String(e.message) : undefined);
+			recordSyncUploadError(failure);
 		}
 	}
 };
