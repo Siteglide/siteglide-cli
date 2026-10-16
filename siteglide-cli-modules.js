@@ -5,7 +5,8 @@ const program = require('commander'),
 	Gateway = require('./lib/proxy'),
 	logger = require('./lib/logger'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
-	version = require('./package.json').version;
+	version = require('./package.json').version,
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 program
 	.version(version, '-v, --version')
@@ -13,9 +14,13 @@ program
 	.usage('<env>')
 	.description('View a list of modules installed on the site.')
 	.arguments('[environment]', 'name of the environment. Example: staging')
-	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
-	.action(async (environment, params) => {
+	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config');
 
+addDebugOption(program);
+
+program
+	.action(async (environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;
 		const authData = fetchAuthData(environment, program);

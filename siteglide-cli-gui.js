@@ -6,7 +6,8 @@ const program = require('commander'),
 	logger = require('./lib/logger'),
 	open = require('open'),
 	server = require('./siteglide-cli-server'),
-	version = require('./package.json').version;
+	version = require('./package.json').version,
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 program
 	.version(version, '-v, --version')
@@ -16,8 +17,13 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-p --port <port>', 'port number', '3333')
-	.option('-o, --open', 'automatically opens your default browser')
+	.option('-o, --open', 'automatically opens your default browser');
+
+addDebugOption(program);
+
+program
 	.action(async (environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
 

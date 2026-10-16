@@ -36,7 +36,8 @@ const program = require('commander'),
 	{ MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
 	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
-	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull');
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
 
@@ -128,8 +129,13 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-w --with-assets', 'With assets, deploys your "assets" folder')
-	.option('-s, --skip-remote-check', 'Skip remote mtime conflict checks (CI / intentional overwrite)')
+	.option('-s, --skip-remote-check', 'Skip remote mtime conflict checks (CI / intentional overwrite)');
+
+addDebugOption(program);
+
+program
 	.action(async (environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;
 

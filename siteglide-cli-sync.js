@@ -6,6 +6,7 @@ const program = require('commander'),
 	command = require('./lib/command'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	logger = require('./lib/logger'),
+	{ addDebugOption, applyDebugFlag, shouldPassDebugToChild } = require('./lib/cliDebug'),
 	version = require('./package.json').version;
 
 program
@@ -24,8 +25,13 @@ program
 	.option(
 		'-compare, --compare',
 		'Merge-first sync: full pull then selective for one path; write format compare report under .siteglide/user/selective-pull-compare/'
-	)
+	);
+
+addDebugOption(program);
+
+program
 	.action(async (environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
 		const { readSourceOfTruthMode, resolveSkipRemoteCheck, MODE_VERSION_CONTROL } = require('./lib/sourceOfTruth');
@@ -66,6 +72,9 @@ program
 		const options = [];
 		if(params.livereload){
 			options.push('-l');
+		}
+		if (shouldPassDebugToChild()) {
+			options.push('--debug');
 		}
 		const p = spawn(command('siteglide-cli-watch'), options, {
 			stdio: 'inherit',

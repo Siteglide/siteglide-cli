@@ -12,6 +12,7 @@ const { promptAndEnsureSourceOfTruthConfig } = require('./lib/sourceOfTruth');
 const { promptAiAgentPreferencesIfNeeded, resolveEnabledSkillAgents } = require('./lib/aiAgentPreferences');
 const { ensureMcpSetup } = require('./lib/mcpAlpha');
 const { printEnableSiteglideMcpReminder } = require('./lib/ai');
+const { addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 program
 	.version(version, '-v, --version')
@@ -20,8 +21,13 @@ program
 	.description(
 		'Set up Siteglide MCP in your IDE configs and choose project source-of-truth (.siteglide/project/sourceOfTruth.json). No site environment or pull required — use for version-control-first or module projects instead of siteglide-cli pull.'
 	)
-	.option('--non-interactive', 'Skip MCP install prompts (still registers IDE MCP when the package is installed)', false)
+	.option('--non-interactive', 'Skip MCP install prompts (still registers IDE MCP when the package is installed)', false);
+
+addDebugOption(program);
+
+program
 	.action(async (params) => {
+		applyDebugFlag(params);
 		const rootPath = process.cwd();
 		const interactive = !params.nonInteractive;
 

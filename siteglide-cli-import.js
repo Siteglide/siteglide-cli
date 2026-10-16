@@ -12,7 +12,8 @@ const program = require('commander'),
 	isValidJSON = require('./lib/data/isValidJSON'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	Confirm = require('./lib/confirm'),
-	version = require('./package.json').version;
+	version = require('./package.json').version,
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 
 let gateway;
@@ -56,8 +57,13 @@ program
 	.version(version)
 	.arguments('[environment]', 'name of the environment. Example: staging')
 	.option('-p --path <import-file-path>', 'path of import .json file', 'data.json')
-	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
+	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config');
+
+addDebugOption(program);
+
+program
 	.action((environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const filename = params.path;
 		const authData = fetchAuthData(environment, program);

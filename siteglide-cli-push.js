@@ -8,6 +8,7 @@ const program = require('commander'),
 	Gateway = require('./lib/proxy'),
 	ServerError = require('./lib/ServerError'),
 	{ deployDebug } = require('./lib/deployDebug'),
+	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug'),
 	version = require('./package.json').version;
 
 const ZIP_PATH = '.tmp/marketplace-release.zip';
@@ -27,7 +28,9 @@ program
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL);
 
+addDebugOption(program);
 program.parse(process.argv);
+applyDebugFromProgram(program);
 
 checkParams(program.opts());
 

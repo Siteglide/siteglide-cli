@@ -13,7 +13,8 @@ const program = require('commander'),
 	dir = require('./lib/directories'),
 	files = require('./lib/assets/files'),
 	{ deployGlobOptions } = require('./lib/deployGlob'),
-	Gateway = require('./lib/proxy');
+	Gateway = require('./lib/proxy'),
+	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug');
 
 const { assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory');
 
@@ -102,8 +103,11 @@ program
 	.option('--target <target>', 'path to archive', process.env.TARGET || '.tmp/marketplace-release.zip')
 	.option('--email <email>', 'developer email', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
-	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
-	.parse(process.argv);
+	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL);
+
+addDebugOption(program);
+program.parse(process.argv);
+applyDebugFromProgram(program);
 
 const siteRoot = assertExclusiveSiteAppRoot();
 if (!siteRoot && !fs.existsSync(dir.MODULES)) {

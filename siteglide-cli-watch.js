@@ -33,6 +33,7 @@ const program = require('commander'),
 	{ mergeFirstSyncPull, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
 	{ applySiteglideUserGitIgnorePolicy } = require('./lib/git/siteglideGitignore'),
+	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
 	syncFileWatcher = require('./lib/sync/syncFileWatcher'),
 	{ createSyncUploadWave, checkAllowsUpload, checkHasGitBlock } = require('./lib/sync/syncUploadWave'),
@@ -834,8 +835,11 @@ program
 	.option('--email <email>', 'authentication token', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
-	.option('-l, --livereload', 'Turns on a livereload server', process.env.LIVE_RELOAD)
-	.parse(process.argv);
+	.option('-l, --livereload', 'Turns on a livereload server', process.env.LIVE_RELOAD);
+
+addDebugOption(program);
+program.parse(process.argv);
+applyDebugFromProgram(program);
 
 checkParams(program);
 

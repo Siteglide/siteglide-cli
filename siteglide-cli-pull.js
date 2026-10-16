@@ -75,7 +75,8 @@ const program = require('commander'),
 		tempPullLog,
 		tempPullGitSnapshot,
 		ensureTempPullTraceSession
-	} = require('./lib/git/tempPullTrace');
+	} = require('./lib/git/tempPullTrace'),
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
 logger.registerSpinner(pullSpinner);
@@ -771,8 +772,13 @@ program
 			}
 			return parsed;
 		}
-	)
+	);
+
+addDebugOption(program);
+
+program
 	.action((environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 
 		if (!process.env.SITEGLIDE_NESTED_CLI) {
