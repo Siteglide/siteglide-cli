@@ -37,6 +37,7 @@ const program = require('commander'),
 	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	{ assertNotOnTemporaryBranch } = require('./lib/git/homeBranch'),
 	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
@@ -136,6 +137,7 @@ addDebugOption(program);
 program
 	.action(async (environment, params) => {
 		applyDebugFlag(params);
+		assertNotOnTemporaryBranch({ command: 'deploy' });
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;
 

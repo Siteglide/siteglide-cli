@@ -7,6 +7,7 @@ const program = require('commander'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	logger = require('./lib/logger'),
 	{ addDebugOption, applyDebugFlag, shouldPassDebugToChild, DEBUG_CLI_FLAG } = require('./lib/cliDebug'),
+	{ assertNotOnTemporaryBranch } = require('./lib/git/homeBranch'),
 	version = require('./package.json').version;
 
 program
@@ -32,6 +33,7 @@ addDebugOption(program);
 program
 	.action(async (environment, params) => {
 		applyDebugFlag(params);
+		assertNotOnTemporaryBranch({ command: 'sync' });
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const authData = fetchAuthData(environment, program);
 		const { readSourceOfTruthMode, resolveSkipRemoteCheck, MODE_VERSION_CONTROL } = require('./lib/sourceOfTruth');

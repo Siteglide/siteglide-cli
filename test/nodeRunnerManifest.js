@@ -11,6 +11,7 @@ module.exports = [
 	'test/lib/cliDebug.test.js',
 	'test/lib/commandLock.test.js',
 	'test/lib/finalizePullBaseline.test.js',
+	'test/lib/homeBranchGuard.test.js',
 	'test/lib/listModulesWithRetry.test.js',
 	'test/lib/maybeGitSetupHint.test.js',
 	'test/lib/noGitOverwriteConfirm.test.js',

@@ -9,6 +9,7 @@ const { mergeFirstDeploy, checkoutTempBranchForRemote } = require('../../lib/git
 const { listTrackedSiteglideUserFiles } = require('../../lib/git/siteglideGitignore');
 const { finalizePullBaseline } = require('../../lib/git/finalizePullBaseline');
 const { hasOpenGitConflicts: hasConflicts } = require('../../lib/git/workingTree');
+const { readHomeBranch, homeBranchPath } = require('../../lib/git/homeBranch');
 
 function gitInit(cwd) {
 	assert.equal(run('git', ['init'], { cwd }).ok, true);
@@ -55,13 +56,12 @@ describe('mergeFirst last-pull base', () => {
 		assert.equal(resolveLastPullCommit('staging', cwd), null);
 	});
 
-	it('resolveMergeBase falls back to initial commit when no lastPullCommit', () => {
+	it('resolveMergeBase has no base without lastPullCommit, even when there is an initial commit', () => {
 		fs.writeFileSync(path.join(cwd, 'a.txt'), 'base\n');
-		const initial = commitAll(cwd, 'initial');
+		commitAll(cwd, 'initial');
 		fs.writeFileSync(path.join(cwd, 'a.txt'), 'local\n');
 		commitAll(cwd, 'local');
-		const base = resolveMergeBase('staging', cwd);
-		assert.deepEqual(base, { sha: initial, strategy: 'initial_commit' });
+		assert.equal(resolveMergeBase('staging', cwd), null);
 	});
 
 	it('conflicts when both sides change the same file since lastPullCommit', async () => {
@@ -127,30 +127,37 @@ describe('mergeFirst last-pull base', () => {
 		fs.writeFileSync(path.join(cwd, 'extra.txt'), 'wip\n');
 		commitAll(cwd, 'wip on temp');
 
-		const again = await checkoutTempBranchForRemote(branch, initial, cwd, 'initial_commit', {
+		const again = await checkoutTempBranchForRemote(branch, initial, cwd, 'last_pull_base', {
 			environment: 'staging'
 		});
 		assert.equal(again.ok, true, again.error);
-		assert.equal(run('git', ['rev-parse', 'HEAD'], { cwd }).stdout, initial);
+		assert.equal(
+			run('git', ['log', '--format=%s', `${initial}..HEAD`], { cwd }).stdout,
+			'siteglide: ignore .siteglide/user/ on temp branch'
+		);
 		assert.equal(run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout, branch);
 	});
 
 	it('merge-first succeeds on empty repo (git init, no commits) with untracked pull tree', async () => {
 		fs.writeFileSync(path.join(cwd, 'README.md'), 'from first pull\n');
+		fs.writeFileSync(path.join(cwd, 'same.txt'), 'same\n');
 		const result = await mergeFirstDeploy({
 			environment: 'staging',
 			cwd,
 			mode: 'pull_full',
 			pullFn: async () => {
 				fs.writeFileSync(path.join(cwd, 'README.md'), 'from second pull\n');
+				fs.writeFileSync(path.join(cwd, 'same.txt'), 'same\n');
 			}
 		});
-		assert.equal(result.ok, true);
-		assert.equal(result.merged, true);
-		assert.equal(hasConflicts(cwd).open, false);
-		assert.equal(
-			fs.readFileSync(path.join(cwd, 'README.md'), 'utf8').replace(/\r\n/g, '\n'),
-			'from second pull\n'
+		assert.deepEqual(
+			{
+				ok: result.ok,
+				mergeStrategy: result.mergeStrategy,
+				head: run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout,
+				conflicted: run('git', ['diff', '--name-only', '--diff-filter=U'], { cwd }).stdout
+			},
+			{ ok: true, mergeStrategy: 'orphan', head: 'main', conflicted: 'README.md' }
 		);
 	});
 
@@ -191,10 +198,13 @@ describe('mergeFirst last-pull base', () => {
 		assert.equal(fs.existsSync(userFile), true);
 	});
 
-	it('uses initial commit as base when no lastPullCommit and both sides diverge', async () => {
+	it('without lastPullCommit, a remote change to a file untouched since the initial commit is a conflict, not taken', async () => {
 		fs.writeFileSync(path.join(cwd, 'a.txt'), 'base\n');
+		fs.writeFileSync(path.join(cwd, 'b.txt'), 'base\n');
+		fs.writeFileSync(path.join(cwd, 'same.txt'), 'same\n');
 		commitAll(cwd, 'initial');
 		fs.writeFileSync(path.join(cwd, 'a.txt'), 'local\n');
+		fs.writeFileSync(path.join(cwd, 'local-only.txt'), 'mine\n');
 		commitAll(cwd, 'local');
 
 		const result = await mergeFirstDeploy({
@@ -203,11 +213,240 @@ describe('mergeFirst last-pull base', () => {
 			mode: 'pull_full',
 			pullFn: async () => {
 				fs.writeFileSync(path.join(cwd, 'a.txt'), 'remote\n');
+				fs.writeFileSync(path.join(cwd, 'b.txt'), 'remote\n');
+				fs.writeFileSync(path.join(cwd, 'same.txt'), 'same\n');
+			}
+		});
+		assert.deepEqual(
+			{
+				ok: result.ok,
+				mergeStrategy: result.mergeStrategy,
+				merged: result.merged,
+				conflicted: run('git', ['diff', '--name-only', '--diff-filter=U'], { cwd }).stdout.split(/\r?\n/).sort(),
+				localOnlyKept: fs.existsSync(path.join(cwd, 'local-only.txt'))
+			},
+			{
+				ok: true,
+				mergeStrategy: 'orphan',
+				merged: false,
+				conflicted: ['a.txt', 'b.txt'],
+				localOnlyKept: true
+			}
+		);
+	});
+});
+
+describe('mergeFirst home branch record', () => {
+	let cwd;
+
+	beforeEach(() => {
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-home-branch-'));
+		gitInit(cwd);
+		fs.writeFileSync(path.join(cwd, '.gitignore'), '.siteglide/user/\n');
+		fs.writeFileSync(path.join(cwd, 'a.txt'), 'base\n');
+		const b = commitAll(cwd, 'base');
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z', lastPullCommit: b });
+		fs.writeFileSync(path.join(cwd, 'a.txt'), 'local\n');
+		commitAll(cwd, 'local');
+	});
+
+	afterEach(() => {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it('records the home branch while pulling and clears it after the merge', async () => {
+		let duringPull = null;
+		let branchDuringPull = null;
+		const result = await mergeFirstDeploy({
+			environment: 'staging',
+			cwd,
+			mode: 'pull_full',
+			pullFn: async () => {
+				duringPull = readHomeBranch(cwd);
+				branchDuringPull = run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout;
+				fs.writeFileSync(path.join(cwd, 'remote-only.txt'), 'remote\n');
 			}
 		});
 		assert.equal(result.ok, true);
-		assert.equal(result.mergeStrategy, 'initial_commit');
-		assert.equal(result.merged, false);
-		assert.equal(hasConflicts(cwd).open, true);
+		assert.deepEqual(
+			{
+				homeBranch: duringPull.homeBranch,
+				temporaryBranch: duringPull.temporaryBranch,
+				command: duringPull.command,
+				environment: duringPull.environment,
+				mergeStrategy: duringPull.mergeStrategy,
+				ownerPid: duringPull.ownerPid,
+				phase: duringPull.phase
+			},
+			{
+				homeBranch: 'main',
+				temporaryBranch: branchDuringPull,
+				command: 'pull',
+				environment: 'staging',
+				mergeStrategy: 'last_pull_base',
+				ownerPid: process.pid,
+				phase: 'pulling'
+			}
+		);
+		assert.equal(fs.existsSync(homeBranchPath(cwd)), false);
+	});
+
+	it('clears the record when the pull fails and recovery returns home', async () => {
+		const result = await mergeFirstDeploy({
+			environment: 'staging',
+			cwd,
+			mode: 'pull_full',
+			pullFn: async () => {
+				throw new Error('fetch failed');
+			}
+		});
+		assert.equal(result.ok, false);
+		assert.equal(run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout, 'main');
+		assert.equal(fs.existsSync(homeBranchPath(cwd)), false);
+	});
+
+	it('keeps the record when recovery cannot return to the home branch', async () => {
+		const result = await mergeFirstDeploy({
+			environment: 'staging',
+			cwd,
+			mode: 'pull_full',
+			pullFn: async () => {
+				// Uncommitted change to a file that differs on main blocks `git checkout main`.
+				fs.writeFileSync(path.join(cwd, 'a.txt'), 'partial download\n');
+				throw new Error('fetch failed');
+			}
+		});
+		assert.equal(result.ok, false);
+		const current = run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout;
+		assert.notEqual(current, 'main');
+		const record = readHomeBranch(cwd);
+		assert.deepEqual(
+			{ homeBranch: record.homeBranch, temporaryBranch: record.temporaryBranch, phase: record.phase },
+			{ homeBranch: 'main', temporaryBranch: current, phase: 'pulling' }
+		);
+	});
+});
+
+describe('mergeFirst ignore policy on a merge base without it', () => {
+	let cwd;
+
+	beforeEach(() => {
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-ignore-base-'));
+		gitInit(cwd);
+		fs.writeFileSync(path.join(cwd, 'a.txt'), 'base\n');
+		const b = commitAll(cwd, 'base');
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z', lastPullCommit: b });
+		fs.writeFileSync(path.join(cwd, 'a.txt'), 'local\n');
+		commitAll(cwd, 'local');
+	});
+
+	afterEach(() => {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it('returns to the home branch when the pull fails', async () => {
+		const result = await mergeFirstDeploy({
+			environment: 'staging',
+			cwd,
+			mode: 'pull_full',
+			pullFn: async () => {
+				throw new Error('fetch failed');
+			}
+		});
+		assert.equal(result.ok, false);
+		assert.deepEqual(
+			{
+				head: run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout,
+				branches: run('git', ['branch', '--format=%(refname:short)'], { cwd }).stdout,
+				status: run('git', ['status', '--porcelain'], { cwd }).stdout,
+				recordKept: fs.existsSync(homeBranchPath(cwd))
+			},
+			{ head: 'main', branches: 'main', status: '', recordKept: false }
+		);
+	});
+
+	it('merges cleanly and keeps the ignore rule on the home branch', async () => {
+		const result = await mergeFirstDeploy({
+			environment: 'staging',
+			cwd,
+			mode: 'pull_full',
+			pullFn: async () => {
+				fs.writeFileSync(path.join(cwd, 'remote-only.txt'), 'remote\n');
+			}
+		});
+		assert.deepEqual(
+			{ ok: result.ok, merged: result.merged, head: run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout },
+			{ ok: true, merged: true, head: 'main' }
+		);
+		assert.equal(run('git', ['check-ignore', '-q', '.siteglide/user/x.json'], { cwd }).ok, true);
+	});
+});
+
+describe('mergeFirst orphan temp branch keeps the home ignore rules', () => {
+	let cwd;
+
+	beforeEach(() => {
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-orphan-'));
+		gitInit(cwd);
+		fs.writeFileSync(path.join(cwd, '.gitignore'), '.siteglide/user/\n.siteglide-config\nnode_modules/\n.env\n');
+		fs.writeFileSync(path.join(cwd, 'a.txt'), 'local\n');
+		commitAll(cwd, 'root one');
+		// A second root commit makes resolveMergeBase fall back to an orphan temp branch.
+		run('git', ['checkout', '--orphan', 'other'], { cwd });
+		run('git', ['rm', '-rf', '--cached', '.'], { cwd });
+		run('git', ['clean', '-fdq'], { cwd });
+		fs.writeFileSync(path.join(cwd, 'b.txt'), 'other\n');
+		commitAll(cwd, 'root two');
+		run('git', ['checkout', 'main'], { cwd });
+		assert.equal(run('git', ['merge', '--allow-unrelated-histories', '-m', 'join', 'other'], { cwd }).ok, true);
+		run('git', ['branch', '-D', 'other'], { cwd });
+		fs.mkdirSync(path.join(cwd, 'node_modules', 'x'), { recursive: true });
+		fs.writeFileSync(path.join(cwd, 'node_modules', 'x', 'index.js'), '1\n');
+		fs.writeFileSync(path.join(cwd, '.env'), 'SECRET=1\n');
+	});
+
+	afterEach(() => {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it('snapshots only the pulled files and merges back onto the home branch', async () => {
+		const result = await mergeFirstDeploy({
+			environment: 'staging',
+			cwd,
+			mode: 'pull_full',
+			pullFn: async () => {
+				fs.writeFileSync(path.join(cwd, 'a.txt'), 'local\n');
+				fs.writeFileSync(path.join(cwd, 'remote-only.txt'), 'remote\n');
+			}
+		});
+		assert.deepEqual(
+			{
+				ok: result.ok,
+				merged: result.merged,
+				mergeStrategy: result.mergeStrategy,
+				head: run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }).stdout,
+				branches: run('git', ['branch', '--format=%(refname:short)'], { cwd }).stdout,
+				snapshotFiles: run('git', ['show', '--name-only', '--format=', 'HEAD^2'], { cwd }).stdout.split(/\r?\n/).sort(),
+				trackedOnHome: run('git', ['ls-files'], { cwd }).stdout.split(/\r?\n/).sort(),
+				recordKept: fs.existsSync(homeBranchPath(cwd))
+			},
+			{
+				ok: true,
+				merged: true,
+				mergeStrategy: 'orphan',
+				head: 'main',
+				branches: 'main',
+				snapshotFiles: ['a.txt', 'remote-only.txt'],
+				trackedOnHome: ['.gitignore', 'a.txt', 'b.txt', 'remote-only.txt'],
+				recordKept: false
+			}
+		);
+		assert.deepEqual(
+			{
+				nodeModules: fs.existsSync(path.join(cwd, 'node_modules', 'x', 'index.js')),
+				env: fs.existsSync(path.join(cwd, '.env'))
+			},
+			{ nodeModules: true, env: true }
+		);
 	});
 });
