@@ -1133,8 +1133,8 @@ program
 					recordPullBaseline();
 					await ensureSharedUserPreferencesAfterPull(pullCwd);
 
-					logger.Quiet('[pull] All steps finished');
 					pullSpinner.succeed('Pulled files');
+					logger.Success('[pull] Pull finished.');
 				} catch (e) {
 					logger.Debug(e);
 					pullSpinner.fail('Pull failed');

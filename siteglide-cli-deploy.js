@@ -314,6 +314,7 @@ program
 					});
 				}
 			}
+			logger.Success(`[deploy] Deploy finished for ${environment}.`);
 			process.exit(0);
 		} catch {
 			process.exit(1);

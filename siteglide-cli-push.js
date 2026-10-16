@@ -74,7 +74,11 @@ const getDeploymentStatus = ({ id }) => {
 					reject(new Error('Deploy status error'));
 				} else {
 					deployDebug('deployment succeeded', { id, status: response.status });
-					spinner.stopAndPersist().succeed(`Deploying codebase succeeded`);
+					if (process.env.SITEGLIDE_ENV) {
+						spinner.stop();
+					} else {
+						spinner.stopAndPersist().succeed('Deploying codebase succeeded');
+					}
 					resolve();
 				}
 			}).catch(err => {
