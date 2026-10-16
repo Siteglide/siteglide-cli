@@ -19,7 +19,6 @@ const program = require('commander'),
 	path = require('path'),
 	dir = require('./lib/directories'),
 	{ ensureMcpOnPull } = require('./lib/mcpAlpha'),
-	{ hasProjectMcpConfig } = require('./lib/ai'),
 	{
 		resolveSiteAppRoot
 	} = require('./lib/migrateAppDirectory'),
@@ -906,7 +905,6 @@ program
 
 		const startPull = async function () {
 			const pullCwd = process.cwd();
-			const mcpBeforePull = hasProjectMcpConfig(pullCwd);
 			const nestedRole = (
 				process.env.SITEGLIDE_PULL_ASSUME_YES === '1'
 				|| process.env.SITEGLIDE_NESTED_CLI === '1'
@@ -998,31 +996,45 @@ program
 					}
 				}
 
-					const siteRoot = await resolveSiteAppRoot();
-					// logger.Quiet(`[pull] Site files root: ${siteRoot}/`);
+				const siteRoot = await resolveSiteAppRoot();
 
-					pullSpinner.start();
-					if (moduleFilter) {
-						logger.Quiet(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
-					}
-					if (ignoreAssets) {
-						logger.Quiet('[pull] --ignore-assets set; asset download step will be skipped');
-					}
+				const { created: sourceOfTruthCreated } = await ensureSourceOfTruthConfig(process.cwd());
+				if (sourceOfTruthCreated) {
+					logger.Info('[pull] Created ./.siteglide/project/sourceOfTruth.json — set sourceOfTruth to site or versionControl for your team workflow.');
+				}
+				const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
+				if (pullModulesConfigCreated) {
+					logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} allowing you to configure which modules should be skipped on future pulls. If you use GitHub, we recommend this file should not be gitignored.`);
+				}
+				const { created: aiAgentPreferencesCreated, enabledSkillAgents } = await prepareAiAgentPreferences(process.cwd());
+				if (aiAgentPreferencesCreated) {
+					logger.Info(`[pull] Created ${AI_AGENT_PREFERENCES_RELATIVE_PATH} allowing you to configure which AI agent skill folders and MCP configs pull creates. This one is personal to your machine, so it does not need to be shared with the team.`);
+				}
 
-					pullSpinner.text = 'Fetching installed modules';
-					const { created: sourceOfTruthCreated } = await ensureSourceOfTruthConfig(process.cwd());
-					if (sourceOfTruthCreated) {
-						logger.Info('[pull] Created ./.siteglide/project/sourceOfTruth.json — set sourceOfTruth to site or versionControl for your team workflow.');
+				if (!mergeFirstSync) {
+					await ensureMcpOnPull({ enabledSkillAgents });
+					const gitReadiness = getGitReadiness({ cwd: pullCwd });
+					const hint = await maybeOfferGitSetupHint({ cwd: pullCwd, git: gitReadiness });
+					if (hint.abortPull) {
+						if (hint.cancelled) {
+							logger.Error('[Cancelled] Pull not executed — finish the prompt or press Ctrl+C to cancel.');
+						} else {
+							logger.Error('[Cancelled] Pull not executed — set up git with your AI assistant, then run pull again.');
+						}
+						process.exit(1);
 					}
-					const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
-					if (pullModulesConfigCreated) {
-						logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} allowing you to configure which modules should be skipped on future pulls. If you use GitHub, we recommend this file should not be gitignored.`);
-					}
-					const { created: aiAgentPreferencesCreated, enabledSkillAgents } = await prepareAiAgentPreferences(process.cwd());
-					if (aiAgentPreferencesCreated) {
-						logger.Info(`[pull] Created ${AI_AGENT_PREFERENCES_RELATIVE_PATH} allowing you to configure which AI agent skill folders and MCP configs pull creates. This one is personal to your machine, so it does not need to be shared with the team.`);
-					}
-					const modulesResponse = await gateway.listModules();
+				}
+
+				pullSpinner.start();
+				if (moduleFilter) {
+					logger.Quiet(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
+				}
+				if (ignoreAssets) {
+					logger.Quiet('[pull] --ignore-assets set; asset download step will be skipped');
+				}
+
+				pullSpinner.text = 'Fetching installed modules';
+				const modulesResponse = await gateway.listModules();
 					const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
 					logger.Debug(`[pull] list_modules returned ${installedModules.length} module(s)`);
 					if (installedModules.length > 0) {
@@ -1111,7 +1123,6 @@ program
 						await finalizeMergedAgents(enabledSkillAgents);
 
 						pullSpinner.stop();
-						await ensureMcpOnPull({ enabledSkillAgents });
 
 						const agentsTreePresent = await fs.pathExists(path.join(pullCwd, AGENTS_ROOT));
 						ensureAgentPathsGitignored({
@@ -1125,10 +1136,6 @@ program
 					}
 
 					await tidyUpAfterPull(ignoredModules);
-
-					if (!mergeFirstSync && !mcpBeforePull) {
-						await maybeOfferGitSetupHint({ cwd: pullCwd });
-					}
 
 					recordPullBaseline();
 					await ensureSharedUserPreferencesAfterPull(pullCwd);
@@ -1219,11 +1226,6 @@ program
 					id: 'H1',
 					expect: 'startPull will refuse pull until merge/conflicts resolved; user may retry and see different prompt after partial fix'
 				});
-			}
-
-			if (!git.repoInitialized) {
-				tempPullLog('route', { name: 'no_git_confirm' });
-				await maybeOfferGitSetupHint({ git });
 			}
 
 			if (git.repoInitialized && isWorkingTreeDirty()) {

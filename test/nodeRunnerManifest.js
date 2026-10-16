@@ -5,6 +5,7 @@
  */
 module.exports = [
 	'test/lib/agentGitignore.test.js',
+	'test/lib/aiPrompts.test.js',
 	'test/lib/agentSkillsNamespaceLink.test.js',
 	'test/lib/claudeFlatSkills.test.js',
 	'test/lib/cliDebug.test.js',

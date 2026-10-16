@@ -45,7 +45,7 @@ describe('maybeOfferGitSetupHint', () => {
 			cwd,
 			git: { repoInitialized: false, installed: true, identityConfigured: false }
 		});
-		assert.deepEqual(result, { offered: false, reason: 'awaiting_mcp' });
+		assert.deepEqual(result, { offered: false, reason: 'awaiting_mcp', abortPull: false });
 	});
 
 	it('skips when git repo is already initialized', async () => {
@@ -57,6 +57,41 @@ describe('maybeOfferGitSetupHint', () => {
 			cwd,
 			git: { repoInitialized: true, installed: true, identityConfigured: true }
 		});
-		assert.deepEqual(result, { offered: false, reason: 'git_ready' });
+		assert.deepEqual(result, { offered: false, reason: 'git_ready', abortPull: false });
+	});
+
+	it('sets abortPull when clipboard offer confirms copy', async () => {
+		const cursorDir = path.join(cwd, '.cursor');
+		fs.mkdirSync(cursorDir, { recursive: true });
+		fs.writeFileSync(path.join(cursorDir, 'mcp.json'), '{}\n');
+
+		const readinessPath = require.resolve('../../lib/git/readiness');
+		const originalReadiness = require(readinessPath);
+		require.cache[readinessPath] = {
+			exports: {
+				...originalReadiness,
+				logGitSetupHint: async () => ({
+					offeredClipboard: true,
+					userConfirmedCopy: true,
+					copied: true
+				})
+			}
+		};
+		delete require.cache[require.resolve('../../lib/git/maybeGitSetupHint')];
+		const { maybeOfferGitSetupHint: maybeOfferWithStub } = require('../../lib/git/maybeGitSetupHint');
+
+		const result = await maybeOfferWithStub({
+			cwd,
+			git: { repoInitialized: false, installed: true, identityConfigured: false }
+		});
+		assert.deepEqual(result, {
+			offered: true,
+			reason: 'offered',
+			abortPull: true,
+			cancelled: false
+		});
+
+		require.cache[readinessPath] = { exports: originalReadiness };
+		delete require.cache[require.resolve('../../lib/git/maybeGitSetupHint')];
 	});
 });
