@@ -76,10 +76,13 @@ const program = require('commander'),
 		tempPullGitSnapshot,
 		ensureTempPullTraceSession
 	} = require('./lib/git/tempPullTrace'),
-	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug'),
+	{ applyCliColour } = require('./lib/cliColour');
 
-const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
+const pullSpinner = ora({ text: 'Pulling files', stream: process.stderr });
 logger.registerSpinner(pullSpinner);
+
+const mergeSpinner = ora({ text: 'Merging changes...', stream: process.stderr });
 
 /** Folder name under module_984's public/assets/ that holds agent skill files (no leading dot). */
 const MODULE_AGENTS_DIR = 'agents';
@@ -676,10 +679,9 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
  * Side effects: removes leftover pull zips (`app.zip`, `marketplace_builder.zip`, `modules-*.zip`),
  * removes `./.tmp` if present, moves any leftover `app/modules` into `./modules`
  * then deletes that nested folder, removes empty dirs under `app`;
- * updates `pullSpinner` text and writes tidying-up logs.
+ * updates `pullSpinner` text (spinner stays active through this phase).
  */
 const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Quiet('[pull] Tidying up local files');
 	pullSpinner.text = 'Tidying up...';
 
 	const siteZips = [`./${dir.SITE_ROOT}.zip`, `./${dir.APP}.zip`];
@@ -721,7 +723,6 @@ const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) =>
 			await cleanupEmptyDirs(appRoot);
 		}
 	}
-	logger.Quiet('[pull] Tidying up complete');
 };
 
 program
@@ -843,8 +844,25 @@ program
 						skipCommitBaseline: true,
 						mergeFirstSync: true
 					});
+				},
+				uiHooks: {
+					afterPullFn: () => {
+						logger.registerSpinner(mergeSpinner);
+						mergeSpinner.text = 'Merging changes...';
+						mergeSpinner.start();
+					},
+					afterMergePhase: ({ conflictExpected }) => {
+						if (conflictExpected) {
+							mergeSpinner.stop();
+						} else {
+							mergeSpinner.succeed(applyCliColour('success', 'Merged changes', process.stderr));
+						}
+					}
 				}
 			});
+			if (mergeSpinner.isSpinning) {
+				mergeSpinner.fail('Merge failed');
+			}
 			tempPullLog('runMergeFirstPull:mergeFirst_result', {
 				ok: result.ok,
 				error: result.error || '',
@@ -862,7 +880,7 @@ program
 					id: 'H1',
 					expect: 'failed merge-first may leave dirty tree or temp branch; next pull often routes dirty_skip_outer_prompt'
 				});
-				logger.Error(`[pull] Merge failed: ${result.error}`);
+				logger.Error(`[pull] Merge-first failed: ${result.error}`);
 				await offerMergeFirstFailureHelp(result, {
 					environment,
 					command: 'pull'
@@ -1020,7 +1038,13 @@ program
 						if (hint.cancelled) {
 							logger.Error('[Cancelled] Pull not executed — finish the prompt or press Ctrl+C to cancel.');
 						} else {
-							logger.Error('[Cancelled] Pull not executed — set up git with your AI assistant, then run pull again.');
+							logger.Warn(
+								applyCliColour(
+									'warning',
+									'Pull deliberately stopped for now. Set up git with your AI assistant, then run pull again.'
+								),
+								{ exit: false }
+							);
 						}
 						process.exit(1);
 					}
@@ -1040,6 +1064,7 @@ program
 					}
 				}
 
+				pullSpinner.text = 'Pulling files';
 				pullSpinner.start();
 				if (moduleFilter) {
 					logger.Quiet(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
@@ -1135,9 +1160,8 @@ program
 					}
 
 					if (!mergeFirstSync) {
+						pullSpinner.text = 'AI: Setting up IDE skill folders';
 						await finalizeMergedAgents(enabledSkillAgents);
-
-						pullSpinner.stop();
 
 						const agentsTreePresent = await fs.pathExists(path.join(pullCwd, AGENTS_ROOT));
 						ensureAgentPathsGitignored({
@@ -1146,7 +1170,6 @@ program
 							includeAgentsRoot: agentsTreePresent
 						});
 					} else {
-						pullSpinner.stop();
 						logger.Debug('[pull] Merge-first sync mode: skipping MCP and .agents scaffolding');
 					}
 
@@ -1155,12 +1178,13 @@ program
 					recordPullBaseline();
 					await ensureSharedUserPreferencesAfterPull(pullCwd);
 
-					pullSpinner.succeed('Pulled files');
-					logger.Success('[pull] Pull finished.');
+					pullSpinner.succeed(applyCliColour('success', 'Pulled files', process.stderr));
+					logger.Debug('[pull] Pull finished.');
 				} catch (e) {
 					logger.Debug(e);
 					pullSpinner.fail('Pull failed');
-					logger.Error(e.message || e);
+					const pullErr = e && e.message ? e.message : String(e);
+					logger.Error(`[pull] ${pullErr}`);
 					process.exit(1);
 				}
 		};

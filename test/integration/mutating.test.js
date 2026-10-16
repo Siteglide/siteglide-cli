@@ -56,7 +56,7 @@ describeMutating('mutating integration (sync, deploy, pull — dedicated test si
 		const result = runCli('siteglide-cli-pull.js', pullArgs, cliOpts());
 
 		expect(result.code).toEqual(0);
-		expect(result.output).toMatch(/\[pull\] Pull finished\.|Pulled files/i);
+		expect(result.output).toMatch(/Pulled files/i);
 		expect(result.output).not.toMatch(ctx.auth.token);
 	});
 });

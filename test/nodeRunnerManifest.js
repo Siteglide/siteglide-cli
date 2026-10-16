@@ -15,6 +15,7 @@ module.exports = [
 	'test/lib/maybeGitSetupHint.test.js',
 	'test/lib/noGitOverwriteConfirm.test.js',
 	'test/lib/mergeFirst.test.js',
+	'test/lib/nestedPullOutput.test.js',
 	'test/lib/normalizeSyncResponse.test.js',
 	'test/lib/parseSelectivePullOptions.test.js',
 	'test/lib/prompts.test.js',

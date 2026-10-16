@@ -192,7 +192,9 @@ program
 				if (!hasStagedOrUnstagedChanges()) {
 					logger.Quiet('[deploy] User committed files manually, working tree is clean');
 				} else {
-					const msg = await Confirm('Commit message:\n(Press enter to confirm)\n');
+					const msg = await Confirm(
+						'Commit message:\nSummarise your latest changes with a few words, then press enter.\n'
+					);
 					if (!hasStagedOrUnstagedChanges()) {
 						logger.Quiet('[deploy] User committed files manually, working tree is clean');
 					} else {
