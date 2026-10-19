@@ -618,7 +618,8 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 				(urlToTest.indexOf('.map') > -1) ||
 				(urlToTest.indexOf('.json') > -1) ||
 				(urlToTest.indexOf('.md') > -1) ||
-				(urlToTest.indexOf('.htm') > -1)
+				(urlToTest.indexOf('.htm') > -1) ||
+				(urlToTest.indexOf('.xml') > -1)
 			) {
 				await getBinary(file.data.remote_url, time).then(body => {
 					if (body !== 'error_missing_file') {
