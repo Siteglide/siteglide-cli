@@ -129,7 +129,12 @@ describe('assertNotOnTemporaryBranch', () => {
 	});
 
 	function runGuard(env) {
-		const script = `require(${JSON.stringify(HOME_BRANCH_MODULE)}).assertNotOnTemporaryBranch({ command: 'sync' }); console.log('allowed');`;
+		const script = [
+			`(async () => {`,
+			`await require(${JSON.stringify(HOME_BRANCH_MODULE)}).assertNotOnTemporaryBranch({ command: 'sync' });`,
+			`console.log('allowed');`,
+			`})().catch((err) => { console.error(err); process.exit(2); });`
+		].join(' ');
 		const childEnv = Object.assign({}, process.env, { NO_COLOR: '1' });
 		delete childEnv.SITEGLIDE_NESTED_CLI;
 		Object.assign(childEnv, env);

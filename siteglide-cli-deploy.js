@@ -139,7 +139,7 @@ addDebugOption(program);
 program
 	.action(async (environment, params) => {
 		applyDebugFlag(params);
-		assertNotOnTemporaryBranch({ command: 'deploy' });
+		await assertNotOnTemporaryBranch({ command: 'deploy' });
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;
 
