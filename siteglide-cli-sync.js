@@ -4,6 +4,7 @@ process.noDeprecation = true;
 require('./lib/fatalError').installFatalErrorHandlers('[Sync] Sync stopped because of an unexpected error');
 
 const program = require('commander'),
+	{ Option } = require('commander'),
 	spawn = require('child_process').spawn,
 	command = require('./lib/command'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
@@ -22,13 +23,17 @@ program
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-l, --livereload', 'Turns on a livereload server')
 	.option('-s, --skip-remote-check', 'Skip remote mtime checks before each upload')
-	.option(
-		'-fast, --fast',
-		'Merge-first sync: selective pull for conflict paths only (not full site zip)'
+	.addOption(
+		new Option(
+			'-fast, --fast',
+			'Merge-first sync: selective pull for conflict paths only (not full site zip)'
+		).hideHelp()
 	)
-	.option(
-		'-compare, --compare',
-		'Merge-first sync: full pull then selective for one path; write format compare report under .siteglide/user/selective-pull-compare/'
+	.addOption(
+		new Option(
+			'-compare, --compare',
+			'Merge-first sync: full pull then selective for one path; write format compare report under .siteglide/user/selective-pull-compare/'
+		).hideHelp()
 	);
 
 addDebugOption(program);

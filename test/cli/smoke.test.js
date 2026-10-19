@@ -82,6 +82,13 @@ test('sync help documents -s / --skip-remote-check', () => {
 	expect(result.output).toMatch(/-s, --skip-remote-check/);
 });
 
+test('sync help omits experimental -fast and -compare flags', () => {
+	const result = runCli('siteglide-cli-sync.js', ['--help']);
+	expect(result.code).toEqual(0);
+	expect(result.output).not.toMatch(/--fast/);
+	expect(result.output).not.toMatch(/--compare/);
+});
+
 test('deploy source documents -s / --skip-remote-check option', () => {
 	const fs = require('fs');
 	const path = require('path');
