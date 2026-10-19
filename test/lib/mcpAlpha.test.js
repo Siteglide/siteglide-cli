@@ -85,6 +85,15 @@ test('getMaxCompatibleMcpVersion returns highest version within range', () => {
 	expect(getMaxCompatibleMcpVersion(published, '^0.2.0')).toEqual('0.2.0');
 });
 
+test('getMaxCompatibleMcpVersion respects CLI siteglideMcp compatibleRange cap', () => {
+	const published = {
+		versions: ['1.0.0', '1.0.1', '1.1.0', '1.2.0', '2.0.0']
+	};
+
+	expect(getMaxCompatibleMcpVersion(published, '>=1.0.0 <=1.1.0')).toEqual('1.1.0');
+	expect(getMaxCompatibleMcpVersion(published, '>=1.0.0 <=1.1.0')).not.toEqual('1.2.0');
+});
+
 test('DEFAULT_PACKAGE uses npm latest dist-tag', () => {
 	expect(NPM_ORG_SCOPE).toEqual('@siteglide');
 	expect(MCP_PACKAGE_NAME).toEqual('siteglide-mcp');

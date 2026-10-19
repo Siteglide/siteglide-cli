@@ -38,7 +38,7 @@ const logger = require('../../lib/logger');
 const pkg = require('../../package.json');
 const compatibleRange = pkg.siteglideMcp && pkg.siteglideMcp.compatibleRange
 	? pkg.siteglideMcp.compatibleRange
-	: '^0.2.0-0';
+	: '>=1.0.0 <=1.1.0';
 const {
 	DEFAULT_PACKAGE,
 	MCP_UPDATE_DECLINED_KEY,
@@ -149,10 +149,10 @@ test('ensureMcpOnPull stores reminder when user declines global MCP install', as
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.2.0': {}
+					'1.0.0': {}
 				},
 				'dist-tags': {
-					latest: '0.2.0'
+					latest: '1.0.0'
 				}
 			})
 		});
@@ -169,7 +169,7 @@ test('ensureMcpOnPull stores reminder when user declines global MCP install', as
 			skipped: true,
 			reason: 'mcp-not-installed',
 			installedVersion: null,
-			latestVersion: '0.2.0'
+			latestVersion: '1.0.0'
 		});
 		expect(mockConfirm).toHaveBeenCalled();
 		const reminders = JSON.parse(await fs.readFile(path.join(rootPath, '.siteglide', 'user', 'reminders.json'), 'utf8'));
@@ -199,15 +199,15 @@ test('ensureMcpOnPull suppresses prompt within 7 days of declining MCP update', 
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.2.0': {},
-					'0.2.1': {}
+					'1.0.0': {},
+					'1.0.1': {}
 				},
 				'dist-tags': {
-					latest: '0.2.1'
+					latest: '1.0.1'
 				}
 			})
 		});
-		mockGlobalMcpVersion('0.2.0');
+		mockGlobalMcpVersion('1.0.0');
 
 		await ensureMcpOnPull({
 			rootPath,
@@ -234,22 +234,22 @@ test('ensureMcpOnPull installs globally when user accepts update', async () => {
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.2.0': {},
-					'0.2.1': {}
+					'1.0.0': {},
+					'1.0.1': {}
 				},
 				'dist-tags': {
-					latest: '0.2.1'
+					latest: '1.0.1'
 				}
 			})
 		});
 
-		let globalVersion = '0.2.0';
+		let globalVersion = '1.0.0';
 		mockExecFileSync.mockImplementation((cmd, args) => {
 			if (Array.isArray(args) && args[0] === 'list' && args[1] === '-g') {
 				return npmListStdout(globalVersion);
 			}
 			if (Array.isArray(args) && args[0] === 'install' && args[1] === '-g') {
-				globalVersion = '0.2.1';
+				globalVersion = '1.0.1';
 				return '';
 			}
 			throw new Error(`Unexpected execFileSync: ${JSON.stringify(args)}`);
@@ -274,10 +274,10 @@ test('ensureMcpOnPull installs globally when user accepts update', async () => {
 		});
 
 		expect(result.skipped).toEqual(false);
-		expect(result.installedVersion).toEqual('0.2.1');
+		expect(result.installedVersion).toEqual('1.0.1');
 		expect(mockExecFileSync).toHaveBeenCalledWith(
 			expect.anything(),
-			['install', '-g', `${DEFAULT_PACKAGE}@0.2.1`],
+			['install', '-g', `${DEFAULT_PACKAGE}@1.0.1`],
 			expect.any(Object)
 		);
 	} finally {
@@ -295,25 +295,25 @@ test('ensureMcpOnPull caps install offer when npm latest exceeds CLI compatible 
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.2.0': {},
-					'0.2.1': {},
-					'0.3.0': {}
+					'1.0.0': {},
+					'1.0.1': {},
+					'2.0.0': {}
 				},
 				'dist-tags': {
-					latest: '0.3.0'
+					latest: '2.0.0'
 				}
 			})
 		});
-		mockGlobalMcpVersion('0.2.0');
+		mockGlobalMcpVersion('1.0.0');
 		mockConfirm.mockResolvedValue('Y');
 
-		let globalVersion = '0.2.0';
+		let globalVersion = '1.0.0';
 		mockExecFileSync.mockImplementation((cmd, args) => {
 			if (Array.isArray(args) && args[0] === 'list' && args[1] === '-g') {
 				return npmListStdout(globalVersion);
 			}
 			if (Array.isArray(args) && args[0] === 'install' && args[1] === '-g') {
-				globalVersion = '0.2.1';
+				globalVersion = '1.0.1';
 				return '';
 			}
 			throw new Error(`Unexpected execFileSync: ${JSON.stringify(args)}`);
@@ -335,12 +335,50 @@ test('ensureMcpOnPull caps install offer when npm latest exceeds CLI compatible 
 			enabledSkillAgents: []
 		});
 
-		expect(result.latestVersion).toEqual('0.2.1');
+		expect(result.latestVersion).toEqual('1.0.1');
 		expect(mockExecFileSync).toHaveBeenCalledWith(
 			expect.anything(),
-			['install', '-g', `${DEFAULT_PACKAGE}@0.2.1`],
+			['install', '-g', `${DEFAULT_PACKAGE}@1.0.1`],
 			expect.any(Object)
 		);
+	} finally {
+		await removeMcpIdeArtifacts(rootPath);
+		await fs.remove(rootPath);
+	}
+});
+
+test('ensureMcpOnPull does not warn newer when installed MCP is below CLI compatible range', async () => {
+	const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sg-mcp-fallback-'));
+
+	try {
+		mockFetch.mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: async () => ({
+				versions: {
+					'0.2.0': {},
+					'1.0.0': {}
+				},
+				'dist-tags': {
+					latest: '1.0.0'
+				}
+			})
+		});
+
+		mockGlobalMcpVersion('0.2.0');
+		mockConfirm.mockResolvedValue('n');
+
+		await ensureMcpOnPull({
+			rootPath,
+			interactive: true,
+			enabledSkillAgents: []
+		});
+
+		expect(logger.Warn).not.toHaveBeenCalledWith(
+			expect.stringMatching(/is newer than this CLI supports/),
+			expect.anything()
+		);
+		expect(mockConfirm).toHaveBeenCalled();
 	} finally {
 		await removeMcpIdeArtifacts(rootPath);
 		await fs.remove(rootPath);
@@ -356,23 +394,23 @@ test('ensureMcpOnPull warns when globally installed MCP exceeds CLI compatible r
 			status: 200,
 			json: async () => ({
 				versions: {
-					'0.2.0': {},
-					'0.2.1': {},
-					'0.3.0': {}
+					'1.0.0': {},
+					'1.0.1': {},
+					'2.0.0': {}
 				},
 				'dist-tags': {
-					latest: '0.3.0'
+					latest: '2.0.0'
 				}
 			})
 		});
 
-		mockGlobalMcpVersion('0.3.0');
+		mockGlobalMcpVersion('2.0.0');
 		mockExecFile.mockImplementation((cmd, args, opts, cb) => {
 			if (typeof opts === 'function') {
 				cb = opts;
 			}
 			if (cmd === process.execPath && Array.isArray(args) && args[0] === '-e') {
-				cb(null, { stdout: '0.3.0' });
+				cb(null, { stdout: '2.0.0' });
 				return;
 			}
 			cb(null, { stdout: '' });
@@ -387,12 +425,12 @@ test('ensureMcpOnPull warns when globally installed MCP exceeds CLI compatible r
 		const rangePattern = compatibleRange.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		expect(logger.Warn).toHaveBeenCalledWith(
 			expect.stringMatching(
-				new RegExp(`\\[pull\\] AI:.*0\\.3\\.0 is newer than this CLI supports \\(${rangePattern}\\)`)
+				new RegExp(`\\[pull\\] AI:.*2\\.0\\.0 is newer than this CLI supports \\(${rangePattern}\\)`)
 			),
 			{ exit: false }
 		);
 		expect(logger.Warn).toHaveBeenCalledWith(
-			expect.stringMatching(/\[pull\] AI:.*npm install -g @siteglide\/siteglide-mcp@0\.2\.1/),
+			expect.stringMatching(/\[pull\] AI:.*npm install -g @siteglide\/siteglide-mcp@1\.0\.1/),
 			{ exit: false }
 		);
 	} finally {
