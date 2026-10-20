@@ -752,7 +752,7 @@ const deleteFile = (gateway, syncedFilePath) => {
 
 	return gateway.delete(formData).then(body => {
 		if (body) {
-			logger.Quiet(`[Sync] Deleted: ${filePath}`);
+			logger.Info(`[Sync] Deleted: ${displayPath(syncedFilePath)}`);
 		}
 	});
 };
