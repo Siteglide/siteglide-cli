@@ -51,8 +51,8 @@ describe('commandLock exclusivity', () => {
 		});
 		assert.equal(pull.ok, false);
 		assert.match(pull.headline, /Cannot start pull while sync is running \(pid 501\(env: staging\)\)\./);
-		assert.match(pull.helper, /infinite update loops/);
-		assert.match(pull.message, /infinite update loops/);
+		assert.match(pull.helper, /Only one sync, pull, or deploy/);
+		assert.match(pull.message, /Only one sync, pull, or deploy/);
 		assert.equal(pull.blockedBy.command, 'sync');
 	});
 
@@ -145,18 +145,53 @@ describe('commandLock exclusivity', () => {
 		assert.equal(fs.existsSync(syncStatusPath(cwd, 901)), true);
 	});
 
-	it('assertCommandAllowed allows deploy while sync is running', () => {
+	it('blocks deploy while sync is running', () => {
 		claimSyncStatus({
 			environment: 'staging',
 			cwd,
 			pid: 1001,
 			isAlive: alive(1001, 1002)
 		});
-		const allowed = assertCommandAllowed('deploy', {
+		const deploy = claimCommandLock('deploy', {
+			environment: 'staging',
 			cwd,
 			pid: 1002,
 			isAlive: alive(1001, 1002)
 		});
-		assert.equal(allowed.ok, true);
+		assert.equal(deploy.ok, false);
+		assert.match(deploy.headline, /Cannot start deploy while sync is running/);
+	});
+
+	it('blocks sync while deploy is running', () => {
+		claimCommandLock('deploy', {
+			environment: 'staging',
+			cwd,
+			pid: 1101,
+			isAlive: alive(1101, 1102)
+		});
+		const sync = claimSyncStatus({
+			environment: 'staging',
+			cwd,
+			pid: 1102,
+			isAlive: alive(1101, 1102)
+		});
+		assert.equal(sync.ok, false);
+		assert.match(sync.message, /Cannot start sync while deploy is running/);
+	});
+
+	it('blocks a second sync while another sync is live', () => {
+		claimSyncStatus({
+			environment: 'staging',
+			cwd,
+			pid: 1201,
+			isAlive: alive(1201, 1202)
+		});
+		const allowed = assertCommandAllowed('sync', {
+			cwd,
+			pid: 1202,
+			isAlive: alive(1201, 1202)
+		});
+		assert.equal(allowed.ok, false);
+		assert.match(allowed.headline, /Cannot start sync while sync is running/);
 	});
 });

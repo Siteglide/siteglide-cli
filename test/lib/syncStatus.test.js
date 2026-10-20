@@ -77,7 +77,7 @@ describe('claimSyncStatus / clearSyncStatus', () => {
 		assert.equal(fs.existsSync(syncStatusPath(cwd, 2002)), false);
 	});
 
-	it('allows different environments in the same cwd', () => {
+	it('blocks a second sync in the same cwd even when env differs', () => {
 		const staging = claimSyncStatus({
 			environment: 'staging',
 			cwd,
@@ -91,9 +91,10 @@ describe('claimSyncStatus / clearSyncStatus', () => {
 			isAlive: (pid) => pid === 3001 || pid === 3002
 		});
 		assert.equal(staging.ok, true);
-		assert.equal(production.ok, true);
+		assert.equal(production.ok, false);
+		assert.match(production.message, /Cannot start sync while sync is running/);
 		assert.equal(fs.existsSync(syncStatusPath(cwd, 3001)), true);
-		assert.equal(fs.existsSync(syncStatusPath(cwd, 3002)), true);
+		assert.equal(fs.existsSync(syncStatusPath(cwd, 3002)), false);
 	});
 
 	it('clearSyncStatus removes only this process file', () => {
@@ -101,17 +102,10 @@ describe('claimSyncStatus / clearSyncStatus', () => {
 			environment: 'staging',
 			cwd,
 			pid: 4001,
-			isAlive: (pid) => pid === 4001 || pid === 4002
-		});
-		claimSyncStatus({
-			environment: 'production',
-			cwd,
-			pid: 4002,
-			isAlive: (pid) => pid === 4001 || pid === 4002
+			isAlive: (pid) => pid === 4001
 		});
 		clearSyncStatus({ cwd, pid: 4001 });
 		assert.equal(fs.existsSync(syncStatusPath(cwd, 4001)), false);
-		assert.equal(fs.existsSync(syncStatusPath(cwd, 4002)), true);
 	});
 });
 
