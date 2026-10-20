@@ -6,7 +6,7 @@ const program = require('commander'),
 	prepareArchive = require('./lib/prepareArchive'),
 	logger = require('./lib/logger'),
 	assets = require('./lib/assets/deploy'),
-	glob = require('globby'),
+	{ glob, globSync } = require('tinyglobby'),
 	settings = require('./lib/settings'),
 	templates = require('./lib/templates'),
 	version = require('./package.json').version,
@@ -24,7 +24,7 @@ const addModulesToArchive = (archive, withImages) => {
 	if (!fs.existsSync(dir.MODULES)) return Promise.resolve(true);
 
 	return Promise.all(
-		glob.sync('*', { cwd: dir.MODULES, onlyDirectories: true }).map(
+		globSync('*', { cwd: dir.MODULES, onlyDirectories: true }).map(
 			module => ( addModuleToArchive(module, archive, withImages))
 		)
 	);

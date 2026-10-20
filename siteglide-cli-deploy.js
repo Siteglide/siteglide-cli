@@ -40,7 +40,9 @@ const program = require('commander'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
 	{ assertNotOnTemporaryBranch } = require('./lib/git/homeBranch'),
-	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
+	{ addDebugOption, applyDebugFlag, shouldPassDebugToChild, DEBUG_CLI_FLAG } = require('./lib/cliDebug'),
+	{ withSyncTimeoutRetry } = require('./lib/syncWithRetry'),
+	{ deployDebug } = require('./lib/deployDebug');
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
 
@@ -48,9 +50,11 @@ const templateData = (templatePath) => settings.loadSettingsFile(templatePath);
 
 const uploadArchive = (env, withImages) => {
 	return new Promise((resolve, reject) => {
+		const debugArgs = shouldPassDebugToChild() ? [DEBUG_CLI_FLAG] : [];
 		const options = withImages ? ['--with-images'] : [];
-		const archive = spawn(command('siteglide-cli-archive'), options, {
+		const archive = spawn(command('siteglide-cli-archive'), [...options, ...debugArgs], {
 			stdio: 'inherit',
+			env,
 			shell: true
 		});
 
@@ -60,7 +64,7 @@ const uploadArchive = (env, withImages) => {
 				reject();
 			}
 
-			const push = spawn(command('siteglide-cli-push'), [], {
+			const push = spawn(command('siteglide-cli-push'), [...debugArgs], {
 				stdio: 'inherit',
 				env,
 				shell: true
@@ -98,27 +102,50 @@ const deploy = async (env, authData, params) => {
 		const siteRoot = dir.getSiteRoot() || null;
 
 	if (siteRoot) {
-		let files = await glob(`${siteRoot}/views/pages/**/*.liquid`);
+		const files = await glob(`${siteRoot}/views/pages/**/*.liquid`);
+		let homepageSyncCount = 0;
 
-		try {
-			for (var i = 0; i < files.length; i++) {
-				await getFile.run(files[i], i, params)
-					.then(async (file) => {
-						if (file.fileContent.includes('is_homepage: true')) {
-							let filePath = filePathUnixified(file.filePath);
-							const apiPath = filePath.replace(new RegExp(`^${siteRoot}/`), '');
-							const formData = {
-								path: apiPath,
-								marketplace_builder_file_body: getBody(file.filePath, false)
-							};
-							return gateway.sync(formData);
-						}
-					})
-					.catch((err) => console.log(err));
+		deployDebug('homepage pre-sync scan', {
+			siteRoot: filePathUnixified(siteRoot),
+			pageLiquidFiles: files.length
+		});
+
+		for (let i = 0; i < files.length; i++) {
+			const file = await getFile.run(files[i], i, params);
+			if (!file.fileContent.includes('is_homepage: true')) {
+				continue;
 			}
-		} catch (error) {
-			console.log(`Error: ${error}`);
+
+			const filePath = filePathUnixified(file.filePath);
+			const apiPath = filePath.replace(new RegExp(`^${siteRoot}/`), '');
+			const formData = {
+				path: apiPath,
+				marketplace_builder_file_body: getBody(file.filePath, false)
+			};
+
+			deployDebug('homepage pre-sync', {
+				localFile: filePath,
+				syncPath: apiPath,
+				bytes: fs.statSync(file.filePath).size
+			});
+
+			homepageSyncCount += 1;
+
+			await withSyncTimeoutRetry(
+				() => gateway.sync(formData),
+				{
+					onRetry: ({ attempt, maxAttempts, delayMs }) => {
+						logger.Warn(
+							`[deploy] Homepage sync timed out for ${apiPath} (${attempt}/${maxAttempts}); retrying in ${delayMs / 1000}s…`,
+							{ exit: false }
+						);
+						deployDebug('homepage pre-sync retry', { syncPath: apiPath, attempt, maxAttempts, delayMs });
+					}
+				}
+			);
 		}
+
+		deployDebug('homepage pre-sync done', { syncedHomepages: homepageSyncCount });
 	}
 
 	await uploadArchive(env, params.withAssets);

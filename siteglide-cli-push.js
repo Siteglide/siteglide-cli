@@ -9,6 +9,7 @@ const program = require('commander'),
 	ServerError = require('./lib/ServerError'),
 	{ deployDebug } = require('./lib/deployDebug'),
 	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug'),
+	{ waitForReleaseStatus } = require('./lib/deploy/waitForReleaseStatus'),
 	version = require('./package.json').version;
 
 const ZIP_PATH = '.tmp/marketplace-release.zip';
@@ -54,38 +55,41 @@ const isPushError = (res) => {
 };
 
 const getDeploymentStatus = ({ id }) => {
-	return new Promise((resolve, reject) => {
-		if (id === undefined) {
-			deployDebug('push rejected', 'response had no deployment id');
-			reject(new Error('Deploy response missing id'));
-			return;
-		}
+	if (id === undefined) {
+		deployDebug('push rejected', 'response had no deployment id');
+		return Promise.reject(new Error('Deploy response missing id'));
+	}
 
-		deployDebug('polling', `deployment ${id}`);
-
-		(getStatus = () => {
-			gateway.getStatus(id).then(response => {
-				if (response.status==='ready_for_import') {
-					setTimeout(getStatus, 2000);
-				} else if (response.status==='error') {
-					deployDebug('deployment failed', response);
-					spinner.fail('Deploy failed');
-					ServerError.deploy(response);
-					reject(new Error('Deploy status error'));
-				} else {
-					deployDebug('deployment succeeded', { id, status: response.status });
-					if (process.env.SITEGLIDE_ENV) {
-						spinner.stop();
-					} else {
-						spinner.stopAndPersist().succeed('Deploying codebase succeeded');
-					}
-					resolve();
+	return waitForReleaseStatus(
+		(releaseId) => gateway.getStatus(releaseId),
+		id,
+		{
+			onWaiting: (_response, text) => {
+				if (text) {
+					spinner.text = text;
 				}
-			}).catch(err => {
-				deployDebug('status poll failed', `${err.name}: ${err.message}`);
-				reject(err);
-			});
-		})();
+			},
+			onTerminal: (response) => {
+				if (response.status === 'error') {
+					deployDebug('deployment failed', response);
+				} else {
+					deployDebug('deployment succeeded', response);
+				}
+			}
+		}
+	).then((response) => {
+		if (process.env.SITEGLIDE_ENV) {
+			spinner.stop();
+		} else {
+			spinner.stopAndPersist().succeed('Deploying codebase succeeded');
+		}
+		return response;
+	}).catch((err) => {
+		if (err.response) {
+			spinner.fail('Deploy failed');
+			ServerError.deploy(err.response);
+		}
+		throw err;
 	});
 };
 

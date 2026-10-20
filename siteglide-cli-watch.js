@@ -39,6 +39,10 @@ const program = require('commander'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
 	{ applySiteglideUserGitIgnorePolicy } = require('./lib/git/siteglideGitignore'),
 	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug'),
+	{
+		summarizeDirectUploadPresign,
+		directUploadPresignFailureMessage
+	} = require('./lib/directUploadPresign'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
 	syncFileWatcher = require('./lib/sync/syncFileWatcher'),
 	{ createSyncUploadWave, checkAllowsUpload, checkHasGitBlock } = require('./lib/sync/syncUploadWave'),
@@ -72,6 +76,7 @@ const filePathUnixified = filePath =>
 		.replace(new RegExp(`^${dir.APP}/`), '');
 let counter = 0;
 let siteRoot = null;
+let directAssetsUploadReady = false;
 
 /**
  * Record per-path sync floor after upload (GraphQL updated_at + 1 ms when available).
@@ -721,8 +726,21 @@ const templateData = (path) => {
 const fetchDirectUploadData = async (gateway) => {
 	const instanceId = (await gateway.getInstance());
 	const remoteAssetsDir = `instances/${instanceId}/assets`;
-	const data = await presignDirectory(remoteAssetsDir,gateway);
+	const data = await presignDirectory(remoteAssetsDir, gateway);
+	const presignSummary = summarizeDirectUploadPresign(data);
+	logger.Debug(`[Sync] presign-directory ${remoteAssetsDir}: ${JSON.stringify(presignSummary)}`);
+	const presignFailure = directUploadPresignFailureMessage(data);
+	if (presignFailure) {
+		directAssetsUploadReady = false;
+		logger.Warn(
+			'[Sync] Direct S3 asset upload is unavailable; asset files will use file sync instead.',
+			{ exit: false }
+		);
+		logger.Debug(presignFailure);
+		return;
+	}
 	directUploadData = data;
+	directAssetsUploadReady = true;
 };
 
 const deleteFile = (gateway, syncedFilePath) => {
@@ -783,13 +801,15 @@ const isModule19CustomCss = (syncedFilePath) => {
 };
 
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
-	if (isAssetsPath(syncedFilePath) && !isModule19CustomCss(syncedFilePath)) {
+	if(
+		directAssetsUploadReady
+		&& isAssetsPath(syncedFilePath)
+		&& !isModule19CustomCss(syncedFilePath)
+	){
 		syncedFilePath = syncedFilePath.replace(/\\/g, '/');
-		sendAsset(gateway, syncedFilePath);
-		return Promise.resolve(true);
-	} else {
-		return pushFile(gateway, syncedFilePath);
+		return sendAsset(gateway, syncedFilePath);
 	}
+	return pushFile(gateway, syncedFilePath);
 };
 
 const manifestSend = debounce(
@@ -808,6 +828,14 @@ const manifestAddAsset = (path) => manifestFilesToAdd.push(path);
 const sendAsset = async (gateway, filePath) => {
 	try {
 		const data = cloneDeep(directUploadData);
+		const presignSummary = summarizeDirectUploadPresign(data);
+		logger.Debug(
+			`[Sync] direct upload presign for ${displayPath(filePath)}: ${JSON.stringify(presignSummary)}`
+		);
+		const presignFailure = directUploadPresignFailureMessage(data);
+		if (presignFailure) {
+			throw new Error(presignFailure);
+		}
 		const normalized = filePath.replace(/\\/g, '/');
 		const fileSubdir = normalized.startsWith(`${siteRoot}/assets`)
 			? path.dirname(normalized).replace(`${siteRoot}/assets`, '')
