@@ -14,32 +14,31 @@ const program = require('commander'),
 	files = require('./lib/assets/files'),
 	{ deployGlobOptions } = require('./lib/deployGlob'),
 	Gateway = require('./lib/proxy'),
-	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug');
+	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug'),
+	{ isModuleDeployAssetPath } = require('./lib/moduleDeployAssetPath');
 
 const { assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory');
 
 const availableDirectories = () => dir.available();
 
-const addModulesToArchive = (archive, withImages) => {
+const addModulesToArchive = (archive) => {
 	if (!fs.existsSync(dir.MODULES)) return Promise.resolve(true);
 
 	return Promise.all(
 		globSync('*', { cwd: dir.MODULES, onlyDirectories: true }).map(
-			module => ( addModuleToArchive(module, archive, withImages))
+			module => ( addModuleToArchive(module, archive))
 		)
 	);
 };
 
-const addModuleToArchive = (module, archive, withImages, pattern = '?(public|private)/**') => {
+const addModuleToArchive = (module, archive, pattern = '?(public|private)/**') => {
 	module = module.replace('/','');
 	return glob(pattern, deployGlobOptions({ cwd: `${dir.MODULES}/${module}` })).then(files => {
 		const moduleTemplateData = templateData();
 
 		return Promise.all(
 			files
-			.filter(file => {
-				return !withImages || !(file.startsWith('public/assets/') || file.startsWith('private/assets'));
-			})
+			.filter(file => !isModuleDeployAssetPath(file))
 			.map(f => {
 				const path = `${dir.MODULES}/${module}/${f}`;
 				return new Promise((resolve, reject) => {
@@ -70,7 +69,7 @@ const makeArchive = (archivePath, directory, program) => {
 		}), { prefix: directory });
 	}
 
-	addModulesToArchive(releaseArchive, program.opts().withImages).then(r => {
+	addModulesToArchive(releaseArchive).then(r => {
 		releaseArchive.finalize();
 	});
 
