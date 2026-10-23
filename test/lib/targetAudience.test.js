@@ -1,0 +1,86 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const {
+	ensureProjectPreferences,
+	readProjectPreferences,
+	writeProjectPreferences,
+	missingAudienceFields,
+	needsAudiencePrompt
+} = require('../../lib/projectPreferences');
+const { promptTargetAudienceIfNeeded } = require('../../lib/targetAudience');
+
+describe('target audience preferences', () => {
+	let parentDir;
+	let cwd;
+
+	beforeEach(() => {
+		parentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-audience-'));
+		cwd = path.join(parentDir, 'project');
+		fs.mkdirSync(cwd, { recursive: true });
+	});
+
+	afterEach(() => {
+		fs.rmSync(parentDir, { recursive: true, force: true });
+	});
+
+	test('missingAudienceFields ignores role and pairs git with siteglideCli', () => {
+		expect(missingAudienceFields({ role: null, git: null, siteglideCli: null })).toEqual([
+			'git',
+			'siteglideCli'
+		]);
+		expect(missingAudienceFields({ role: 'developer', git: 'familiar', siteglideCli: 'familiar' })).toEqual([]);
+		expect(missingAudienceFields({ role: null, git: null, siteglideCli: 'familiar' })).toEqual([]);
+		expect(needsAudiencePrompt({ role: null, git: 'extra help', siteglideCli: 'extra help' })).toEqual(false);
+	});
+
+	test('writeProjectPreferences merges without clobbering existing values', () => {
+		writeProjectPreferences(cwd, { role: 'designer', git: 'beginner', siteglideCli: null });
+		writeProjectPreferences(cwd, { siteglideCli: 'advanced' });
+		expect(readProjectPreferences(cwd).target_audience).toEqual({
+			role: 'designer',
+			git: 'extra help',
+			siteglideCli: 'familiar'
+		});
+	});
+
+	test('promptTargetAudienceIfNeeded skips when non-interactive', async () => {
+		ensureProjectPreferences(cwd);
+		const originalIsTTY = process.stdin.isTTY;
+		process.stdin.isTTY = false;
+
+		try {
+			const result = await promptTargetAudienceIfNeeded(cwd);
+			expect(result).toEqual({
+				cancelled: false,
+				prompted: false,
+				audience: { role: null, git: null, siteglideCli: null }
+			});
+		} finally {
+			process.stdin.isTTY = originalIsTTY;
+		}
+	});
+
+	test('promptTargetAudienceIfNeeded skips when already complete', async () => {
+		writeProjectPreferences(cwd, {
+			role: 'developer',
+			git: 'advanced',
+			siteglideCli: 'advanced'
+		});
+		const originalIsTTY = process.stdin.isTTY;
+		process.stdin.isTTY = true;
+
+		try {
+			const result = await promptTargetAudienceIfNeeded(cwd);
+			expect(result.prompted).toEqual(false);
+			expect(result.cancelled).toEqual(false);
+			expect(result.audience).toEqual({
+				role: 'developer',
+				git: 'familiar',
+				siteglideCli: 'familiar'
+			});
+		} finally {
+			process.stdin.isTTY = originalIsTTY;
+		}
+	});
+});

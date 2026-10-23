@@ -6,7 +6,8 @@ const program = require('commander'),
 	fetchAuthData = require('./lib/settings').fetchSettings,
 	logger = require('./lib/logger'),
 	url = require('url'),
-	Gateway = require('./lib/proxy');
+	Gateway = require('./lib/proxy'),
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 class LogStream extends EventEmitter {
 	constructor(authData) {
@@ -61,8 +62,13 @@ program
 	.description("This command will output the last 20 logs and then a live list of logs from your site. Logs are written by using the log liquid code, for example: {% log 'Hello World!' -%} .")
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-f --filter <log type>', 'display only logs of given type, example: error')
-	.option('-q --quiet', 'show only log message, without context')
+	.option('-q --quiet', 'show only log message, without context');
+
+addDebugOption(program);
+
+program
 	.action((environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 
 		const authData = fetchAuthData(environment, program);

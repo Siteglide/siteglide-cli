@@ -14,7 +14,6 @@ const program = require('commander'),
 	downloadFile = require('./lib/downloadFile'),
 	waitForStatus = require('./lib/data/waitForStatus'),
 	Gateway = require('./lib/proxy'),
-	Confirm = require('./lib/confirm'),
 	getBinary = require('./lib/assets/getBinary'),
 	unzip = require('./lib/unzip'),
 	path = require('path'),
@@ -38,11 +37,53 @@ const program = require('commander'),
 	{
 		AI_AGENT_PREFERENCES_RELATIVE_PATH,
 		prepareAiAgentPreferences,
+		promptAiAgentPreferencesIfNeeded,
 		isSkillAgentEnabled
-	} = require('./lib/aiAgentPreferences');
+	} = require('./lib/aiAgentPreferences'),
+	{ ensureSharedUserPreferencesAfterPull } = require('./lib/sharedUserPreferences'),
+	{
+		MODE_VERSION_CONTROL,
+		ensureSourceOfTruthConfig,
+		readSourceOfTruthMode,
+		resolveSkipRemoteCheck,
+		promptVersionControlPullConfirm,
+		assertVersionControlPullEnvironment
+	} = require('./lib/sourceOfTruth'),
+	{ promptTargetAudienceIfNeeded } = require('./lib/targetAudience'),
+	{ audiencePromptText } = require('./lib/promptAudience'),
+	{ selectChoice, confirmYesNo } = require('./lib/prompts'),
+	{ recordPullBaselineAfterPull } = require('./lib/recordPullBaseline'),
+	{ readPullBaseline } = require('./lib/pullBaseline'),
+	{ getGitReadiness } = require('./lib/git/readiness'),
+	{ maybeOfferGitSetupHint } = require('./lib/git/maybeGitSetupHint'),
+	{ ensureSiteglideGitignored } = require('./lib/git/siteglideGitignore'),
+	{ ensureAgentPathsGitignored } = require('./lib/git/agentGitignore'),
+	{ syncClaudeFlatSkills } = require('./lib/claudeFlatSkills'),
+	{ ensureSiteglideSkillsNamespaceLink } = require('./lib/agentSkillsNamespaceLink'),
+	{ isWorkingTreeDirty } = require('./lib/git/workingTree'),
+	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
+	{ mergeFirstPull } = require('./lib/git/mergeFirst'),
+	{ promptCommitMessage } = require('./lib/git/commitPrompt'),
+	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
+	{ MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
+	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ CANCEL_SKIP_REMOTE_HINT } = require('./lib/remoteConflictPrompt'),
+	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	{ runMergeFirstSyncPullBody } = require('./lib/pull/mergeFirstSyncPullBody'),
+	{ promptNoGitOverwriteConfirmIfNeeded } = require('./lib/pull/noGitOverwriteConfirm'),
+	{
+		tempPullLog,
+		tempPullGitSnapshot,
+		ensureTempPullTraceSession
+	} = require('./lib/git/tempPullTrace'),
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug'),
+	{ applyCliColour } = require('./lib/cliColour');
 
-const pullSpinner = ora({ text: 'Pulling files', stream: process.stdout });
+const pullSpinner = ora({ text: 'Pulling files', stream: process.stderr });
 logger.registerSpinner(pullSpinner);
+
+const mergeSpinner = ora({ text: 'Merging changes...', stream: process.stderr });
 
 /** Folder name under module_984's public/assets/ that holds agent skill files (no leading dot). */
 const MODULE_AGENTS_DIR = 'agents';
@@ -163,49 +204,6 @@ const countSkillMarkdownFiles = async (rootDir) => {
 };
 
 /**
- * Ensure `linkPath` is a directory symlink/junction pointing at `targetPath`
- * (source of truth under `.agents/skills`). Cross-platform: junction on Windows, dir symlink elsewhere.
- *
- * @param {string} linkPath - Relative path for the discovery folder (e.g. `.cursor/skills`).
- * @param {string} targetPath - Relative path to the shared skills tree (e.g. `.agents/skills`).
- * Side effects: may remove an existing link/dir at linkPath; creates parent dirs; creates symlink/junction.
- */
-const ensureSkillsDirLink = async (linkPath, targetPath) => {
-	const linkAbs = path.resolve(linkPath);
-	const targetAbs = path.resolve(targetPath);
-
-	logger.Debug(`[pull] Ensuring skills link: ${linkPath} → ${targetPath}`);
-	await fs.ensureDir(path.dirname(linkAbs));
-	await fs.ensureDir(targetAbs);
-
-	if (await fs.pathExists(linkAbs)) {
-		const linkStat = await fs.lstat(linkAbs);
-		if (linkStat.isSymbolicLink()) {
-			let currentTarget = await fs.readlink(linkAbs);
-			if (!path.isAbsolute(currentTarget)) {
-				currentTarget = path.resolve(path.dirname(linkAbs), currentTarget);
-			}
-			if (path.resolve(currentTarget) === targetAbs) {
-				logger.Debug(`[pull] Skills link already correct: ${linkPath}`);
-				return;
-			}
-			logger.Debug(`[pull] Replacing outdated skills link at ${linkPath}`);
-			await fs.remove(linkAbs);
-		} else {
-			logger.Debug(`[pull] Replacing existing path at ${linkPath} with link to shared ${targetPath}`);
-			await fs.remove(linkAbs);
-		}
-	}
-
-	const linkType = process.platform === 'win32' ? 'junction' : 'dir';
-	const linkTarget = process.platform === 'win32'
-		? targetAbs
-		: path.relative(path.dirname(linkAbs), targetAbs) || '.';
-	await fs.symlink(linkTarget, linkAbs, linkType);
-	logger.Debug(`[pull] Created ${linkType} ${linkPath} → ${targetPath}`);
-};
-
-/**
  * Write a managed text file (overwrite). Used for IDE pointer rules that tell agents
  * how to find `./.agents` when native discovery is missing.
  *
@@ -225,14 +223,14 @@ const writeManagedAgentFile = async (filePath, contents) => {
 const CURSOR_SETUP_RULE = `---
 alwaysApply: true
 ---
-Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents directory for skills on startup and add matching skills in your .cursor/skills directory using symlinks.
+Check if you have access to Siteglide skills automatically. If not, use ./.cursor/skills/siteglide (linked from ./.agents/skills/siteglide on pull) and add your own project skills as sibling folders under ./.cursor/skills/.
 Also follow ./.cursor/rules/setup_siteglide_mcp.mdc for Siteglide MCP (never read .siteglide-config; use envs_list).
 `;
 
 /** Claude project instructions — mirrors Siteglide/Siteglide-AI-Skills `.claude/CLAUDE.md`. */
 const CLAUDE_SETUP_MD = `# Setup Siteglide Skills
 
-Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents/skills/siteglide/ directory for skills on startup and use a single bash command to copy that to your ./.claude/skills/ directory. Then reload your plugins if needed (to import those new skills).
+Check if you have access to Siteglide skills automatically. If not, use the flat skill files siteglide-cli pull writes under ./.claude/skills/ (names like siteglide_studio_build-page.SKILL.md). Claude does not load skills buried in namespace folders, so pull does not symlink the nested ./.agents/skills/siteglide/ tree here. References and the full skill tree remain under ./.agents/skills/.
 
 ## Siteglide MCP
 
@@ -243,21 +241,24 @@ See ./.claude/siteglide-mcp.md. Prefer Siteglide MCP tools. NEVER read .siteglid
 const WINDSURF_SETUP_RULE = `---
 trigger: always_on
 ---
-Check if you have access to Siteglide skills automatically. If not, immediately check the ./.agents directory for skills on startup and add matching skills in your .windsurf/skills directory using symlinks (or rely on ./.windsurf/skills if it already links to ./.agents/skills).
+Check if you have access to Siteglide skills automatically. If not, use ./.windsurf/skills/siteglide (linked from ./.agents/skills/siteglide on pull) and add your own project skills as sibling folders under ./.windsurf/skills/.
 Also follow ./.windsurf/rules/setup_siteglide_mcp.md for Siteglide MCP (never read .siteglide-config; use envs_list).
 `;
 
 /** Copilot custom instructions pointing at the shared `.agents` tree. */
 const COPILOT_INSTRUCTIONS_MD = `<!-- Managed by siteglide-cli pull — source of truth is ./.agents/skills -->
-If agent skills are not already available, use the skills under ./.agents/skills/ (also linked from ./.github/skills/). Prefer those over inventing Siteglide/platformOS workflows from memory.
+If agent skills are not already available, use Siteglide skills under ./.agents/skills/siteglide/ (also linked at ./.github/skills/siteglide/). Add your own skills as sibling folders under ./.github/skills/. Prefer those over inventing Siteglide/platformOS workflows from memory.
 Also see ./.github/siteglide-mcp.md: prefer Siteglide MCP tools; NEVER read .siteglide-config — use envs_list for environment names.
 `;
 
 /**
  * When skills exist under `./.agents`, create IDE root folders so Cursor, Claude, Windsurf,
  * and GitHub Copilot can discover them. Skills stay in `./.agents/skills` (source of truth);
- * platform folders get a symlink/junction to that tree plus a small pointer rule/instructions
- * file matching https://github.com/Siteglide/Siteglide-AI-Skills
+ * Cursor, Windsurf, and Copilot get a symlink/junction on `skills/siteglide` only (sibling
+ * folders remain available for project skills). Claude gets flat
+ * `siteglide_<namespace>_<skill>.SKILL.md` files under `.claude/skills/` (see claudeFlatSkills.js).
+ * Each enabled agent also gets a small pointer rule/instructions file matching
+ * https://github.com/Siteglide/Siteglide-AI-Skills
  *
  * Side effects: creates `.cursor`, `.claude`, `.windsurf`, `.github` paths; writes managed
  * pointer files; creates/replaces skills directory links; updates pullSpinner text.
@@ -265,8 +266,16 @@ Also see ./.github/siteglide-mcp.md: prefer Siteglide MCP tools; NEVER read .sit
 const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 	pullSpinner.text = 'AI: Setting up IDE skill folders';
 
-	const skillsTarget = path.join(AGENTS_ROOT, 'skills');
-	await fs.ensureDir(`./${skillsTarget}`);
+	const agentsSkillsRoot = path.join(AGENTS_ROOT, 'skills');
+	await fs.ensureDir(`./${agentsSkillsRoot}`);
+
+	const linkSiteglideSkills = async (agentSkillsDir) => {
+		await ensureSiteglideSkillsNamespaceLink({
+			agentSkillsDir,
+			agentsSkillsRoot,
+			debugLog: (message) => logger.Debug(message)
+		});
+	};
 
 	const ready = [];
 
@@ -275,13 +284,17 @@ const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 			path.join('.cursor', 'rules', 'setup_siteglide_skills.mdc'),
 			CURSOR_SETUP_RULE
 		);
-		await ensureSkillsDirLink(path.join('.cursor', 'skills'), skillsTarget);
+		await linkSiteglideSkills(path.join('.cursor', 'skills'));
 		ready.push('.cursor');
 	}
 
 	if (isSkillAgentEnabled('Claude', enabledSkillAgents)) {
 		await writeManagedAgentFile(path.join('.claude', 'CLAUDE.md'), CLAUDE_SETUP_MD);
-		await ensureSkillsDirLink(path.join('.claude', 'skills'), skillsTarget);
+		await syncClaudeFlatSkills({
+			agentsRoot: AGENTS_ROOT,
+			claudeSkillsDir: path.join('.claude', 'skills'),
+			debugLog: (message) => logger.Debug(message)
+		});
 		ready.push('.claude');
 	}
 
@@ -290,7 +303,7 @@ const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 			path.join('.windsurf', 'rules', 'setup_siteglide_skills.md'),
 			WINDSURF_SETUP_RULE
 		);
-		await ensureSkillsDirLink(path.join('.windsurf', 'skills'), skillsTarget);
+		await linkSiteglideSkills(path.join('.windsurf', 'skills'));
 		ready.push('.windsurf');
 	}
 
@@ -299,14 +312,17 @@ const ensureAgentIdeScaffolding = async (enabledSkillAgents = []) => {
 			path.join('.github', 'copilot-instructions.md'),
 			COPILOT_INSTRUCTIONS_MD
 		);
-		await ensureSkillsDirLink(path.join('.github', 'skills'), skillsTarget);
+		await linkSiteglideSkills(path.join('.github', 'skills'));
 		ready.push('.github');
 	}
 
 	if (ready.length > 0) {
-		logger.Info(`[pull] AI: Skill IDE folders ready (${ready.join(', ')} → .agents/skills)`);
+		const claudeNote = isSkillAgentEnabled('Claude', enabledSkillAgents)
+			? '; Claude skills are flat files in .claude/skills'
+			: '';
+		logger.Quiet(`[pull] AI: Skill IDE folders ready (${ready.join(', ')}; Siteglide → .agents/skills/siteglide${claudeNote})`);
 	} else {
-		logger.Info(`[pull] AI: Skill IDE folders skipped (no agents included in ${AI_AGENT_PREFERENCES_RELATIVE_PATH})`);
+		logger.Quiet(`[pull] AI: Skill IDE folders skipped (no agents included in ${AI_AGENT_PREFERENCES_RELATIVE_PATH})`);
 	}
 };
 
@@ -442,7 +458,7 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
  * updates `pullSpinner` text; downloads then deletes a temporary zip.
  */
 const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Site: Downloading main site zip → ${siteRoot}/`);
+	logger.Quiet(`[pull] Site: Downloading main site zip → ${siteRoot}/`);
 	const filename = `${siteRoot}.zip`;
 	pullSpinner.text = 'Pulling site files';
 	const pullTask = await gateway.pullZip();
@@ -459,7 +475,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
 	}
 	await fs.remove(`./${siteRoot}/app`);
 	await cleanupEmptyDirs(siteRoot);
-	logger.Info('[pull] Site: Files pulled');
+	logger.Quiet('[pull] Site: Files pulled');
 };
 
 /**
@@ -473,7 +489,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
  * uses then deletes a temp zip and `.tmp/pull-<moduleName>` work directory.
  */
 const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info(`[pull] Modules: Starting pull - ${formatModuleNameForLog(moduleName)}`);
+	logger.Quiet(`[pull] Modules: Starting pull - ${formatModuleNameForLog(moduleName)}`);
 	const filename = `${dir.MODULES}-${moduleName}.zip`;
 	const workDir = path.join(dir.TMP, `pull-${moduleName}`);
 	const pullTask = await gateway.pullZip({ module_name: moduleName });
@@ -556,14 +572,14 @@ const pullModulesInParallel = async (gateway, modulesToPull, concurrency, ignore
 	}
 
 	const limit = Math.max(1, concurrency);
-	logger.Info(`[pull] Modules: Pulling ${total} module(s)`);
+	logger.Quiet(`[pull] Modules: Pulling ${total} module(s)`);
 	pullSpinner.text = 'Pulling modules';
 
 	let completed = 0;
 	await mapLimit(modulesToPull, limit, async (moduleName) => {
 		await pullModuleZip(gateway, moduleName, ignoredModules);
 		completed += 1;
-		logger.Info(`[pull] Modules: ${formatModuleNameForLog(moduleName)} done (${completed}/${total})`);
+		logger.Quiet(`[pull] Modules: ${formatModuleNameForLog(moduleName)} done (${completed}/${total})`);
 		pullSpinner.text = `Pulling modules (${completed}/${total} done)`;
 	});
 
@@ -602,7 +618,8 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 				(urlToTest.indexOf('.map') > -1) ||
 				(urlToTest.indexOf('.json') > -1) ||
 				(urlToTest.indexOf('.md') > -1) ||
-				(urlToTest.indexOf('.htm') > -1)
+				(urlToTest.indexOf('.htm') > -1) ||
+				(urlToTest.indexOf('.xml') > -1)
 			) {
 				await getBinary(file.data.remote_url, time).then(body => {
 					if (body !== 'error_missing_file') {
@@ -655,7 +672,7 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 		}
 		wroteCount++;
 	});
-	logger.Info(`[pull] Assets: wrote ${wroteCount} file(s) (${moduleAssetCount} under modules)`);
+	logger.Quiet(`[pull] Assets: wrote ${wroteCount} file(s) (${moduleAssetCount} under modules)`);
 };
 
 /**
@@ -664,10 +681,9 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
  * Side effects: removes leftover pull zips (`app.zip`, `marketplace_builder.zip`, `modules-*.zip`),
  * removes `./.tmp` if present, moves any leftover `app/modules` into `./modules`
  * then deletes that nested folder, removes empty dirs under `app`;
- * updates `pullSpinner` text and writes tidying-up logs.
+ * updates `pullSpinner` text (spinner stays active through this phase).
  */
 const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) => {
-	logger.Info('[pull] Tidying up local files');
 	pullSpinner.text = 'Tidying up...';
 
 	const siteZips = [`./${dir.SITE_ROOT}.zip`, `./${dir.APP}.zip`];
@@ -709,18 +725,46 @@ const tidyUpAfterPull = async (ignoredModules = DEFAULT_PULL_IGNORED_MODULES) =>
 			await cleanupEmptyDirs(appRoot);
 		}
 	}
-	logger.Info('[pull] Tidying up complete');
 };
 
 program
 	.version(version, '-v, --version')
 	.name('siteglide-cli pull')
 	.usage('<env>')
-	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. AI skills come only from module_984 assets (public/assets/agents/) into ./.agents (read-only; never ./modules/module_984/). Requires asset download — do not use --ignore-assets if you want skills. When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/project/modules.json (pull_behaviour.include/exclude). Use -m to pull one module including ignored ones.')
+	.description('Pull site files into the existing site root (app/ or marketplace_builder/) and module public files into modules/. Does not rename marketplace_builder/ ↔ app/. AI skills come only from module_984 assets (public/assets/agents/) into ./.agents (read-only; never ./modules/module_984/). Requires asset download — do not use --ignore-assets if you want skills. When skills are present, scaffolds IDE discovery folders linked to ./.agents/skills. Registers Siteglide MCP in IDE configs if missing. Modules pull in parallel (see --concurrency). Overwrites local files. By default skips built-in Siteglide platform modules; customize via .siteglide/project/modules.json (pull_behaviour.include/exclude). Team workflow: .siteglide/project/sourceOfTruth.json (site vs versionControl). Use -m to pull one module including ignored ones. Use -s / --skip-remote-check for legacy pull (simple confirm; no commit or merge guiderails).')
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
 	.option('-m --module <module>', 'Optional module name filter. Without this flag, all installed modules are pulled.')
+	.option(
+		'-s, --skip-remote-check',
+		'Legacy pull: simple confirm only — skip commit-before/after gates and merge-first prompts'
+	)
+	.option(
+		'--merge-first-sync',
+		'Internal: lightweight pull for sync merge-first (site, modules, assets only)',
+		false
+	)
+	.option(
+		'--path <physical-path>',
+		'Internal: physical path for selective merge-first sync (repeatable)',
+		(value, previous) => {
+			const list = previous || [];
+			list.push(value);
+			return list;
+		},
+		[]
+	)
+	.option(
+		'--merge-first-fast',
+		'Internal: selective pull for --path only (sync -fast)',
+		false
+	)
+	.option(
+		'--merge-first-compare',
+		'Internal: full pull then selective for one --path; write compare report (sync -compare)',
+		false
+	)
 	.option(
 		'--concurrency <number>',
 		`Max concurrent module pulls (default: ${DEFAULT_MODULE_PULL_CONCURRENCY}, or CONCURRENCY env)`,
@@ -731,9 +775,46 @@ program
 			}
 			return parsed;
 		}
-	)
+	);
+
+addDebugOption(program);
+
+program
 	.action((environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
+
+		if (!process.env.SITEGLIDE_NESTED_CLI) {
+			ensureTempPullTraceSession();
+		}
+
+		const lock = claimCommandLock('pull', { environment });
+		tempPullLog('action_start', {
+			environment: environment || '',
+			configFile: params.configFile,
+			skipRemoteCheck: Boolean(params.skipRemoteCheck),
+			mergeFirstSync: Boolean(params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1'),
+			assumeYes: process.env.SITEGLIDE_PULL_ASSUME_YES === '1',
+			moduleFilter: params.module || '',
+			ignoreAssets: Boolean(params.ignoreAssets),
+			nestedCli: process.env.SITEGLIDE_NESTED_CLI || '',
+			skipCommitBaseline: process.env.SITEGLIDE_PULL_SKIP_COMMIT_BASELINE || '',
+			cwd: process.cwd(),
+			pid: process.pid
+		});
+		tempPullGitSnapshot(process.cwd(), 'action_start', { environment: environment || '' });
+		tempPullLog('command_lock', {
+			ok: lock.ok,
+			nested: lock.nested,
+			headline: lock.headline || lock.message || ''
+		});
+		if (!lock.ok) {
+			logCommandLockRefusal(lock);
+		}
+		if (!lock.nested) {
+			registerCommandLockCleanup();
+		}
+
 		const ignoreAssets = params.ignoreAssets;
 		const moduleFilter = params.module;
 		const envConcurrency = parseInt(process.env.CONCURRENCY, 10);
@@ -741,31 +822,257 @@ program
 			|| (envConcurrency > 0 ? envConcurrency : DEFAULT_MODULE_PULL_CONCURRENCY);
 		const authData = fetchAuthData(environment, program);
 		const gateway = new Gateway(authData);
+		const assumeYes = process.env.SITEGLIDE_PULL_ASSUME_YES === '1';
+		let skipRemoteCheck = Boolean(params.skipRemoteCheck);
+		const mergeFirstSync = params.mergeFirstSync || process.env.SITEGLIDE_PULL_MERGE_FIRST_SYNC === '1';
 
-		return Confirm('Are you sure you would like to pull? This will overwrite your local files immediately! (Y/n)\n').then(async function (response) {
-			if (response === 'Y') {
-				try {
-					const siteRoot = await resolveSiteAppRoot();
-					// logger.Info(`[pull] Site files root: ${siteRoot}/`);
+		const runMergeFirstPull = async (wipMessage) => {
+			tempPullLog('runMergeFirstPull:start', {
+				environment,
+				wipMessageLen: wipMessage ? wipMessage.length : 0
+			});
+			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_start', { environment });
+			logger.Quiet('[pull] Pull and merge: committing local work if needed, pulling on a temporary branch, then merging back.');
+			const result = await mergeFirstPull({
+				environment,
+				wipMessage,
+				pullFn: async () => {
+					await spawnNestedPull({
+						environment,
+						configFile: params.configFile,
+						ignoreAssets: params.ignoreAssets,
+						module: params.module,
+						concurrency: params.concurrency,
+						skipCommitBaseline: true,
+						mergeFirstSync: true
+					});
+				},
+				uiHooks: {
+					afterPullFn: () => {
+						logger.registerSpinner(mergeSpinner);
+						mergeSpinner.text = 'Merging changes...';
+						mergeSpinner.start();
+					},
+					afterMergePhase: ({ conflictExpected }) => {
+						if (conflictExpected) {
+							mergeSpinner.stop();
+						} else {
+							mergeSpinner.succeed(applyCliColour('success', 'Merged changes', process.stderr));
+						}
+					}
+				}
+			});
+			if (mergeSpinner.isSpinning) {
+				mergeSpinner.fail('Merge failed');
+			}
+			tempPullLog('runMergeFirstPull:mergeFirst_result', {
+				ok: result.ok,
+				error: result.error || '',
+				phase: result.recoveryContext && result.recoveryContext.phase ? result.recoveryContext.phase : '',
+				conflictExpected: result.conflictExpected,
+				tempBranch: result.tempBranch || '',
+				originalBranch: result.originalBranch || ''
+			});
+			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_after_mergeFirst', {
+				environment,
+				tempBranch: result.tempBranch || ''
+			});
+			if (!result.ok) {
+				tempPullLog('hypothesis_confirm', {
+					id: 'H1',
+					expect: 'failed merge-first may leave dirty tree or temp branch; next pull often routes dirty_skip_outer_prompt'
+				});
+				logger.Error(`[pull] Merge-first failed: ${result.error}`);
+				await offerMergeFirstFailureHelp(result, {
+					environment,
+					command: 'pull'
+				});
+				process.exit(1);
+			}
+			tempPullLog('completeMergeFirstResolution:start', {
+				conflictExpected: result.conflictExpected
+			});
+			const completed = await completeMergeFirstResolution({
+				environment,
+				result,
+				command: 'pull',
+				commitMessage: 'siteglide: merge remote pull',
+				warnMessage:
+					`[pull] Merge started. ${MERGE_CONFLICT_CLI_WAIT_HINT}`,
+				logPrefix: '[pull]'
+			});
+			tempPullLog('completeMergeFirstResolution:done', {
+				ok: completed.ok,
+				error: completed.error || '',
+				aborted: completed.aborted
+			});
+			tempPullGitSnapshot(process.cwd(), 'runMergeFirstPull_complete', { environment });
+			if (!completed.ok) {
+				logger.Error(`[pull] Merge resolution failed: ${completed.error || 'unknown error'}`);
+				process.exit(1);
+			}
+			await ensureSharedUserPreferencesAfterPull(process.cwd());
+			logger.Success('[pull] Pull baseline updated. Merge complete.');
+			process.exit(0);
+		};
 
-					pullSpinner.start();
-					if (moduleFilter) {
-						logger.Info(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
-					}
-					if (ignoreAssets) {
-						logger.Info('[pull] --ignore-assets set; asset download step will be skipped');
-					}
+		const recordPullBaseline = () => {
+			recordPullBaselineAfterPull({
+				environment,
+				moduleFilter,
+				skipRemoteCheck
+			});
+		};
 
-					pullSpinner.text = 'Fetching installed modules';
-					const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
-					if (pullModulesConfigCreated) {
-						logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} allowing you to configure which modules should be skipped on future pulls. If you use GitHub, we recommend this file should not be gitignored.`);
+		const startPull = async function () {
+			const pullCwd = process.cwd();
+			const nestedRole = (
+				process.env.SITEGLIDE_PULL_ASSUME_YES === '1'
+				|| process.env.SITEGLIDE_NESTED_CLI === '1'
+			);
+			tempPullLog('startPull:entry', {
+				role: nestedRole ? 'nested_pull' : 'outer_pull',
+				mergeFirstSync,
+				skipRemoteCheck,
+				cwd: pullCwd
+			});
+			tempPullGitSnapshot(pullCwd, 'startPull_entry', { environment });
+			try {
+				if (!mergeFirstSync) {
+					const audienceResult = await promptTargetAudienceIfNeeded(pullCwd);
+					if (audienceResult.cancelled) {
+						logger.Error('[Cancelled] Pull not executed — finish the about-me questions or press Ctrl+C to cancel.');
+						process.exit(1);
 					}
-					const { created: aiAgentPreferencesCreated, enabledSkillAgents } = await prepareAiAgentPreferences(process.cwd());
-					if (aiAgentPreferencesCreated) {
-						logger.Info(`[pull] Created ./${AI_AGENT_PREFERENCES_RELATIVE_PATH} allowing you to configure which AI agent skill folders and MCP configs pull creates. This one is personal to your machine, so it does not need to be shared with the team.`);
+					const agentPrefs = await promptAiAgentPreferencesIfNeeded(pullCwd);
+					if (agentPrefs.cancelled) {
+						logger.Error('[Cancelled] Pull not executed — finish the AI agent choice or press Ctrl+C to cancel.');
+						process.exit(1);
 					}
-					const modulesResponse = await gateway.listModules();
+				}
+
+				const git = getGitReadiness();
+				if (git.repoInitialized) {
+					const open = hasOpenGitConflicts();
+					if (open.open) {
+						logger.Error(`[pull] Refusing pull while ${open.reason}. Ask AI + MCP to help resolve conflict markers first.`);
+						process.exit(1);
+					}
+					await ensureSiteglideGitignored();
+					if (
+						!mergeFirstSync
+						&& !skipRemoteCheck
+						&& process.env.SITEGLIDE_NESTED_CLI !== '1'
+						&& isWorkingTreeDirty()
+					) {
+						tempPullLog('route', { name: 'dirty_inner_merge_prompt' });
+						if (!process.stdin.isTTY || process.env.CI) {
+							tempPullLog('dirty_inner_merge_prompt:non_interactive_exit', {});
+							logger.Error('[pull] Working tree is dirty. Commit your work, then pull again (non-interactive).');
+							process.exit(1);
+						}
+						const chalk = require('chalk');
+						const message = audiencePromptText(
+							chalk.yellow.bold('Commit your working tree before pulling.'),
+							'Let\'s save a snapshot of your work before pulling.',
+							pullCwd
+						) + ' How shall we proceed?';
+						const mergeDescStandard =
+							'We\'ll commit, then pull to a temporary branch and merge. Your files will be safe from accidental overwrite.';
+						const mergeDescExtra =
+							'We\'ll check the difference between your files and the site first. Your files will be safe from accidental overwrite.';
+						const ans = await selectChoice(message, [
+							{
+								name: 'Pull and merge',
+								value: 'merge',
+								description: audiencePromptText(mergeDescStandard, mergeDescExtra, pullCwd)
+							},
+							{
+								name: 'Cancel pull',
+								value: 'cancel',
+								description: CANCEL_SKIP_REMOTE_HINT
+							}
+						]);
+						tempPullLog('dirty_inner_merge_prompt:choice', { choice: ans || 'cancel' });
+						if (!ans || ans === 'cancel') {
+							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
+							process.exit(1);
+						}
+						const wipMessage = await promptCommitMessage({
+							environment,
+							action: 'pulling from',
+							cwd: pullCwd
+						});
+						if (wipMessage == null) {
+							logger.Error('[Cancelled] Pull not executed — commit your working tree first, then pull again.');
+							process.exit(1);
+						}
+						tempPullLog('dirty_inner_merge_prompt:run_merge_first', { wipMessageLen: wipMessage.length });
+						await runMergeFirstPull(wipMessage);
+						return;
+					}
+				}
+
+				const siteRoot = await resolveSiteAppRoot();
+
+				const { created: sourceOfTruthCreated } = await ensureSourceOfTruthConfig(process.cwd());
+				if (sourceOfTruthCreated) {
+					logger.Info('[pull] Created ./.siteglide/project/sourceOfTruth.json — set sourceOfTruth to site or versionControl for your team workflow.');
+				}
+				const { created: pullModulesConfigCreated, effectiveIgnoredModules } = await preparePullModulesConfig(process.cwd());
+				if (pullModulesConfigCreated) {
+					logger.Info(`[pull] Created ./${PULL_MODULES_CONFIG_RELATIVE_PATH} allowing you to configure which modules should be skipped on future pulls. If you use GitHub, we recommend this file should not be gitignored.`);
+				}
+				const { created: aiAgentPreferencesCreated, enabledSkillAgents } = await prepareAiAgentPreferences(process.cwd());
+				if (aiAgentPreferencesCreated) {
+					logger.Info(`[pull] Created ${AI_AGENT_PREFERENCES_RELATIVE_PATH} allowing you to configure which AI agent skill folders and MCP configs pull creates. This one is personal to your machine, so it does not need to be shared with the team.`);
+				}
+
+				if (!mergeFirstSync) {
+					await ensureMcpOnPull({ enabledSkillAgents });
+					const gitReadiness = getGitReadiness({ cwd: pullCwd });
+					const hint = await maybeOfferGitSetupHint({ cwd: pullCwd, git: gitReadiness });
+					if (hint.abortPull) {
+						if (hint.cancelled) {
+							logger.Error('[Cancelled] Pull not executed — finish the prompt or press Ctrl+C to cancel.');
+						} else {
+							logger.Warn(
+								applyCliColour(
+									'warning',
+									'Pull deliberately stopped for now. Set up git with your AI assistant, then run pull again.'
+								),
+								{ exit: false }
+							);
+						}
+						process.exit(1);
+					}
+					const gitAfterSetup = getGitReadiness({ cwd: pullCwd });
+					const overwriteConfirmed = await promptNoGitOverwriteConfirmIfNeeded({
+						cwd: pullCwd,
+						mergeFirstSync,
+						repoInitialized: gitAfterSetup.repoInitialized,
+						assumeYes,
+						log: (event, data) => tempPullLog(event, data),
+						onCancel: () => {
+							logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+						}
+					});
+					if (!overwriteConfirmed) {
+						return;
+					}
+				}
+
+				pullSpinner.text = 'Pulling files';
+				pullSpinner.start();
+				if (moduleFilter) {
+					logger.Quiet(`[pull] Module filter (-m): "${formatModuleNameForLog(moduleFilter)}"`);
+				}
+				if (ignoreAssets) {
+					logger.Quiet('[pull] --ignore-assets set; asset download step will be skipped');
+				}
+
+				pullSpinner.text = 'Fetching installed modules';
+				const modulesResponse = await gateway.listModules();
 					const installedModules = (modulesResponse && modulesResponse.data) ? modulesResponse.data : [];
 					logger.Debug(`[pull] list_modules returned ${installedModules.length} module(s)`);
 					if (installedModules.length > 0) {
@@ -785,10 +1092,10 @@ program
 						const installedForLog = installedModules.map((name) => {
 							return isPullIgnoredModule(name, effectiveIgnoredModules) ? `${name} (skipped)` : name;
 						});
-						logger.Info(`[pull] Modules: ${installedModules.length} installed on this site: ${installedForLog.join(', ')}`);
+						logger.Quiet(`[pull] Modules: ${installedModules.length} installed on this site: ${installedForLog.join(', ')}`);
 					}
 					if (moduleSelection.ignored.length > 0) {
-						logger.Info(`[pull] Modules: Change what is skipped via pull_behaviour include/exclude in ./${PULL_MODULES_CONFIG_RELATIVE_PATH}`);
+						logger.Quiet(`[pull] Modules: Change what is skipped via pull_behaviour include/exclude in ./${PULL_MODULES_CONFIG_RELATIVE_PATH}`);
 					}
 
 					if (moduleFilter && modulesToPull === null) {
@@ -798,7 +1105,7 @@ program
 					}
 
 					// if (!moduleFilter && moduleSelection.ignored.length > 0) {
-					// 	logger.Info(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
+					// 	logger.Quiet(`[pull] Skipping ${moduleSelection.ignored.length} default-ignored module(s): ${formatModuleListForLog(moduleSelection.ignored).join(', ')}`);
 					// }
 
 					const agentsOnlyModules = modulesToPull.filter(isAgentsOnlyPullModule);
@@ -808,52 +1115,215 @@ program
 					const moduleTotal = modulesCounted.length;
 
 					if (moduleTotal === 0) {
-						logger.Info('[pull] No modules selected to pull');
+						logger.Quiet('[pull] No modules selected to pull');
 					} else {
-						logger.Info(`[pull] Modules: Will pull ${moduleTotal} module(s): ${formatModuleListForLog(modulesCounted).join(', ')}`);
+						logger.Quiet(`[pull] Modules: Will pull ${moduleTotal} module(s): ${formatModuleListForLog(modulesCounted).join(', ')}`);
 					}
 
-					await pullSiteZip(gateway, siteRoot, ignoredModules);
+					const runFullMergeFirstSyncPull = async () => {
+						await pullSiteZip(gateway, siteRoot, ignoredModules);
 
-					let modulesDone = await pullModulesInParallel(gateway, modulesForNormalPull, modulePullConcurrency, ignoredModules, moduleTotal);
+						let modulesDone = await pullModulesInParallel(gateway, modulesForNormalPull, modulePullConcurrency, ignoredModules, moduleTotal);
 
-					if (!ignoreAssets) {
-						await pullAssets(gateway, siteRoot, ignoredModules);
-					} else {
-						logger.Info('[pull] Skipping assets step');
-					}
-
-					for (let i = 0; i < agentsOnlyModules.length; i++) {
-						await removeLocalModuleCheckout(agentsOnlyModules[i]);
 						if (!ignoreAssets) {
-							modulesDone += 1;
-							logger.Info(`[pull] Modules: ${formatModuleNameForLog(agentsOnlyModules[i])} done (${modulesDone}/${moduleTotal})`);
+							await pullAssets(gateway, siteRoot, ignoredModules);
+						} else {
+							logger.Quiet('[pull] Skipping assets step');
 						}
+
+						for (let i = 0; i < agentsOnlyModules.length; i++) {
+							await removeLocalModuleCheckout(agentsOnlyModules[i]);
+							if (!ignoreAssets) {
+								modulesDone += 1;
+								logger.Quiet(`[pull] Modules: ${formatModuleNameForLog(agentsOnlyModules[i])} done (${modulesDone}/${moduleTotal})`);
+							}
+						}
+
+						if (moduleTotal > 0) {
+							logger.Quiet(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
+						}
+					};
+
+					if (mergeFirstSync) {
+						await runMergeFirstSyncPullBody({
+							gateway,
+							environment,
+							params,
+							siteRoot,
+							ignoredModules,
+							runFullMergeFirstSyncPull
+						});
+					} else {
+						await runFullMergeFirstSyncPull();
 					}
 
-					if (moduleTotal > 0) {
-						logger.Info(`[pull] Modules: Pulled ${moduleTotal} module(s)`);
+					if (!mergeFirstSync) {
+						pullSpinner.text = 'AI: Setting up IDE skill folders';
+						await finalizeMergedAgents(enabledSkillAgents);
+
+						const agentsTreePresent = await fs.pathExists(path.join(pullCwd, AGENTS_ROOT));
+						ensureAgentPathsGitignored({
+							cwd: pullCwd,
+							enabledSkillAgents,
+							includeAgentsRoot: agentsTreePresent
+						});
+					} else {
+						logger.Debug('[pull] Merge-first sync mode: skipping MCP and .agents scaffolding');
 					}
-
-					await finalizeMergedAgents(enabledSkillAgents);
-
-					pullSpinner.stop();
-					await ensureMcpOnPull({ enabledSkillAgents });
 
 					await tidyUpAfterPull(ignoredModules);
 
-					logger.Info('[pull] All steps finished');
-					pullSpinner.succeed('Pulled files');
+					recordPullBaseline();
+					await ensureSharedUserPreferencesAfterPull(pullCwd);
+
+					pullSpinner.succeed(applyCliColour('success', 'Pulled files', process.stderr));
+					logger.Debug('[pull] Pull finished.');
 				} catch (e) {
 					logger.Debug(e);
 					pullSpinner.fail('Pull failed');
-					logger.Error(e.message || e);
+					const pullErr = e && e.message ? e.message : String(e);
+					logger.Error(`[pull] ${pullErr}`);
 					process.exit(1);
 				}
-			} else {
-				logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+		};
+
+		return (async () => {
+			const { created: sourceOfTruthCreatedEarly } = await ensureSourceOfTruthConfig(process.cwd());
+			if (sourceOfTruthCreatedEarly) {
+				logger.Info('[pull] Created ./.siteglide/project/sourceOfTruth.json — set sourceOfTruth to site or versionControl for your team workflow.');
 			}
-		});
+			const sourceOfTruthMode = await readSourceOfTruthMode(process.cwd());
+			skipRemoteCheck = resolveSkipRemoteCheck({
+				cliFlag: Boolean(params.skipRemoteCheck),
+				mode: sourceOfTruthMode
+			});
+			tempPullLog('sourceOfTruth', {
+				mode: sourceOfTruthMode,
+				skipRemoteCheck,
+				cliSkipRemoteCheck: Boolean(params.skipRemoteCheck)
+			});
+
+			const vcEnv = assertVersionControlPullEnvironment(sourceOfTruthMode);
+			if (!vcEnv.allowed) {
+				logger.Error(vcEnv.message);
+				process.exit(1);
+			}
+
+			if (
+				sourceOfTruthMode === MODE_VERSION_CONTROL
+				&& !assumeYes
+				&& process.stdin.isTTY
+				&& !process.env.CI
+			) {
+				const vcConfirm = await promptVersionControlPullConfirm();
+				tempPullLog('version_control_pull:confirm', { confirmed: Boolean(vcConfirm) });
+				if (!vcConfirm) {
+					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+					return;
+				}
+			}
+
+			if (assumeYes) {
+				tempPullLog('route', { name: 'assume_yes_direct_startPull' });
+				await startPull();
+				return;
+			}
+
+			if (skipRemoteCheck) {
+				tempPullLog('route', { name: 'skip_remote_check' });
+				if (!process.stdin.isTTY || process.env.CI) {
+					tempPullLog('skip_remote_check:ci_or_non_tty', {});
+					await startPull();
+					return;
+				}
+				const gitForSkipRemote = getGitReadiness();
+				if (!gitForSkipRemote.repoInitialized) {
+					tempPullLog('route', { name: 'skip_remote_check:no_git_deferred_confirm' });
+					await startPull();
+					return;
+				}
+				const response = await confirmYesNo(
+					'Are you sure you would like to pull? This will overwrite your local files immediately!'
+				);
+				tempPullLog('skip_remote_check:confirm', { confirmed: Boolean(response) });
+				if (response) {
+					await startPull();
+				} else {
+					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+				}
+				return;
+			}
+
+			const git = getGitReadiness();
+			const dirty = git.repoInitialized ? isWorkingTreeDirty() : false;
+			const openConflicts = git.repoInitialized ? hasOpenGitConflicts() : { open: false };
+			tempPullLog('outer_route:git_readiness', {
+				repoInitialized: git.repoInitialized,
+				dirty,
+				conflictsOpen: openConflicts.open,
+				conflictsReason: openConflicts.reason || '',
+				remotes: (git.remotes || []).join(',')
+			});
+			if (openConflicts.open) {
+				tempPullLog('hypothesis_confirm', {
+					id: 'H1',
+					expect: 'startPull will refuse pull until merge/conflicts resolved; user may retry and see different prompt after partial fix'
+				});
+			}
+
+			if (git.repoInitialized && isWorkingTreeDirty()) {
+				tempPullLog('route', { name: 'dirty_skip_outer_prompt' });
+				tempPullLog('hypothesis_confirm', {
+					id: 'H1',
+					expect: 'second Pull and merge prompt inside startPull (dirty_inner_merge_prompt), not the outer clean-tree prompt'
+				});
+				await startPull();
+				return;
+			}
+
+			if (git.repoInitialized) {
+				tempPullLog('route', { name: 'clean_committed_merge_prompt' });
+				const baseline = readPullBaseline(environment);
+				tempPullLog('pull_baseline_read', {
+					hasBaseline: Boolean(baseline),
+					lastPullCommit: baseline && baseline.lastPullCommit ? baseline.lastPullCommit.slice(0, 12) : ''
+				});
+				if (!baseline || !baseline.lastPullCommit) {
+					logger.Quiet(
+						'[pull] No pull baseline yet for this environment — Pull and merge seeds lastPullCommit for merge-first sync/deploy checks.'
+					);
+				}
+				const mergeDescStandard =
+					'We\'ll pull to a temporary branch and merge. Your files will be safe from accidental overwrite.';
+				const mergeDescExtra =
+					'We\'ll check the difference between your files and the site first. Your files will be safe from accidental overwrite.';
+				const answer = await selectChoice(
+					'Confirm pull',
+					[
+						{
+							name: 'Pull and merge',
+							value: 'merge',
+							description: audiencePromptText(mergeDescStandard, mergeDescExtra, process.cwd())
+						},
+						{
+							name: 'Cancel pull',
+							value: 'cancel',
+							description: CANCEL_SKIP_REMOTE_HINT
+						}
+					]
+				);
+				tempPullLog('clean_committed_merge_prompt:choice', { choice: answer || 'cancel' });
+				if (!answer || answer === 'cancel') {
+					logger.Error('[Cancelled] Pull command not executed, your files have been left untouched.');
+					return;
+				}
+				await runMergeFirstPull();
+				return;
+			}
+
+			tempPullLog('route', { name: 'no_git_deferred_confirm' });
+			await startPull();
+		})();
 	});
 
 program.parse(process.argv);

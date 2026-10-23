@@ -8,7 +8,8 @@ const program = require('commander'),
 	validate = require('./lib/validators'),
 	version = require('./package.json').version,
 	os = require('os'),
-	Portal = require('./lib/portal');
+	Portal = require('./lib/portal'),
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 const checkParams = params => {
 	validate.existence({
@@ -87,8 +88,13 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('--email <email>', 'Admin account email. Example: admin@example.com')
 	.option('--url <url>', 'Site URL. Example: https://example.com')
-	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
+	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config');
+
+addDebugOption(program);
+
+program
 	.action((environment, params) => {
+		applyDebugFlag(params);
 
 		if(process.cwd()===os.homedir()){
 			logger.Error('Error - You cannot run Siteglide CLI from your home folder.  Please make a folder such as "siteglide/site_name" and try again.')

@@ -6,6 +6,11 @@ process.noDeprecation = true;
  */
 const { spawn } = require('child_process');
 const { resolveGlobalMcpBin } = require('./lib/resolveGlobalMcpBin');
+const { enableCliDebug, argvHasDebugFlag } = require('./lib/cliDebug');
+
+if (argvHasDebugFlag()) {
+	enableCliDebug();
+}
 
 const bin = resolveGlobalMcpBin();
 if (!bin) {

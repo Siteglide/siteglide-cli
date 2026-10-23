@@ -5,7 +5,8 @@ const program = require('commander'),
 	logger = require('./lib/logger'),
 	files = require('./lib/assets/files'),
 	{ listEnvironments } = require('./lib/envClassification'),
-	version = require('./package.json').version;
+	version = require('./package.json').version,
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 program
 	.version(version, '-v, --version')
@@ -13,8 +14,13 @@ program
 	.usage('[options]')
 	.description('List environments from .siteglide-config. Use --details for host and staging/production classification (same rules as MCP envs_list).')
 	.option('-d --details', 'include host and classification (staging|production)')
-	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
+	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config');
+
+addDebugOption(program);
+
+program
 	.action((params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		const settings = Object(files.getConfig());
 		const environments = listEnvironments(settings, { details: params.details });

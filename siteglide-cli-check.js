@@ -6,6 +6,7 @@ const program = require('commander');
 const version = require('./package.json').version;
 const logger = require('./lib/logger');
 const { run, initConfig, updateDocs } = require('./lib/check');
+const { addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 function collect(value, previous) {
 	return previous.concat([value]);
@@ -22,8 +23,13 @@ program
 	.option('-a', 'enable automatic fixing')
 	.option('-c, --check <name>', 'only show offenses from the named check (repeatable)', collect, [])
 	.option('-f <format>', 'output format: text or json', 'text')
-	.option('-s, --silent', 'only show errors, no success messages')
+	.option('-s, --silent', 'only show errors, no success messages');
+
+addDebugOption(program);
+
+program
 	.action(async (checkPath, options) => {
+		applyDebugFlag(options);
 		const absolutePath = path.resolve(checkPath || process.cwd());
 		const hasInit = !!options.init;
 		const hasUpdateDocs = !!options.updateDocs;

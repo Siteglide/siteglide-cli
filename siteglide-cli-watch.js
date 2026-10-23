@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-process.noDeprecation = true;
+
+require('./lib/fatalError').installFatalErrorHandlers('[Sync] Sync stopped because of an unexpected error');
 
 const program = require('commander'),
 	Gateway = require('./lib/proxy'),
 	fs = require('fs'),
 	path = require('path'),
-	chokidar = require('chokidar'),
 	Queue = require('async/queue'),
 	logger = require('./lib/logger'),
+	{ applyCliColour } = require('./lib/cliColour'),
 	validate = require('./lib/validators'),
 	watchFilesExtensions = require('./lib/watch-files-extensions'),
 	templates = require('./lib/templates'),
@@ -18,8 +19,53 @@ const program = require('commander'),
 	presignDirectory = require('./lib/presignUrl').presignDirectory,
 	manifestGenerateForAssets = require('./lib/assets/generateManifest').manifestGenerateForAssets,
 	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
+	{ claimSyncStatus, clearSyncStatus, registerSyncStatusCleanup } = require('./lib/syncStatus'),
+	{
+		syncErrorFromPushBody,
+		syncErrorFromAssetFailure,
+		recordSyncUploadError
+	} = require('./lib/syncUploadError'),
+	{ logCommandLockRefusal } = require('./lib/commandLock'),
 	version = require('./package.json').version,
-	{ cloneDeep, debounce } = require('lodash');
+	{ cloneDeep, debounce } = require('lodash'),
+	{ checkFile, fetchRemoteFileMtime, toPhysicalApiPath } = require('./lib/remoteMtimeCheck'),
+	{ shouldSkipRemoteCheckForPath } = require('./lib/sync/skipRemoteCheckForPath'),
+	{ readSourceOfTruthMode } = require('./lib/sourceOfTruth'),
+	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
+	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
+	{ mergeFirstSyncPull, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
+	{ promptCommitMessage, defaultSnapshotMessage } = require('./lib/git/commitPrompt'),
+	{ hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
+	{ getGitReadiness } = require('./lib/git/readiness'),
+	{ applySiteglideUserGitIgnorePolicy } = require('./lib/git/siteglideGitignore'),
+	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug'),
+	{
+		summarizeDirectUploadPresign,
+		directUploadPresignFailureMessage
+	} = require('./lib/directUploadPresign'),
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	syncFileWatcher = require('./lib/sync/syncFileWatcher'),
+	{ createSyncUploadWave, checkAllowsUpload, checkHasGitBlock } = require('./lib/sync/syncUploadWave'),
+	{ writeConflictLog } = require('./lib/remoteCheckConflictLog'),
+	{
+		writeSyncCurrentConflict,
+		clearSyncCurrentConflict,
+		clearSyncConflictRecords,
+		clearSyncConflictForPath,
+		resolveSyncCurrentConflict,
+		updateSyncCurrentConflictStatus
+	} = require('./lib/syncCurrentConflict'),
+	{ createSyncConflictGate } = require('./lib/syncConflictGate'),
+	{ offerMergeConflictAiHelp, offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
+	{ MERGE_CONFLICT_AGENT_GUIDANCE, MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
+	{ waitForMergeResolution } = require('./lib/git/waitForMergeResolution'),
+	{ finalizePullBaseline } = require('./lib/git/finalizePullBaseline'),
+	{
+		recordSyncPath,
+		syncedAtFromAssetFileMtime,
+		floorFromRemoteUpdatedAt
+	} = require('./lib/pullBaseline');
 
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
@@ -30,6 +76,48 @@ const filePathUnixified = filePath =>
 		.replace(new RegExp(`^${dir.APP}/`), '');
 let counter = 0;
 let siteRoot = null;
+let directAssetsUploadReady = false;
+/** @type {number|null} ms since epoch when directUploadData was last fetched */
+let directUploadPresignFetchedAt = null;
+
+/**
+ * Record per-path sync floor after upload (GraphQL updated_at + 1 ms when available).
+ * @param {import('./lib/proxy')} gateway
+ * @param {string} syncedFilePath
+ * @param {{ syncedAt?: string }} [opts] fallback when GraphQL fetch fails (e.g. assets)
+ */
+const noteSyncUploadSuccess = async (gateway, syncedFilePath, opts = {}) => {
+	if (!siteRoot || !process.env.SITEGLIDE_ENV) {
+		return;
+	}
+
+	const physicalPath = toPhysicalApiPath(syncedFilePath, siteRoot);
+	let syncedAt = opts.syncedAt;
+
+	recordSyncPath(process.env.SITEGLIDE_ENV, physicalPath, {
+		syncedAt: syncedAt || new Date().toISOString()
+	});
+
+	if (gateway) {
+		try {
+			const remote = await fetchRemoteFileMtime(gateway, physicalPath);
+			if (remote.found && remote.updatedAt) {
+				syncedAt = floorFromRemoteUpdatedAt(remote.updatedAt) || syncedAt;
+			}
+		} catch (err) {
+			logger.Debug(`[sync-floor] could not fetch remote updated_at: ${err.message || err}`);
+		}
+	}
+
+	if (!syncedAt) {
+		syncedAt = new Date().toISOString();
+	}
+
+	recordSyncPath(process.env.SITEGLIDE_ENV, physicalPath, {
+		syncedAt,
+		immediate: true
+	});
+};
 
 const isEmpty = filePath => {
 	let isEmpty;
@@ -44,7 +132,7 @@ const isEmpty = filePath => {
 		if (err.code === 'ENOENT') {
 			return false;
 		}
-		logger.Error(err);
+		logger.Error(`[Sync] Sync stopped: could not read ${displayPath(filePath)}: ${logger.describeError(err)}`);
 	}
 
 	return isEmpty;
@@ -104,17 +192,521 @@ const isNotInNodeModules = filePath => {
 
 CONCURRENCY = 3;
 
-const queue = Queue((task, callback) => {
-	let push = pushFileDirectAssets
-	switch (task.op) {
-		case 'push':
-			push(gateway, task.path).then(callback);
-			break;
-		case 'delete':
-			deleteFile(gateway, task.path).then(callback);
-			break;
+const skipRemoteCheck = process.env.SITEGLIDE_SKIP_REMOTE_CHECK === '1';
+const mergeFirstFast = process.env.SITEGLIDE_SYNC_MERGE_FIRST_FAST === '1';
+const mergeFirstCompare = process.env.SITEGLIDE_SYNC_MERGE_FIRST_COMPARE === '1';
+/** @type {'site' | 'versionControl' | null} */
+let cachedSourceOfTruthMode = null;
+
+/** Once true, stop accepting work and exit the watch process. */
+let syncStopping = false;
+
+/** Offer merge-conflict AI prompt at most once while markers remain open. */
+let mergeConflictAiHelpOffered = false;
+
+/** Pause/resume gate — initialized after queue is created. */
+let conflictGate;
+
+/** Check/upload wave coordinator — one in-flight wave at a time. */
+const syncWaveLog = (message) => {
+	if (process.env.DEBUG || process.env.SITEGLIDE_SYNC_WAVE_DEBUG) {
+		logger.Debug(message);
 	}
+};
+let syncUploadWave = createSyncUploadWave({ log: syncWaveLog });
+
+/**
+ * Cancel sync watch: drop remaining queue work and exit the process.
+ * Sync status cleanup runs via registerSyncStatusCleanup on exit.
+ * @param {string} message
+ */
+const stopSyncWatch = (message) => {
+	if (syncStopping) {
+		return;
+	}
+	syncStopping = true;
+	clearSyncCurrentConflict();
+	logger.Warn(message, { exit: false });
+	try {
+		queue.kill();
+	} catch (err) {
+		logger.Debug(err);
+	}
+	process.exit(0);
+};
+
+const noteRemoteCheckPassed = (syncedFilePath, physicalPath) => {
+	const environment = process.env.SITEGLIDE_ENV;
+	if (!environment) {
+		return;
+	}
+	clearSyncConflictForPath(environment, physicalPath);
+	clearSyncConflictForPath(environment, syncedFilePath);
+};
+
+/**
+ * Remote/git check only — no prompt, no upload.
+ * @param {string} syncedFilePath
+ * @returns {Promise<object>}
+ */
+const beforeSyncOpCheck = async (syncedFilePath) => {
+	if (syncStopping) {
+		return { proceed: false, stopping: true };
+	}
+
+	const environment = process.env.SITEGLIDE_ENV;
+	const open = hasOpenGitConflicts();
+	if (!open.open) {
+		mergeConflictAiHelpOffered = false;
+	}
+	if (open.open) {
+		writeConflictLog(environment || 'unknown', {
+			command: 'sync',
+			reason: open.reason,
+			conflicts: (open.paths || []).map((p) => ({ path: p })),
+			consoleHint: 'Resolve conflict markers with AI + MCP before syncing.'
+		});
+		return { proceed: false, gitBlocked: true, gitOpen: open };
+	}
+
+	if (skipRemoteCheck || !environment) {
+		return { proceed: true };
+	}
+
+	const physicalPath = toPhysicalApiPath(syncedFilePath, siteRoot);
+	if (!cachedSourceOfTruthMode) {
+		cachedSourceOfTruthMode = await readSourceOfTruthMode(process.cwd());
+	}
+	if (shouldSkipRemoteCheckForPath(physicalPath, cachedSourceOfTruthMode)) {
+		noteRemoteCheckPassed(syncedFilePath, physicalPath);
+		return { proceed: true, skipped: true, reason: 'module_private' };
+	}
+	const remoteMeta = await fetchRemoteFileMtime(gateway, physicalPath);
+	if (remoteMeta.found && isSafeAfterMergeFirst(environment, physicalPath, remoteMeta.updatedAt)) {
+		noteRemoteCheckPassed(syncedFilePath, physicalPath);
+		return { proceed: true };
+	}
+
+	const result = await checkFile({
+		gateway,
+		environment,
+		filePath: syncedFilePath,
+		siteRoot,
+		remoteMeta
+	});
+	if (result.ok) {
+		noteRemoteCheckPassed(syncedFilePath, result.physicalPath || physicalPath);
+		return { proceed: true };
+	}
+
+	if (syncStopping) {
+		return { proceed: false, stopping: true };
+	}
+
+	const localPathUnix = syncedFilePath.replace(/\\/g, '/');
+	return {
+		proceed: false,
+		remoteConflict: true,
+		reason: result.reason,
+		meta: {
+			path: result.physicalPath,
+			localPath: localPathUnix,
+			type: result.kind,
+			remoteUpdatedAt: result.remoteUpdatedAt || remoteMeta.updatedAt || null,
+			effectiveBaselineAt: result.effectiveBaselineAt,
+			baselineSource: result.baselineSource
+		}
+	};
+};
+
+/**
+ * @param {object[]} entries
+ * @returns {string[]}
+ */
+const collectWavePaths = (entries) => {
+	return entries
+		.map((entry) => {
+			const meta = entry.checkResult && entry.checkResult.meta;
+			return (meta && meta.path) || entry.path.replace(/\\/g, '/');
+		})
+		.filter(Boolean);
+};
+
+/**
+ * Leader-only: prompt and handle merge-first for a blocked wave.
+ * @param {object} primaryConflict
+ * @param {object[]} waveEntries
+ * @returns {Promise<object>}
+ */
+const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
+	const environment = process.env.SITEGLIDE_ENV;
+	const checkResult = primaryConflict.checkResult;
+	const conflictMeta = checkResult.meta;
+	const wavePaths = collectWavePaths(waveEntries);
+
+	writeSyncCurrentConflict({
+		environment,
+		reason: checkResult.reason,
+		path: conflictMeta.path,
+		localPath: conflictMeta.localPath,
+		kind: conflictMeta.type,
+		remoteUpdatedAt: conflictMeta.remoteUpdatedAt,
+		effectiveBaselineAt: conflictMeta.effectiveBaselineAt,
+		baselineSource: conflictMeta.baselineSource,
+		wavePaths,
+		syncPaused: true
+	});
+
+	if (syncStopping) {
+		clearSyncCurrentConflict();
+		return { action: 'abort' };
+	}
+
+	const decision = await promptRemoteConflict({
+		environment,
+		command: 'sync',
+		reason: checkResult.reason,
+		conflicts: [conflictMeta]
+	});
+
+	if (decision === 'skip_remote_for_wave') {
+		clearSyncConflictRecords(environment);
+		return { action: 'skip_remote_for_wave' };
+	}
+	if (decision === 'merge_first') {
+		resolveSyncCurrentConflict('merge_first');
+		syncFileWatcher.pause();
+		try {
+			const conflictPath = (conflictMeta.path || '').replace(/\\/g, '/');
+			const wavePaths = collectWavePaths(waveEntries);
+			if (mergeFirstCompare && wavePaths.length !== 1) {
+				logger.Error('[Sync] -compare requires exactly one conflict path in the wave.', { exit: false });
+				clearSyncConflictRecords(environment);
+				return { action: 'merge_first_failed' };
+			}
+			// The merge pulls the whole site, so every uncommitted change is committed first.
+			// -fast scopes the pull to the conflicting file; its default message says so.
+			const scopePath = mergeFirstFast ? conflictPath : null;
+			let wipMessage = defaultSnapshotMessage(environment, 'merging', { scopePath });
+			if (hasStagedOrUnstagedChanges()) {
+				const answer = await promptCommitMessage({ environment, action: 'merging', scopePath });
+				if (answer == null) {
+					resolveSyncCurrentConflict('cancel');
+					clearSyncConflictRecords(environment);
+					return { action: 'cancel' };
+				}
+				wipMessage = answer;
+			}
+			const mf = await mergeFirstSyncPull({
+				environment,
+				wipMessage,
+				pullFn: async () => {
+					await spawnNestedPull({
+						environment,
+						configFile: process.env.CONFIG_FILE_PATH || '.siteglide-config',
+						mergeFirstSync: true,
+						skipCommitBaseline: true,
+						paths: wavePaths,
+						mergeFirstFast: mergeFirstFast,
+						mergeFirstCompare: mergeFirstCompare
+					});
+				}
+			});
+			if (!mf.ok) {
+				logger.Error(`[Sync] Merge first failed: ${mf.error}`, { exit: false });
+				await offerMergeFirstFailureHelp(mf, {
+					environment,
+					command: 'sync'
+				});
+				clearSyncConflictRecords(environment);
+				return { action: 'merge_first_failed' };
+			}
+			const completed = await completeMergeFirstResolution({
+				environment,
+				result: mf,
+				command: 'sync',
+				commitMessage: `siteglide: merge remote pull before sync (${conflictPath})`,
+				warnMessage:
+					`[Sync] Merge started. ${MERGE_CONFLICT_CLI_WAIT_HINT}`,
+				logPrefix: '[Sync]',
+				cwd: process.cwd(),
+				shouldAbort: () => syncStopping
+			});
+			if (!completed.ok) {
+				if (completed.aborted) {
+					clearSyncConflictRecords(environment);
+					return { action: 'cancel' };
+				}
+				if (completed.error) {
+					logger.Error(`[Sync] Merge resolution failed: ${completed.error}`, { exit: false });
+				}
+				clearSyncConflictRecords(environment);
+				return { action: 'merge_first_failed' };
+			}
+			logger.Success('[Sync] Merge complete. Re-checking wave for upload.');
+			clearSyncConflictRecords(environment);
+			return { action: 'merge_first' };
+		} finally {
+			syncFileWatcher.resume();
+		}
+	}
+	if (decision === 'cancel' || decision === 'abort' || decision === 'pause') {
+		resolveSyncCurrentConflict(decision === 'pause' ? 'pause' : 'cancel');
+		clearSyncConflictRecords(environment);
+		return { action: decision === 'pause' ? 'pause' : 'cancel' };
+	}
+	clearSyncConflictRecords(environment);
+	return { action: 'unknown' };
+};
+
+/**
+ * @param {object} gitOpen
+ * @returns {Promise<void>}
+ */
+const handleGitBlockAsLeader = async (gitOpen) => {
+	const environment = process.env.SITEGLIDE_ENV;
+	if (syncStopping || !hasOpenGitConflicts().open) {
+		return;
+	}
+	if (!mergeConflictAiHelpOffered) {
+		mergeConflictAiHelpOffered = true;
+		await offerMergeConflictAiHelp({
+			environment: environment || 'unknown',
+			command: 'sync',
+			warnMessage: '[Sync] Sync is paused until conflict markers are resolved.'
+		});
+		logger.Warn(`[Sync] ${MERGE_CONFLICT_CLI_WAIT_HINT}`, { exit: false });
+	}
+	updateSyncCurrentConflictStatus({
+		status: 'waiting_for_git_resolution',
+		syncPaused: true,
+		agentGuidance: MERGE_CONFLICT_AGENT_GUIDANCE
+	});
+	const waited = await waitForMergeResolution({
+		cwd: process.cwd(),
+		logPrefix: '[Sync]',
+		shouldAbort: () => syncStopping
+	});
+	if (waited.ok && environment) {
+		try {
+			finalizePullBaseline({ environment, cwd: process.cwd() });
+		} catch (err) {
+			logger.Warn(`[Sync] Could not update pull baseline: ${err.message}`, { exit: false });
+		}
+	}
+};
+
+/**
+ * @param {object[]} entries
+ * @param {object} [resolution]
+ * @returns {Promise<{ proceed: boolean, entries: object[] }>}
+ */
+const recheckWaveEntries = async (entries) => {
+	const rechecked = await Promise.all(entries.map(async (entry) => {
+		const nextCheck = await beforeSyncOpCheck(entry.path);
+		return { ...entry, checkResult: nextCheck };
+	}));
+
+	const stillBlocked = rechecked.some((entry) => {
+		const check = entry.checkResult;
+		if (check.proceed) {
+			return false;
+		}
+		if (check.skipUpload || check.stopping) {
+			return false;
+		}
+		return true;
+	});
+
+	return { proceed: !stillBlocked, entries: rechecked };
+};
+
+/**
+ * @param {{ path: string, op: string }} task
+ * @returns {Promise<void>}
+ */
+const performSyncOp = async (task) => {
+	conflictGate.assertUploadAllowed();
+	if (task.op === 'push') {
+		await pushFileDirectAssets(gateway, task.path);
+	} else {
+		await deleteFile(gateway, task.path);
+	}
+};
+
+/**
+ * @param {object[]} entries
+ * @returns {Promise<void>}
+ */
+const uploadWaveEntriesAsLeader = async (entries) => {
+	const uploads = entries
+		.filter((entry) => checkAllowsUpload(entry.checkResult))
+		.map((entry) => performSyncOp({ path: entry.path, op: entry.op }));
+	await Promise.all(uploads);
+};
+
+/**
+ * Upload wave entries without re-running remote mtime checks (user chose Sync without git).
+ * @param {object[]} entries
+ * @returns {Promise<void>}
+ */
+const forceUploadWaveEntriesAsLeader = async (entries) => {
+	const uploads = entries.map((entry) => performSyncOp({ path: entry.path, op: entry.op }));
+	await Promise.all(uploads);
+};
+
+/**
+ * Re-check a blocked wave after conflict resolution, then upload passing entries.
+ * @param {object[]} entries
+ * @returns {Promise<{ proceed: boolean, entries: object[] }>}
+ */
+const finishConflictWaveUpload = async (entries) => {
+	const rechecked = await recheckWaveEntries(entries);
+	if (!rechecked.proceed) {
+		syncWaveLog(
+			`[Sync wave ${syncUploadWave.getCurrentWaveId()}] recheck still blocked after conflict resolution`
+		);
+		return rechecked;
+	}
+	const uploadCount = rechecked.entries.filter((entry) => checkAllowsUpload(entry.checkResult)).length;
+	syncWaveLog(
+		`[Sync wave ${syncUploadWave.getCurrentWaveId()}] uploading ${uploadCount} file(s) after conflict resolution`
+	);
+	await uploadWaveEntriesAsLeader(rechecked.entries);
+	return rechecked;
+};
+
+/**
+ * Check → wave barrier → upload (or leader conflict resolution).
+ * @param {{ path: string, op: string }} task
+ * @param {Function} callback
+ */
+const processSyncTask = async (task, callback) => {
+	if (syncStopping) {
+		callback();
+		return;
+	}
+
+	try {
+		if (skipRemoteCheck) {
+			await performSyncOp(task);
+			callback();
+			return;
+		}
+
+		while (syncUploadWave.isBlocked()) {
+			await conflictGate.waitForLeader();
+			await syncUploadWave.waitForWaveClosed();
+			if (syncStopping) {
+				callback();
+				return;
+			}
+		}
+
+		if (conflictGate.isPaused() && !conflictGate.isActiveLeader()) {
+			await conflictGate.waitForLeader();
+			if (syncStopping) {
+				callback();
+				return;
+			}
+		}
+
+		syncWaveLog(`[Sync wave] task start ${displayPath(task.path)} op=${task.op}`);
+		await syncUploadWave.joinWave();
+		const checkResult = await beforeSyncOpCheck(task.path);
+		syncUploadWave.reportCheck(task.path, task.op, checkResult);
+		const decision = await syncUploadWave.awaitWaveDecision();
+		syncWaveLog(
+			`[Sync wave ${syncUploadWave.getCurrentWaveId()}] decision proceed=${decision.proceed} path=${displayPath(task.path)}`
+		);
+
+		if (decision.proceed) {
+			const entry = syncUploadWave.getEntry(task.path, task.op);
+			if (entry && checkAllowsUpload(entry.checkResult)) {
+				syncWaveLog(`[Sync wave ${syncUploadWave.getCurrentWaveId()}] uploading ${displayPath(task.path)}`);
+				await performSyncOp(task);
+			} else {
+				syncWaveLog(`[Sync wave ${syncUploadWave.getCurrentWaveId()}] skip upload ${displayPath(task.path)}`);
+			}
+			syncUploadWave.finishWave();
+			callback();
+			return;
+		}
+
+		conflictGate.blockUploads();
+		syncUploadWave.markConflictResolving();
+		const { isLeader } = conflictGate.enterConflictMode();
+
+		try {
+			if (decision.gitBlocked) {
+				if (isLeader) {
+					const gitEntry = decision.entries.find((entry) => checkHasGitBlock(entry.checkResult)) || decision.entries[0];
+					await handleGitBlockAsLeader(gitEntry.checkResult.gitOpen);
+					if (!syncStopping && !hasOpenGitConflicts().open) {
+						conflictGate.allowUploads();
+						await finishConflictWaveUpload(decision.entries);
+					}
+				} else {
+					await conflictGate.waitForLeader();
+				}
+			} else if (isLeader) {
+				const resolution = await resolveSyncRemoteConflict(
+					decision.primaryConflict,
+					decision.entries
+				);
+				if (resolution.action === 'cancel' || resolution.action === 'abort' || resolution.action === 'pause') {
+					stopSyncWatch('[Sync] Cancelling sync.');
+				} else if (resolution.action === 'merge_first') {
+					conflictGate.allowUploads();
+					await finishConflictWaveUpload(decision.entries);
+				} else if (resolution.action === 'skip_remote_for_wave') {
+					conflictGate.allowUploads();
+					syncWaveLog(
+						`[Sync wave ${syncUploadWave.getCurrentWaveId()}] force upload after skip-remote choice`
+					);
+					await forceUploadWaveEntriesAsLeader(decision.entries);
+				}
+			} else {
+				await conflictGate.waitForLeader();
+			}
+		} finally {
+			syncUploadWave.finishWave();
+			conflictGate.allowUploads();
+			if (!syncStopping) {
+				conflictGate.exitConflictMode();
+			}
+		}
+
+		callback();
+	} catch (err) {
+		logger.Warn(`[Sync] Task failed for ${displayPath(task.path)}: ${err.message}`, { exit: false });
+		logger.Debug(err);
+		try {
+			syncUploadWave.finishWave();
+		} catch (finishErr) {
+			logger.Debug(finishErr);
+		}
+		callback();
+	}
+};
+
+const queue = Queue((task, callback) => {
+	processSyncTask(task, callback);
 }, CONCURRENCY);
+
+conflictGate = createSyncConflictGate({
+	queue,
+	logger,
+	hasOpenGitConflicts,
+	pollIntervalMs: 3000,
+	isSyncStopping: () => syncStopping,
+	onUpdateConflictStatus: (payload) => {
+		updateSyncCurrentConflictStatus({
+			status: payload.status,
+			syncPaused: payload.syncPaused
+		}, payload.cwd);
+	}
+});
 
 const enqueue = filePath => queue.push({ path: filePath, op: 'push' }, () => { });
 const enqueueDelete = (filePath) => queue.push({ path: filePath, op: 'delete' }, () => { });
@@ -136,8 +728,23 @@ const templateData = (path) => {
 const fetchDirectUploadData = async (gateway) => {
 	const instanceId = (await gateway.getInstance());
 	const remoteAssetsDir = `instances/${instanceId}/assets`;
-	const data = await presignDirectory(remoteAssetsDir,gateway);
+	const data = await presignDirectory(remoteAssetsDir, gateway);
+	const presignSummary = summarizeDirectUploadPresign(data);
+	logger.Debug(`[Sync] presign-directory ${remoteAssetsDir}: ${JSON.stringify(presignSummary)}`);
+	const presignFailure = directUploadPresignFailureMessage(data);
+	if (presignFailure) {
+		directAssetsUploadReady = false;
+		directUploadPresignFetchedAt = null;
+		logger.Warn(
+			'[Sync] Direct S3 asset upload is unavailable; asset files will use file sync instead.',
+			{ exit: false }
+		);
+		logger.Debug(presignFailure);
+		return;
+	}
 	directUploadData = data;
+	directAssetsUploadReady = true;
+	directUploadPresignFetchedAt = Date.now();
 };
 
 const deleteFile = (gateway, syncedFilePath) => {
@@ -149,7 +756,7 @@ const deleteFile = (gateway, syncedFilePath) => {
 
 	return gateway.delete(formData).then(body => {
 		if (body) {
-			logger.Info(`[Sync] Deleted: ${filePath}`);
+			logger.Info(`[Sync] Deleted: ${displayPath(syncedFilePath)}`);
 		}
 	});
 };
@@ -162,32 +769,27 @@ const pushFile = (gateway, syncedFilePath) => {
 		marketplace_builder_file_body: getBody(syncedFilePath, filePath.startsWith('modules'))
 	};
 
-	return gateway.sync(formData).then(body => {
+	return gateway.sync(formData).then(async (body) => {
 		if(!body){
-			logger.Error(`[Sync] Error: unhandled.`, { exit: false });
+			recordSyncUploadError(syncErrorFromPushBody(filePath, body));
 			return false;
 		}
 
-		if(body.error){
-			logger.Error(`[Sync] Error: ${filePath}\n${body.error}`, { exit: false });
-		}else if(
-			(body.reason)||
-			(body.message)
+		if(
+			body.error
+			|| body.reason
+			|| body.message
 		){
-			let error_msg = `[Sync] Error: ${filePath}`;
-			let error_name = body.name? body.name : 'Error';
-			error_msg += body.mark? `\nLocation: ${error_name} on line ${body.mark.line}, column ${body.mark.column}.` : '';
-			error_msg += `\nGuide: ${body.message || body.reason}`;
-
-			logger.Error(error_msg, { exit: false });
-		}else{
-			logger.Success(`[Sync] Uploaded: ${filePath}`);
-
-			if(body.refresh_index){
-				logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
-			}
+			recordSyncUploadError(syncErrorFromPushBody(filePath, body));
+			return;
 		}
 
+		logger.Success(`[Sync] Uploaded: ${filePath}`);
+		await noteSyncUploadSuccess(gateway, syncedFilePath);
+
+		if(body.refresh_index){
+			logger.Warn('WARNING: Data schema was updated. It may take a little while for the change to be applied.');
+		}
 	});
 };
 
@@ -203,13 +805,15 @@ const isModule19CustomCss = (syncedFilePath) => {
 };
 
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
-	if (isAssetsPath(syncedFilePath) && !isModule19CustomCss(syncedFilePath)) {
+	if(
+		directAssetsUploadReady
+		&& isAssetsPath(syncedFilePath)
+		&& !isModule19CustomCss(syncedFilePath)
+	){
 		syncedFilePath = syncedFilePath.replace(/\\/g, '/');
-		sendAsset(gateway, syncedFilePath);
-		return Promise.resolve(true);
-	} else {
-		return pushFile(gateway, syncedFilePath);
+		return sendAsset(gateway, syncedFilePath);
 	}
+	return pushFile(gateway, syncedFilePath);
 };
 
 const manifestSend = debounce(
@@ -228,31 +832,53 @@ const manifestAddAsset = (path) => manifestFilesToAdd.push(path);
 const sendAsset = async (gateway, filePath) => {
 	try {
 		const data = cloneDeep(directUploadData);
+		const presignSummary = summarizeDirectUploadPresign(data);
+		logger.Debug(
+			`[Sync] direct upload presign for ${displayPath(filePath)}: ${JSON.stringify(presignSummary)}`
+		);
+		const presignFailure = directUploadPresignFailureMessage(data);
+		if (presignFailure) {
+			throw new Error(presignFailure);
+		}
 		const normalized = filePath.replace(/\\/g, '/');
 		const fileSubdir = normalized.startsWith(`${siteRoot}/assets`)
 			? path.dirname(normalized).replace(`${siteRoot}/assets`, '')
 			: '/' + path.dirname(normalized).replace('/public/assets', '');
 		const key = data.fields.key.replace('assets/${filename}', `assets${fileSubdir}/\${filename}`);
 		data.fields.key = key;
+		if (directUploadPresignFetchedAt != null) {
+			const presignAgeMs = Date.now() - directUploadPresignFetchedAt;
+			logger.Debug(
+				`[Sync] direct upload presign age before S3 POST: ${presignAgeMs}ms (${displayPath(filePath)})`
+			);
+		}
 		logger.Debug(data);
 		await uploadFileFormData(filePath, data);
 		manifestAddAsset(filePath);
 		manifestSend(gateway);
 		logger.Success(`[Sync] Uploaded: ${displayPath(filePath)}`);
+		await noteSyncUploadSuccess(gateway, filePath, {
+			syncedAt: syncedAtFromAssetFileMtime(filePath)
+		});
 		counter = 0;
 	} catch (e) {
 		logger.Debug(e);
 		logger.Debug(e.message);
 		logger.Debug(e.stack);
-		if(e=='403'&&counter<3){
+		if (
+			e
+			&& e.statusCode === 403
+			&& counter < 3
+		) {
 			counter++;
-			await fetchDirectUploadData(gateway)
-			.then(() => {
-				cloneDeep(directUploadData);
-				sendAsset(gateway,filePath);
-			})
-		}else{
-			logger.Error(`[Sync] Error: ${displayPath(filePath)} - Failed to sync`);
+			logger.Debug(
+				`[Sync] S3 asset upload returned 403; refreshing presign and retrying (${counter}/3) for ${displayPath(filePath)}`
+			);
+			await fetchDirectUploadData(gateway);
+			await sendAsset(gateway, filePath);
+		} else {
+			const failure = syncErrorFromAssetFailure(displayPath(filePath), e && e.message ? String(e.message) : undefined);
+			recordSyncUploadError(failure);
 		}
 	}
 };
@@ -269,10 +895,29 @@ program
 	.option('--email <email>', 'authentication token', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
 	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
-	.option('-l, --livereload', 'Turns on a livereload server', process.env.LIVE_RELOAD)
-	.parse(process.argv);
+	.option('-l, --livereload', 'Turns on a livereload server', process.env.LIVE_RELOAD);
+
+addDebugOption(program);
+program.parse(process.argv);
+applyDebugFromProgram(program);
 
 checkParams(program);
+
+const syncEnvironment = process.env.SITEGLIDE_ENV;
+if (syncEnvironment) {
+	const claim = claimSyncStatus({ environment: syncEnvironment });
+	if (!claim.ok) {
+		if (claim.headline || claim.helper) {
+			logCommandLockRefusal(claim);
+		}
+		logger.Error(
+			`Sync for environment "${syncEnvironment}" is already running (pid ${claim.existingPid}) in this directory. Stop that sync before starting another.`
+		);
+	}
+	registerSyncStatusCleanup();
+} else {
+	logger.Warn('[Sync] SITEGLIDE_ENV not set; sync status registration skipped.');
+}
 
 const gateway = new Gateway(program.opts());
 
@@ -292,10 +937,18 @@ gateway.ping().then(async () => {
 		);
 	}
 
+	if (getGitReadiness().repoInitialized) {
+		applySiteglideUserGitIgnorePolicy({ logPrefix: '[sync]' });
+	}
+
 	await fetchDirectUploadData(gateway);
 
-	logger.Info(`Enabled sync to: ${program.opts().url}`);
-	logger.Info(`[Sync] Watching: ${watchDirectories.join(', ')}`);
+	const syncTarget = process.env.SITEGLIDE_ENV
+		? `${process.env.SITEGLIDE_ENV} (${program.opts().url})`
+		: program.opts().url;
+	logger.Muted(`[Sync] Enabled sync to: ${syncTarget}`);
+	const folderNoun = watchDirectories.length === 1 ? 'folder' : 'folders';
+	logger.Info(applyCliColour('info', `[Sync] Watching: ${watchDirectories.join(' and ')} ${folderNoun}`));
 
 	let liveReloadServer;
   if (program.opts().livereload) {
@@ -314,18 +967,40 @@ gateway.ping().then(async () => {
 
     liveReloadServer.watch(liveReloadDirectories);
 
-    logger.Info('LiveReload Enabled');
+    logger.Quiet('LiveReload Enabled');
   }
 
-	chokidar.watch(watchDirectories, {
-		awaitWriteFinish: {
-			stabilityThreshold: 100,
-			pollInterval: 25
+	syncFileWatcher.attach({
+		directories: watchDirectories,
+		options: {
+			awaitWriteFinish: {
+				stabilityThreshold: 100,
+				pollInterval: 25
+			},
+			ignoreInitial: true
 		},
-		ignoreInitial: true
-	})
-		.on('change', fp => shouldBeSynced(fp) && enqueue(fp))
-		.on('add', fp => shouldBeSynced(fp) && enqueue(fp))
-		.on('unlink', fp => shouldBeSynced(fp) && enqueueDelete(fp));
+		onChange: (fp) => {
+			if (shouldBeSynced(fp)) {
+				enqueue(fp);
+			}
+		},
+		onAdd: (fp) => {
+			if (shouldBeSynced(fp)) {
+				enqueue(fp);
+			}
+		},
+		onUnlink: (fp) => {
+			if (shouldBeSynced(fp)) {
+				enqueueDelete(fp);
+			}
+		}
+	});
 
+}).catch((error) => {
+	try {
+		clearSyncStatus();
+	} catch {
+		// ignore
+	}
+	logger.Error(`[Sync] Could not start sync: ${error instanceof Error ? logger.describeError(error) : String(error)}`);
 });

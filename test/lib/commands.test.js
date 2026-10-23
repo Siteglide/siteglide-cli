@@ -1,26 +1,19 @@
-var sh = require('shelljs');
-var silentState = sh.config.silent; // save old silent state
+const { runCli } = require('../helpers/runCli');
 
-test('should return error for missing command on stdout', ()  => {
-	sh.config.silent = true;
-	let command = sh.exec('./siteglide-cli.js missing');
-	expect(command.stderr).toEqual(expect.stringContaining('unknown command: missing'));
-	sh.config.silent = silentState;
+test('should return error for missing command on stdout', () => {
+	const command = runCli('siteglide-cli.js', ['missing']);
+	expect(command.code).toEqual(1);
+	expect(command.output).toMatch(/unknown command.*missing/i);
 });
 
-test('should run help on env add', ()  => {
-	sh.config.silent = true;
-	let command = sh.exec('./siteglide-cli.js env add');
+test('should run help on add', () => {
+	const command = runCli('siteglide-cli.js', ['add', '--help']);
 	expect(command.code).toEqual(0);
-	expect(command.stdout).toEqual(expect.stringContaining('Usage: siteglide-cli add [options] [command]'));
-	sh.config.silent = silentState;
+	expect(command.output).toMatch(/Usage: siteglide-cli add/);
 });
 
-test('should run help on sync', ()  => {
-	sh.config.silent = true;
-
-	let command = sh.exec('./siteglide-cli.js sync');
+test('should run help on sync', () => {
+	const command = runCli('siteglide-cli.js', ['sync', '--help']);
 	expect(command.code).toEqual(0);
-	expect(command.stdout).toEqual(expect.stringContaining('Usage: siteglide-cli sync [environment] [options]'));
-	sh.config.silent = silentState;
+	expect(command.output).toMatch(/Usage: siteglide-cli sync/);
 });

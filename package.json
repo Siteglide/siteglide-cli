@@ -1,13 +1,16 @@
 {
 	"name": "@siteglide/siteglide-cli",
-	"version": "1.11.2",
+	"version": "2.0.0",
 	"description": "A CLI for Making Website Management a Breeze",
 	"scripts": {
 		"postinstall": "node ./scripts/check-node-version.js",
 		"mcp:i-local": "npm install file:../Siteglide-MCP --no-save",
+		"build-assets": "npx webpack-cli gui/editor/src/index.js -o gui/editor/public/app.js --mode=production",
 		"build-gui": "npm --prefix gui/next ci && npm --prefix gui/next run build",
 		"i": "npm install -g .",
-		"test": "jest --silent"
+		"test": "jest --silent && node scripts/run-node-tests.js",
+		"test:unit": "node scripts/run-node-tests.js",
+		"test:integration": "jest --config jest.integration.config.js --silent"
 	},
 	"main": "./siteglide-cli.js",
 	"license": "MIT",
@@ -16,64 +19,56 @@
 	},
 	"homepage": "https://docs.siteglide.com/articles/1541403-introduction-to-the-command-line-interface-cli",
 	"engines": {
-		"node": ">=20"
+		"node": ">=22.12.0"
 	},
 	"siteglideMcp": {
-		"usage": "Allows siteglide-cli pull to recommend auto updates to the MCP within the same semantic version range only. The -0 suffix includes prereleases (e.g. 0.1.0-alpha.0) until a stable 0.1.x exists.",
-		"compatibleRange": "^0.1.0-0"
+		"usage": "siteglide-cli pull offers and installs @siteglide/siteglide-mcp versions satisfying compatibleRange (currently 1.0.0 through 1.1.0). Installs below the range are upgraded via the usual global install prompt; versions above the range get a downgrade warning.",
+		"compatibleRange": ">=1.0.0 <=1.1.0"
 	},
 	"keywords": [
 		"Siteglide"
 	],
 	"dependencies": {
-		"@platformos/platformos-check-node": "^0.0.20",
-		"@platformos/platformos-common": "^0.0.18",
+		"@inquirer/prompts": "^8.5.2",
+		"@platformos/platformos-check-node": "^1.1.0",
 		"archiver": "^5.3.0",
 		"archiver-promise": "^1.0.0",
 		"async": "^3.2.3",
-		"body-parser": "^1.19.2",
+		"body-parser": "^1.20.8",
 		"chalk": "^4.1.2",
-		"cheerio": "^1.0.0-rc.10",
-		"chokidar": "^3.5.3",
-		"clean-css": "^5.2.4",
+		"chokidar": "^5.0.0",
 		"commander": "^8.3.0",
-		"compression": "^1.7.4",
-		"degit": "^2.8.4",
+		"compression": "^1.8.1",
+		"degit": "^2.8.6",
 		"email-validator": "^2.0.4",
-		"express": "^4.17.3",
+		"express": "^4.22.3",
 		"fs-extra": "^10.0.1",
-		"globby": "^11",
-		"imagemin": "^7.0.1",
-		"imagemin-mozjpeg": "^9.0.0",
-		"imagemin-pngquant": "^9.0.2",
-		"js-yaml": "^4.1.0",
-		"livereload": "^0.9.3",
+		"js-yaml": "^4.3.2",
+		"livereload": "^0.10.3",
 		"mime-types": "^2.1.35",
 		"minimist": "^1.2.6",
 		"mustache": "^4.2.0",
 		"node-fetch": "^2.6.7",
 		"node-notifier": "^10.0.1",
 		"node-stream-zip": "^1.15.0",
-		"normalize-url": "^6.1.0",
 		"open": "^8.4.0",
 		"ora": "^5.4.1",
-		"request": "^2.88.2",
-		"request-promise": "^4.2.6",
 		"semver": "^7.8.5",
+		"sharp": "^0.35.3",
 		"shelljs": "^0.8.5",
-		"terser": "^5.12.1",
-		"update-notifier": "^5.1.0",
+		"tinyglobby": "^0.2.17",
+		"update-notifier": "^7.3.1",
+		"uuid": "11.1.1",
 		"valid-url": "^1.0.9",
-		"webpack-cli": "6.0.1",
-		"website-scraper": "^4.2.3",
-		"website-scraper-existing-directory": "^0.1.0"
+		"webpack-cli": "6.0.1"
 	},
 	"devDependencies": {
-		"jest": "^30.4.2"
+		"jest": "^30.5.1"
 	},
 	"bin": {
 		"siteglide-cli": "./siteglide-cli.js",
 		"siteglide-cli-add": "./siteglide-cli-add.js",
+		"siteglide-cli-ai": "./siteglide-cli-ai.js",
 		"siteglide-cli-archive": "./siteglide-cli-archive.js",
 		"siteglide-cli-check": "./siteglide-cli-check.js",
 		"siteglide-cli-deploy": "./siteglide-cli-deploy.js",
@@ -84,7 +79,6 @@
 		"siteglide-cli-list": "./siteglide-cli-list.js",
 		"siteglide-cli-logs": "./siteglide-cli-logs.js",
 		"siteglide-cli-mcp": "./siteglide-cli-mcp.js",
-		"siteglide-cli-migrate": "./siteglide-cli-migrate.js",
 		"siteglide-cli-modules": "./siteglide-cli-modules.js",
 		"siteglide-cli-pull": "./siteglide-cli-pull.js",
 		"siteglide-cli-push": "./siteglide-cli-push.js",
@@ -93,5 +87,22 @@
 		"siteglide-cli-watch": "./siteglide-cli-watch.js"
 	},
 	"preferGlobal": true,
-	"repository": "siteglide/siteglide-cli"
+	"repository": "siteglide/siteglide-cli",
+	"overrides": {
+		"uuid": "$uuid",
+		"qs": "^6.16.0",
+		"json-schema": "^0.4.0",
+		"tough-cookie": "^4.1.4",
+		"ansi-regex": "^5.0.1",
+		"minimatch": "^3.1.4",
+		"brace-expansion": "^1.1.18",
+		"cross-spawn": "^7.0.6",
+		"ws": "^8.18.0",
+		"archiver-promise": {
+			"async": "^3.2.6"
+		},
+		"@istanbuljs/load-nyc-config": {
+			"js-yaml": "^4.3.2"
+		}
+	}
 }
