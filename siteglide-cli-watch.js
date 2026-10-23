@@ -77,6 +77,8 @@ const filePathUnixified = filePath =>
 let counter = 0;
 let siteRoot = null;
 let directAssetsUploadReady = false;
+/** @type {number|null} ms since epoch when directUploadData was last fetched */
+let directUploadPresignFetchedAt = null;
 
 /**
  * Record per-path sync floor after upload (GraphQL updated_at + 1 ms when available).
@@ -732,6 +734,7 @@ const fetchDirectUploadData = async (gateway) => {
 	const presignFailure = directUploadPresignFailureMessage(data);
 	if (presignFailure) {
 		directAssetsUploadReady = false;
+		directUploadPresignFetchedAt = null;
 		logger.Warn(
 			'[Sync] Direct S3 asset upload is unavailable; asset files will use file sync instead.',
 			{ exit: false }
@@ -741,6 +744,7 @@ const fetchDirectUploadData = async (gateway) => {
 	}
 	directUploadData = data;
 	directAssetsUploadReady = true;
+	directUploadPresignFetchedAt = Date.now();
 };
 
 const deleteFile = (gateway, syncedFilePath) => {
@@ -842,6 +846,12 @@ const sendAsset = async (gateway, filePath) => {
 			: '/' + path.dirname(normalized).replace('/public/assets', '');
 		const key = data.fields.key.replace('assets/${filename}', `assets${fileSubdir}/\${filename}`);
 		data.fields.key = key;
+		if (directUploadPresignFetchedAt != null) {
+			const presignAgeMs = Date.now() - directUploadPresignFetchedAt;
+			logger.Debug(
+				`[Sync] direct upload presign age before S3 POST: ${presignAgeMs}ms (${displayPath(filePath)})`
+			);
+		}
 		logger.Debug(data);
 		await uploadFileFormData(filePath, data);
 		manifestAddAsset(filePath);
@@ -855,14 +865,18 @@ const sendAsset = async (gateway, filePath) => {
 		logger.Debug(e);
 		logger.Debug(e.message);
 		logger.Debug(e.stack);
-		if(e=='403'&&counter<3){
+		if (
+			e
+			&& e.statusCode === 403
+			&& counter < 3
+		) {
 			counter++;
-			await fetchDirectUploadData(gateway)
-			.then(() => {
-				cloneDeep(directUploadData);
-				sendAsset(gateway,filePath);
-			})
-		}else{
+			logger.Debug(
+				`[Sync] S3 asset upload returned 403; refreshing presign and retrying (${counter}/3) for ${displayPath(filePath)}`
+			);
+			await fetchDirectUploadData(gateway);
+			await sendAsset(gateway, filePath);
+		} else {
 			const failure = syncErrorFromAssetFailure(displayPath(filePath), e && e.message ? String(e.message) : undefined);
 			recordSyncUploadError(failure);
 		}

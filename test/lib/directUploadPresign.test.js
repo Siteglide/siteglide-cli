@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
 	formatPresignErrorDetail,
+	policyExpirationFromPresignPolicy,
 	summarizeDirectUploadPresign,
 	directUploadPresignFailureMessage
 } = require('../../lib/directUploadPresign');
@@ -40,5 +41,18 @@ describe('directUploadPresign', () => {
 			formatPresignErrorDetail({ errors: ['a', 'b'] }),
 			JSON.stringify({ errors: ['a', 'b'] }, null, 2)
 		);
+	});
+
+	it('summarizeDirectUploadPresign reads policy expiration for debug timelines', () => {
+		const policy = Buffer.from(
+			JSON.stringify({ expiration: '2026-10-23T15:42:23Z', conditions: [] }),
+			'utf8'
+		).toString('base64');
+		const summary = summarizeDirectUploadPresign({
+			url: 'https://bucket.example/upload',
+			fields: { key: 'instances/1/assets/${filename}', policy }
+		});
+		assert.equal(summary.policyExpiresAt, '2026-10-23T15:42:23Z');
+		assert.equal(policyExpirationFromPresignPolicy(policy), '2026-10-23T15:42:23Z');
 	});
 });
