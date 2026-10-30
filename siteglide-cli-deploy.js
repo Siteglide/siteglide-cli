@@ -1,27 +1,60 @@
 #!/usr/bin/env node
 process.noDeprecation = true;
 
+/**
+ * Deploy: optional prod commit → remote-mtime pre-check (Merge first / continue) →
+ * homepage pre-sync → archive/push → tidy up .tmp archives → deploy path manifest.
+ */
+
 const program = require('commander'),
 	Gateway = require('./lib/proxy'),
-	fetchAuthData = require('./lib/settings').fetchSettings,
+	settings = require('./lib/settings'),
+	fetchAuthData = settings.fetchSettings,
 	spawn = require('child_process').spawn,
 	command = require('./lib/command'),
 	logger = require('./lib/logger'),
 	Confirm = require('./lib/confirm'),
-	glob = require('globby'),
+	templates = require('./lib/templates'),
+	{ glob } = require('tinyglobby'),
 	fs = require('fs'),
 	path = require('path'),
-	getFile = require('./lib/migration/lib/utils/get-file'),
+	getFile = require('./lib/get-file'),
 	dir = require('./lib/directories'),
 	{ assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory'),
-	version = require('./package.json').version;
+	version = require('./package.json').version,
+	{ classifyEnvironment } = require('./lib/envClassification'),
+	{ collectDeployPreConflicts } = require('./lib/remoteMtimeCheck'),
+	{ promptDeployConfirm } = require('./lib/remoteConflictPrompt'),
+	{ replaceDeployManifest, advancePullBaseline } = require('./lib/pullBaseline'),
+	{ collectDeployManifestPaths } = require('./lib/deployManifestPaths'),
+	{ tidyUpAfterDeploy } = require('./lib/deployTidyUp'),
+	{ clearConflictLog, writeConflictLog } = require('./lib/remoteCheckConflictLog'),
+	{ getGitReadiness } = require('./lib/git/readiness'),
+	{ commitAllSafe, hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
+	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
+	{ mergeFirstDeploy } = require('./lib/git/mergeFirst'),
+	{ promptCommitMessage } = require('./lib/git/commitPrompt'),
+	{ completeMergeFirstResolution } = require('./lib/git/completeMergeFirstResolution'),
+	{ MERGE_CONFLICT_CLI_WAIT_HINT } = require('./lib/mergeConflictGuidance'),
+	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
+	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
+	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	{ assertNotOnTemporaryBranch } = require('./lib/git/homeBranch'),
+	{ addDebugOption, applyDebugFlag, shouldPassDebugToChild, DEBUG_CLI_FLAG } = require('./lib/cliDebug'),
+	{ withSyncTimeoutRetry } = require('./lib/syncWithRetry'),
+	{ deployDebug } = require('./lib/deployDebug');
 
 const filePathUnixified = filePath => filePath.replace(/\\/g, '/');
+
+const templateData = (templatePath) => settings.loadSettingsFile(templatePath);
+
 const uploadArchive = (env, withImages) => {
 	return new Promise((resolve, reject) => {
+		const debugArgs = shouldPassDebugToChild() ? [DEBUG_CLI_FLAG] : [];
 		const options = withImages ? ['--with-images'] : [];
-		const archive = spawn(command('siteglide-cli-archive'), options, {
+		const archive = spawn(command('siteglide-cli-archive'), [...options, ...debugArgs], {
 			stdio: 'inherit',
+			env,
 			shell: true
 		});
 
@@ -31,7 +64,7 @@ const uploadArchive = (env, withImages) => {
 				reject();
 			}
 
-			const push = spawn(command('siteglide-cli-push'), [], {
+			const push = spawn(command('siteglide-cli-push'), [...debugArgs], {
 				stdio: 'inherit',
 				env,
 				shell: true
@@ -41,10 +74,10 @@ const uploadArchive = (env, withImages) => {
 				if (exitCode === 1) {
 					logger.Error('Deploy failed. Please check that you have the correct permissions and your site is not locked or creating.');
 					reject(false);
-				} else if (exitCode === 2){
+				} else if (exitCode === 2) {
 					logger.Error('Deploy failed. Your sites codebase is more than 50mb, please check that all asset files are in the assets folder and not in the codebase.');
 					reject(false);
-				}else if (exitCode === 3) {
+				} else if (exitCode === 3) {
 					logger.Error('Deploy failed. Your site contains invalid syntax, please check the error report above');
 					reject(false);
 				} else if (exitCode === 0) {
@@ -60,9 +93,8 @@ const getBody = (filePath, processTemplate) => {
 		const templatePath = `modules/${filePath.split(path.sep)[1]}/template-values.json`;
 		const moduleTemplateData = templateData(templatePath);
 		return templates.fillInTemplateValues(filePath, moduleTemplateData);
-	} else {
-		return fs.createReadStream(filePath);
 	}
+	return fs.createReadStream(filePath);
 };
 
 const deploy = async (env, authData, params) => {
@@ -70,31 +102,50 @@ const deploy = async (env, authData, params) => {
 		const siteRoot = dir.getSiteRoot() || null;
 
 	if (siteRoot) {
-		let files = await glob(`${siteRoot}/views/pages/**/*.liquid`);
+		const files = await glob(`${siteRoot}/views/pages/**/*.liquid`);
+		let homepageSyncCount = 0;
 
-		try {
-			for(var i=0;i<files.length;i++){
-				await getFile.run(files[i], i, params)
-				.then(async(file) => {
-					if(file.fileContent.includes('is_homepage: true')){
-						let filePath = filePathUnixified(file.filePath); // need path with / separators
-						// API expects path without app/ or marketplace_builder/ prefix
-						const apiPath = filePath
-							.replace(new RegExp(`^${siteRoot}/`), '');
+		deployDebug('homepage pre-sync scan', {
+			siteRoot: filePathUnixified(siteRoot),
+			pageLiquidFiles: files.length
+		});
 
-						const formData = {
-							path: apiPath,
-							marketplace_builder_file_body: getBody(file.filePath, false)
-						};
-
-						return gateway.sync(formData);
-					}
-				})
-				.catch((err) => console.log(err))
+		for (let i = 0; i < files.length; i++) {
+			const file = await getFile.run(files[i], i, params);
+			if (!file.fileContent.includes('is_homepage: true')) {
+				continue;
 			}
-		} catch (error) {
-			console.log(`Error: ${error}`);
+
+			const filePath = filePathUnixified(file.filePath);
+			const apiPath = filePath.replace(new RegExp(`^${siteRoot}/`), '');
+			const formData = {
+				path: apiPath,
+				marketplace_builder_file_body: getBody(file.filePath, false)
+			};
+
+			deployDebug('homepage pre-sync', {
+				localFile: filePath,
+				syncPath: apiPath,
+				bytes: fs.statSync(file.filePath).size
+			});
+
+			homepageSyncCount += 1;
+
+			await withSyncTimeoutRetry(
+				() => gateway.sync(formData),
+				{
+					onRetry: ({ attempt, maxAttempts, delayMs }) => {
+						logger.Warn(
+							`[deploy] Homepage sync timed out for ${apiPath} (${attempt}/${maxAttempts}); retrying in ${delayMs / 1000}s…`,
+							{ exit: false }
+						);
+						deployDebug('homepage pre-sync retry', { syncPath: apiPath, attempt, maxAttempts, delayMs });
+					}
+				}
+			);
 		}
+
+		deployDebug('homepage pre-sync done', { syncedHomepages: homepageSyncCount });
 	}
 
 	await uploadArchive(env, params.withAssets);
@@ -108,33 +159,206 @@ program
 	.arguments('[environment]', 'name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-w --with-assets', 'With assets, deploys your "assets" folder')
+	.option('-s, --skip-remote-check', 'Skip remote mtime conflict checks (CI / intentional overwrite)');
+
+addDebugOption(program);
+
+program
 	.action(async (environment, params) => {
+		applyDebugFlag(params);
+		await assertNotOnTemporaryBranch({ command: 'deploy' });
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_IMAGES = params.withAssets;
 
+		const lock = claimCommandLock('deploy', { environment });
+		if (!lock.ok) {
+			logCommandLockRefusal(lock);
+		}
+		if (!lock.nested) {
+			registerCommandLockCleanup();
+		}
+
+		if (!params.withAssets) {
+			const { applyCliColour } = require('./lib/cliColour');
+			const { localTimeZoneLabel } = require('./lib/formatLocalDateTime');
+			const now = new Date();
+			const HHMMSS = now.toTimeString().split(' ')[0];
+			const tz = localTimeZoneLabel(now);
+			logger.Print(
+				applyCliColour(
+					'info',
+					`[${HHMMSS} ${tz}] [deploy] Assets like JS and CSS will not be deployed unless you use the -w / --with-assets flag.\n`
+				)
+			);
+		}
+
 		const authData = fetchAuthData(environment, program);
-		// Fail fast before confirm when both app/ and marketplace_builder/ exist
 		assertExclusiveSiteAppRoot();
 
-		Confirm(`Are you sure you would like to deploy to ${authData.url}? (Y/n)\n`).then(function (response) {
-			if (response === 'Y') {
+		const open = hasOpenGitConflicts();
+		if (open.open) {
+			writeConflictLog(environment, {
+				command: 'deploy',
+				reason: open.reason,
+				conflicts: (open.paths || []).map((p) => ({ path: p })),
+				consoleHint: 'Resolve conflict markers with AI + MCP before deploy.'
+			});
+			logger.Error(`[deploy] Refusing deploy while ${open.reason}. Ask AI + MCP to help resolve conflicts first.`);
+			process.exit(1);
+		}
 
-				const env = Object.assign(process.env, {
-					SITEGLIDE_EMAIL: authData.email,
-					SITEGLIDE_TOKEN: authData.token,
-					SITEGLIDE_URL: authData.url,
-					SITEGLIDE_ENV: environment
-				});
-
-				Promise.all([
-					deploy(env, authData, params)
-				])
-					.then(() => process.exit(0))
-					.catch(() => process.exit(1));
-			} else {
-				logger.Error('[Cancelled] Deploy command not executed, no files have been updated.');
+		const classification = classifyEnvironment(authData);
+		const git = getGitReadiness();
+		if (
+			classification === 'production'
+			&& git.repoInitialized
+			&& process.stdin.isTTY
+			&& !process.env.CI
+			&& hasStagedOrUnstagedChanges()
+		) {
+			const envLabel = environment || 'this environment';
+			const commitFirst = await Confirm(
+				`Before we deploy to ${envLabel}, let's "commit" a snapshot of the code. (Y/n)\n`
+			);
+			if (commitFirst === 'Y') {
+				if (!hasStagedOrUnstagedChanges()) {
+					logger.Quiet('[deploy] User committed files manually, working tree is clean');
+				} else {
+					const msg = await promptCommitMessage({ environment: envLabel, action: 'deploying to' });
+					if (msg == null) {
+						logger.Error('[Cancelled] Deploy not executed — commit your work first, then deploy again.');
+						process.exit(1);
+					}
+					if (!hasStagedOrUnstagedChanges()) {
+						logger.Quiet('[deploy] User committed files manually, working tree is clean');
+					} else {
+						const committed = commitAllSafe(msg);
+						if (!committed.ok && !/nothing to commit/i.test(committed.stdout + committed.stderr)) {
+							logger.Warn(`[deploy] Commit failed: ${committed.stderr || committed.stdout}`, { exit: false });
+						}
+					}
+				}
 			}
+		}
+
+		const { readSourceOfTruthMode, resolveSkipRemoteCheck, MODE_VERSION_CONTROL } = require('./lib/sourceOfTruth');
+		const sourceOfTruthMode = await readSourceOfTruthMode(process.cwd());
+		const skipRemoteCheck = resolveSkipRemoteCheck({
+			cliFlag: Boolean(params.skipRemoteCheck),
+			mode: sourceOfTruthMode
 		});
+		if (
+			sourceOfTruthMode === MODE_VERSION_CONTROL
+			&& skipRemoteCheck
+			&& !params.skipRemoteCheck
+		) {
+			logger.Quiet('[deploy] sourceOfTruth is versionControl — remote conflict checks are skipped (same as -s / --skip-remote-check).');
+		}
+
+		const gateway = new Gateway(authData);
+		let pre = { ok: true, conflicts: [] };
+		if (!skipRemoteCheck) {
+			pre = await collectDeployPreConflicts(gateway, environment);
+		}
+
+		let decision = await promptDeployConfirm({
+			environment,
+			url: authData.url,
+			preCheck: pre,
+			skipRemoteCheck
+		});
+
+		const mergedFirst = decision === 'merge_first';
+		if (mergedFirst) {
+			logger.Quiet('[deploy] Merge first: full pull on a temporary branch, then merge (AI can resolve conflicts).');
+			let wipMessage;
+			if (
+				process.stdin.isTTY
+				&& !process.env.CI
+				&& hasStagedOrUnstagedChanges()
+			) {
+				wipMessage = await promptCommitMessage({ environment, action: 'merging' });
+				if (wipMessage == null) {
+					logger.Error('[Cancelled] Deploy not executed — commit your work first, then deploy again.');
+					process.exit(1);
+				}
+			}
+			const result = await mergeFirstDeploy({
+				environment,
+				wipMessage,
+				pullFn: async () => {
+					await spawnNestedPull({
+						environment,
+						configFile: params.configFile,
+						skipCommitBaseline: true,
+						mergeFirstSync: true
+					});
+				}
+			});
+			if (!result.ok) {
+				logger.Error(`[deploy] Merge first failed: ${result.error}`);
+				await offerMergeFirstFailureHelp(result, {
+					environment,
+					command: 'deploy'
+				});
+				process.exit(1);
+			}
+			const completed = await completeMergeFirstResolution({
+				environment,
+				result,
+				command: 'deploy',
+				commitMessage: 'siteglide: merge remote pull before deploy',
+				warnMessage:
+					`[deploy] Merge started. ${MERGE_CONFLICT_CLI_WAIT_HINT} Deploy continues after merge complete.`,
+				logPrefix: '[deploy]'
+			});
+			if (!completed.ok) {
+				logger.Error(`[deploy] Merge resolution failed: ${completed.error || 'unknown error'}`);
+				process.exit(1);
+			}
+			logger.Success('[deploy] Merge complete. Continuing deploy…');
+			decision = 'continue';
+		}
+
+		if (decision !== 'continue') {
+			logger.Error('[Cancelled] Deploy command not executed, no files have been updated.');
+			process.exit(1);
+		}
+
+		const env = Object.assign(process.env, {
+			SITEGLIDE_EMAIL: authData.email,
+			SITEGLIDE_TOKEN: authData.token,
+			SITEGLIDE_URL: authData.url,
+			SITEGLIDE_ENV: environment
+		});
+
+		try {
+			await Promise.all([deploy(env, authData, params)]);
+			// The archive/push children leave .tmp/marketplace-release.zip (and assets.zip) behind;
+			// remove them on every path or the next `git add -A` snapshot commits them.
+			tidyUpAfterDeploy();
+			const deployedAt = new Date().toISOString();
+			const paths = collectDeployManifestPaths({ withAssets: params.withAssets });
+			replaceDeployManifest(environment, { deployedAt, paths });
+			clearConflictLog(environment);
+
+			// Only a merge-first deploy has actually pulled the site, so only it moves the last-pull
+			// baseline. A plain deploy leaves it alone: files the site has that this folder does not
+			// should still show up on the next pre-deploy check.
+			if (mergedFirst) {
+				advancePullBaseline(environment, deployedAt);
+				logger.Quiet('[deploy] Merged before deploy — advanced last-pull baseline.');
+			}
+			logger.Success(`[deploy] Deploy to ${environment} finished.`);
+			process.exit(0);
+		} catch (err) {
+			tidyUpAfterDeploy();
+			// uploadArchive rejects with nothing after it has already printed its own red line.
+			if (err) {
+				logger.Error(`[deploy] Deploy stopped because of an unexpected error: ${logger.describeError(err)}`, { exit: false });
+			}
+			process.exit(1);
+		}
 	});
 
 program.parse(process.argv);

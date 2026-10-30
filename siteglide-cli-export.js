@@ -16,7 +16,8 @@ const program = require('commander'),
 	dir = require('./lib/directories'),
 	Confirm = require('./lib/confirm'),
 	unzip = require('./lib/unzip'),
-	path = require('path');
+	path = require('path'),
+	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug');
 
 let gateway;
 const spinner = ora({ text: 'Exporting data', stream: process.stdout });
@@ -52,8 +53,13 @@ program
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-w --with-assets', 'With assets, also pulls the assets/images and PDFs in assets/documents folder', false)
 	.option('--csv', 'Exports the data as a CSV instead of JSON', false)
-	.option('-a --assets-only', 'Only download code files stored in the assets folder', false)
+	.option('-a --assets-only', 'Only download code files stored in the assets folder', false);
+
+addDebugOption(program);
+
+program
 	.action(async (environment, params) => {
+		applyDebugFlag(params);
 		process.env.CONFIG_FILE_PATH = params.configFile;
 		process.env.WITH_ASSETS = params.withAssets;
 		process.env.CSV = params.csv;

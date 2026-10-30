@@ -1,5 +1,6 @@
 const templates = require('./../../lib/templates');
 const fs = require('fs');
+const { normalizeLineEndings } = require('../helpers/runCli');
 
 const fileWithTemplatePath = 'test/fixtures/template.liquid';
 const missformatedTemplatePath = 'test/fixtures/missformatedTemplate.html';
@@ -17,7 +18,8 @@ test('fills template with values ', () => {
 		'aKey': 'aStringValue',
 		'otherKey': 1
 	});
-	expect(templates.fillInTemplateValues(fileWithTemplatePath, templateValues)).toEqual(`---
+	const result = templates.fillInTemplateValues(fileWithTemplatePath, templateValues);
+	expect(normalizeLineEndings(result)).toEqual(`---
 slug: aStringValue
 ---
 
@@ -29,7 +31,8 @@ test('render nothing for non existing keys ', () => {
 	const templateValues = Object({
 		'otherKey': 1
 	});
-	expect(templates.fillInTemplateValues(fileWithTemplatePath, templateValues)).toEqual(`---
+	const result = templates.fillInTemplateValues(fileWithTemplatePath, templateValues);
+	expect(normalizeLineEndings(result)).toEqual(`---
 slug: 
 ---
 

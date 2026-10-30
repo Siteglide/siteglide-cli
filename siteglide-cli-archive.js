@@ -6,39 +6,39 @@ const program = require('commander'),
 	prepareArchive = require('./lib/prepareArchive'),
 	logger = require('./lib/logger'),
 	assets = require('./lib/assets/deploy'),
-	glob = require('globby'),
+	{ glob, globSync } = require('tinyglobby'),
 	settings = require('./lib/settings'),
 	templates = require('./lib/templates'),
 	version = require('./package.json').version,
 	dir = require('./lib/directories'),
 	files = require('./lib/assets/files'),
 	{ deployGlobOptions } = require('./lib/deployGlob'),
-	Gateway = require('./lib/proxy');
+	Gateway = require('./lib/proxy'),
+	{ addDebugOption, applyDebugFromProgram } = require('./lib/cliDebug'),
+	{ isModuleDeployAssetPath } = require('./lib/moduleDeployAssetPath');
 
 const { assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory');
 
 const availableDirectories = () => dir.available();
 
-const addModulesToArchive = (archive, withImages) => {
+const addModulesToArchive = (archive) => {
 	if (!fs.existsSync(dir.MODULES)) return Promise.resolve(true);
 
 	return Promise.all(
-		glob.sync('*', { cwd: dir.MODULES, onlyDirectories: true }).map(
-			module => ( addModuleToArchive(module, archive, withImages))
+		globSync('*', { cwd: dir.MODULES, onlyDirectories: true }).map(
+			module => ( addModuleToArchive(module, archive))
 		)
 	);
 };
 
-const addModuleToArchive = (module, archive, withImages, pattern = '?(public|private)/**') => {
+const addModuleToArchive = (module, archive, pattern = '?(public|private)/**') => {
 	module = module.replace('/','');
 	return glob(pattern, deployGlobOptions({ cwd: `${dir.MODULES}/${module}` })).then(files => {
 		const moduleTemplateData = templateData();
 
 		return Promise.all(
 			files
-			.filter(file => {
-				return !withImages || !(file.startsWith('public/assets/') || file.startsWith('private/assets'));
-			})
+			.filter(file => !isModuleDeployAssetPath(file))
 			.map(f => {
 				const path = `${dir.MODULES}/${module}/${f}`;
 				return new Promise((resolve, reject) => {
@@ -69,7 +69,7 @@ const makeArchive = (archivePath, directory, program) => {
 		}), { prefix: directory });
 	}
 
-	addModulesToArchive(releaseArchive, program.opts().withImages).then(r => {
+	addModulesToArchive(releaseArchive).then(r => {
 		releaseArchive.finalize();
 	});
 
@@ -97,8 +97,11 @@ program
 	.option('--target <target>', 'path to archive', process.env.TARGET || '.tmp/marketplace-release.zip')
 	.option('--email <email>', 'developer email', process.env.SITEGLIDE_EMAIL)
 	.option('--token <token>', 'authentication token', process.env.SITEGLIDE_TOKEN)
-	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL)
-	.parse(process.argv);
+	.option('--url <url>', 'site url', process.env.SITEGLIDE_URL);
+
+addDebugOption(program);
+program.parse(process.argv);
+applyDebugFromProgram(program);
 
 const siteRoot = assertExclusiveSiteAppRoot();
 if (!siteRoot && !fs.existsSync(dir.MODULES)) {
@@ -107,5 +110,5 @@ if (!siteRoot && !fs.existsSync(dir.MODULES)) {
 		{ hideTimestamp: true }
 	);
 }
-logger.Info(`[Deploy] Archiving from: ${siteRoot || '(modules only)'}`);
+logger.Quiet(`[Deploy] Archiving from: ${siteRoot || '(modules only)'}`);
 makeArchive(program.opts().target, siteRoot, program);
