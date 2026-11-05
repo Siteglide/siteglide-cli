@@ -45,6 +45,7 @@
 		"fs-extra": "^10.0.1",
 		"js-yaml": "^4.3.2",
 		"livereload": "^0.10.3",
+		"mime": "^4.1.2",
 		"mime-types": "^2.1.35",
 		"minimist": "^1.2.6",
 		"mustache": "^4.2.0",

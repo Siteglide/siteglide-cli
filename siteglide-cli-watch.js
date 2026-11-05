@@ -735,12 +735,8 @@ const fetchDirectUploadData = async (gateway) => {
 	if (presignFailure) {
 		directAssetsUploadReady = false;
 		directUploadPresignFetchedAt = null;
-		logger.Warn(
-			'[Sync] Direct S3 asset upload is unavailable; asset files will use file sync instead.',
-			{ exit: false }
-		);
 		logger.Debug(presignFailure);
-		return;
+		throw new Error(presignFailure);
 	}
 	directUploadData = data;
 	directAssetsUploadReady = true;
@@ -806,10 +802,14 @@ const isModule19CustomCss = (syncedFilePath) => {
 
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
 	if(
-		directAssetsUploadReady
-		&& isAssetsPath(syncedFilePath)
+		isAssetsPath(syncedFilePath)
 		&& !isModule19CustomCss(syncedFilePath)
 	){
+		if (!directAssetsUploadReady) {
+			throw new Error(
+				'Direct CDN asset upload is not available. Sync cannot upload asset files without presign-directory.'
+			);
+		}
 		syncedFilePath = syncedFilePath.replace(/\\/g, '/');
 		return sendAsset(gateway, syncedFilePath);
 	}
