@@ -39,6 +39,7 @@ const program = require('commander'),
 	{ offerMergeFirstFailureHelp } = require('./lib/aiPrompts'),
 	{ claimCommandLock, registerCommandLockCleanup, logCommandLockRefusal } = require('./lib/commandLock'),
 	{ spawnNestedPull } = require('./lib/pull/spawnNestedPull'),
+	{ reapplyPullReadOnlyHintsAfterMerge } = require('./lib/pull/applyPullReadOnly'),
 	{ assertNotOnTemporaryBranch } = require('./lib/git/homeBranch'),
 	{ addDebugOption, applyDebugFlag, shouldPassDebugToChild, DEBUG_CLI_FLAG } = require('./lib/cliDebug'),
 	{ withSyncTimeoutRetry } = require('./lib/syncWithRetry'),
@@ -293,6 +294,12 @@ program
 						skipCommitBaseline: true,
 						mergeFirstSync: true
 					});
+				},
+				afterMergeAppliedToWorkingTree: async () => {
+					await reapplyPullReadOnlyHintsAfterMerge(process.cwd(), {
+						siteRoot: dir.defaultSiteRoot(),
+						gateway
+					});
 				}
 			});
 			if (!result.ok) {
@@ -315,6 +322,12 @@ program
 			if (!completed.ok) {
 				logger.Error(`[deploy] Merge resolution failed: ${completed.error || 'unknown error'}`);
 				process.exit(1);
+			}
+			if (result.conflictExpected) {
+				await reapplyPullReadOnlyHintsAfterMerge(process.cwd(), {
+					siteRoot: dir.defaultSiteRoot(),
+					gateway
+				});
 			}
 			logger.Success('[deploy] Merge complete. Continuing deploy…');
 			decision = 'continue';

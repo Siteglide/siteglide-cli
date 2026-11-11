@@ -1,8 +1,16 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildFileMtimeQuery } = require('../../lib/graphql/remoteMtimeQueries');
+const { buildFileMtimeQuery, mapPathToResource } = require('../../lib/graphql/remoteMtimeQueries');
+const { RESERVED_FILES_RELATIVE_PATH } = require('../../lib/pull/readOnlyRules');
 const { buildFileContentQuery } = require('../../lib/graphql/remoteFileContentQueries');
 const { buildNestedPullArgs, buildNestedPullEnv } = require('../../lib/pull/spawnNestedPull');
+
+describe('mapPathToResource', () => {
+	it('maps siteglide_system reserved_files.liquid to admin_liquid_partials', () => {
+		const mapped = mapPathToResource(RESERVED_FILES_RELATIVE_PATH);
+		assert.deepEqual(mapped, { kind: 'partial', queryField: 'admin_liquid_partials' });
+	});
+});
 
 describe('remoteMtimeQueries buildFileMtimeQuery', () => {
 	it('omits body/content by default', () => {
