@@ -78,7 +78,21 @@ const program = require('commander'),
 		ensureTempPullTraceSession
 	} = require('./lib/git/tempPullTrace'),
 	{ addDebugOption, applyDebugFlag } = require('./lib/cliDebug'),
-	{ applyCliColour } = require('./lib/cliColour');
+	{ applyCliColour } = require('./lib/cliColour'),
+	{ makeWritable, makeReadOnly, makeWritableSync, makeReadOnlySync } = require('./lib/pull/fileReadOnly'),
+	{
+		loadReservedFilesRulesForPull,
+		resetPullReadOnlySession
+	} = require('./lib/pull/readOnlyRules'),
+	{
+		applyPullReadOnlyAfterPull,
+		reapplyPullReadOnlyHintsAfterMerge
+	} = require('./lib/pull/applyPullReadOnly'),
+	{
+		copyForPullOverwrite,
+		makeFilesWritableUnder,
+		writeFileSyncForPullOverwrite
+	} = require('./lib/pull/pullOverwrite');
 
 const pullSpinner = ora({ text: 'Pulling files', stream: process.stderr });
 logger.registerSpinner(pullSpinner);
@@ -116,49 +130,7 @@ const copyChildren = async (srcDir, destDir) => {
 	const children = await fs.readdir(srcDir);
 	for (let i = 0; i < children.length; i++) {
 		const name = children[i];
-		await fs.copy(path.join(srcDir, name), path.join(destDir, name), { overwrite: true });
-	}
-};
-
-/**
- * Clear the read-only / write-protect bit on a file so it can be overwritten on the next pull.
- * No-op for missing paths and directories. Failures are logged at Debug and ignored.
- *
- * @param {string} filePath - Absolute or relative path to a file.
- * Side effects: may chmod the file to add owner-write.
- */
-const makeWritable = async (filePath) => {
-	try {
-		if (!(await fs.pathExists(filePath))) {
-			return;
-		}
-		const stats = await fs.stat(filePath);
-		if (stats.isDirectory()) {
-			return;
-		}
-		await fs.chmod(filePath, stats.mode | 0o200);
-	} catch (e) {
-		logger.Debug(`[pull] Could not clear read-only on ${filePath}: ${e.message}`);
-	}
-};
-
-/**
- * Mark a file read-only after merge (cross-platform hint that it came from a module).
- * Directories are left writable so later pulls can add/replace children.
- * Failures are logged at Debug and ignored.
- *
- * @param {string} filePath - Absolute or relative path to a file.
- * Side effects: may chmod the file to remove write bits.
- */
-const makeReadOnly = async (filePath) => {
-	try {
-		const stats = await fs.stat(filePath);
-		if (stats.isDirectory()) {
-			return;
-		}
-		await fs.chmod(filePath, stats.mode & ~0o222);
-	} catch (e) {
-		logger.Debug(`[pull] Could not set read-only on ${filePath}: ${e.message}`);
+		await copyForPullOverwrite(path.join(srcDir, name), path.join(destDir, name));
 	}
 };
 
@@ -213,9 +185,17 @@ const countSkillMarkdownFiles = async (rootDir) => {
  */
 const writeManagedAgentFile = async (filePath, contents) => {
 	await fs.ensureDir(path.dirname(filePath));
-	await makeWritable(filePath);
+	try {
+		await makeWritable(filePath);
+	} catch (e) {
+		logger.Debug(`[pull] Could not clear read-only on ${filePath}: ${e.message}`);
+	}
 	await fs.writeFile(filePath, contents, 'utf8');
-	await makeReadOnly(filePath);
+	try {
+		await makeReadOnly(filePath);
+	} catch (e) {
+		logger.Debug(`[pull] Could not set read-only on ${filePath}: ${e.message}`);
+	}
 	logger.Debug(`[pull] Wrote ${filePath.replace(/\\/g, '/')}`);
 };
 
@@ -361,19 +341,9 @@ const resolveAgentsAssetRelativePath = (physicalPath, moduleName) => {
  */
 const writeAgentsAssetFile = (fullPath, body) => {
 	fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-	if (fs.existsSync(fullPath)) {
-		try {
-			fs.chmodSync(fullPath, fs.statSync(fullPath).mode | 0o200);
-		} catch (e) {
-			logger.Debug(`[pull] Could not clear read-only on ${fullPath}: ${e.message}`);
-		}
-	}
+	makeWritableSync(fullPath);
 	fs.writeFileSync(fullPath, body, logger.Error);
-	try {
-		fs.chmodSync(fullPath, fs.statSync(fullPath).mode & ~0o222);
-	} catch (e) {
-		logger.Debug(`[pull] Could not set read-only on ${fullPath}: ${e.message}`);
-	}
+	makeReadOnlySync(fullPath);
 };
 
 /**
@@ -443,7 +413,7 @@ const moveModulesToRoot = async (fromRoot, ignoredModules = DEFAULT_PULL_IGNORED
 		if (isAgentsOnlyPullModule(moduleName)) {
 			continue;
 		}
-		await fs.copy(srcPath, path.join(`./${dir.MODULES}`, moduleName), { overwrite: true });
+		await copyForPullOverwrite(srcPath, path.join(`./${dir.MODULES}`, moduleName));
 	}
 	await fs.remove(modulesPath);
 };
@@ -466,6 +436,7 @@ const pullSiteZip = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = D
 	const readyTask = await waitForStatus(() => gateway.pullZipStatus(pullTask.id));
 	logger.Debug(`[pull] Site backup ready (status: ${readyTask.status}) — downloading zip`);
 	await downloadFile(readyTask.zip_file.url, filename);
+	await makeFilesWritableUnder(`./${siteRoot}`);
 	await unzip(filename, siteRoot);
 	await copyChildren(`./${siteRoot}/app`, `./${siteRoot}`);
 	await fs.remove(`./${filename}`);
@@ -513,7 +484,7 @@ const pullModuleZip = async (gateway, moduleName, ignoredModules = DEFAULT_PULL_
 	if (await fs.pathExists(directModulePath)) {
 		logger.Debug(`[pull] Module "${formatModuleNameForLog(moduleName)}" zip used direct layout; copying into ./${dir.MODULES}/${moduleName}`);
 		await fs.ensureDir(`./${dir.MODULES}/${moduleName}`);
-		await fs.copy(directModulePath, `./${dir.MODULES}/${moduleName}`, { overwrite: true });
+		await copyForPullOverwrite(directModulePath, `./${dir.MODULES}/${moduleName}`);
 	}
 
 	if (await fs.pathExists(`./${workDir}`)) {
@@ -668,7 +639,9 @@ const pullAssets = async (gateway, siteRoot = dir.SITE_ROOT, ignoredModules = DE
 			writeAgentsAssetFile(fullPath, file.data.body);
 		} else {
 			fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-			fs.writeFileSync(fullPath, file.data.body, logger.Error);
+			writeFileSyncForPullOverwrite(fullPath, file.data.body, (fp, body) => {
+				fs.writeFileSync(fp, body, logger.Error);
+			});
 		}
 		wroteCount++;
 	});
@@ -735,6 +708,7 @@ program
 	.arguments('[environment]', 'Name of environment. Example: staging')
 	.option('-c --config-file <config-file>', 'config file path', '.siteglide-config')
 	.option('-i --ignore-assets', 'Do not download assets such as CSS, JS, JSON etc', false)
+	.option('--no-mark-readonly', 'Do not mark pulled files read-only after pull (patterns from modules/siteglide_system/public/lib/reserved_files.liquid)')
 	.option('-m --module <module>', 'Optional module name filter. Without this flag, all installed modules are pulled.')
 	.option(
 		'-s, --skip-remote-check',
@@ -847,6 +821,17 @@ program
 						mergeFirstSync: true
 					});
 				},
+				afterMergeAppliedToWorkingTree:
+					params.markReadonly !== false
+						? async () => {
+							const siteRoot = await resolveSiteAppRoot();
+							await reapplyPullReadOnlyHintsAfterMerge(process.cwd(), {
+								siteRoot,
+								gateway,
+								label: 'pull and merge (clean)'
+							});
+						}
+						: undefined,
 				uiHooks: {
 					afterPullFn: () => {
 						logger.registerSpinner(mergeSpinner);
@@ -912,6 +897,17 @@ program
 				process.exit(1);
 			}
 			await ensureSharedUserPreferencesAfterPull(process.cwd());
+			if (
+				params.markReadonly !== false
+				&& result.conflictExpected
+			) {
+				const siteRoot = await resolveSiteAppRoot();
+				await reapplyPullReadOnlyHintsAfterMerge(process.cwd(), {
+					siteRoot,
+					gateway,
+					label: 'pull and merge (after conflict resolution)'
+				});
+			}
 			logger.Success('[pull] Pull baseline updated. Merge complete.');
 			process.exit(0);
 		};
@@ -926,6 +922,7 @@ program
 
 		const startPull = async function () {
 			const pullCwd = process.cwd();
+			resetPullReadOnlySession();
 			const nestedRole = (
 				process.env.SITEGLIDE_PULL_ASSUME_YES === '1'
 				|| process.env.SITEGLIDE_NESTED_CLI === '1'
@@ -1121,6 +1118,7 @@ program
 					}
 
 					const runFullMergeFirstSyncPull = async () => {
+						await loadReservedFilesRulesForPull(pullCwd, { gateway, phase: 'pre_pull' });
 						await pullSiteZip(gateway, siteRoot, ignoredModules);
 
 						let modulesDone = await pullModulesInParallel(gateway, modulesForNormalPull, modulePullConcurrency, ignoredModules, moduleTotal);
@@ -1172,6 +1170,18 @@ program
 					}
 
 					await tidyUpAfterPull(ignoredModules);
+
+					if (
+						params.markReadonly !== false
+						&& !mergeFirstSync
+					) {
+						pullSpinner.text = 'Marking pulled files read-only';
+						await applyPullReadOnlyAfterPull(pullCwd, { siteRoot });
+					} else if (mergeFirstSync) {
+						logger.Debug('[pull] Merge-first nested pull: deferring read-only hints until after git merge');
+					} else {
+						logger.Debug('[pull] --no-mark-readonly: skipping read-only pass');
+					}
 
 					recordPullBaseline();
 					await ensureSharedUserPreferencesAfterPull(pullCwd);

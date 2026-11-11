@@ -34,6 +34,7 @@ const program = require('commander'),
 	{ promptRemoteConflict } = require('./lib/remoteConflictPrompt'),
 	{ hasOpenGitConflicts } = require('./lib/git/conflictMarkers'),
 	{ mergeFirstSyncPull, isSafeAfterMergeFirst } = require('./lib/git/mergeFirst'),
+	{ reapplyPullReadOnlyHintsAfterMerge } = require('./lib/pull/applyPullReadOnly'),
 	{ promptCommitMessage, defaultSnapshotMessage } = require('./lib/git/commitPrompt'),
 	{ hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
@@ -410,6 +411,12 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 						mergeFirstFast: mergeFirstFast,
 						mergeFirstCompare: mergeFirstCompare
 					});
+				},
+				afterMergeAppliedToWorkingTree: async () => {
+					await reapplyPullReadOnlyHintsAfterMerge(process.cwd(), {
+						siteRoot: siteRoot || dir.defaultSiteRoot(),
+						gateway
+					});
 				}
 			});
 			if (!mf.ok) {
@@ -442,6 +449,12 @@ const resolveSyncRemoteConflict = async (primaryConflict, waveEntries) => {
 				}
 				clearSyncConflictRecords(environment);
 				return { action: 'merge_first_failed' };
+			}
+			if (mf.conflictExpected) {
+				await reapplyPullReadOnlyHintsAfterMerge(process.cwd(), {
+					siteRoot: siteRoot || dir.defaultSiteRoot(),
+					gateway
+				});
 			}
 			logger.Success('[Sync] Merge complete. Re-checking wave for upload.');
 			clearSyncConflictRecords(environment);

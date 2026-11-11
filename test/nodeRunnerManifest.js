@@ -27,6 +27,7 @@ module.exports = [
 	'test/lib/parseSelectivePullOptions.test.js',
 	'test/lib/prompts.test.js',
 	'test/lib/pullBaselineRemoteCheck.test.js',
+	'test/lib/pullReadOnlyRules.test.js',
 	'test/lib/remoteConflictPrompt.test.js',
 	'test/lib/remoteMtimeQuery.test.js',
 	'test/lib/serializeRemoteFile.test.js',
