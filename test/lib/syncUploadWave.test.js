@@ -105,6 +105,18 @@ describe('syncUploadWave', () => {
 		assert.equal(wave.getCurrentWave().inFlightChecks, 1);
 	});
 
+	it('awaitWaveDecision returns null when the wave is already closed', async () => {
+		const wave = createSyncUploadWave();
+
+		await wave.joinWave();
+		wave.reportCheck('app/a.liquid', 'push', { proceed: true });
+		await wave.awaitWaveDecision();
+		wave.finishWave();
+
+		const stale = await wave.awaitWaveDecision();
+		assert.equal(stale, null);
+	});
+
 	it('blocked wave closes only after all workers finish', async () => {
 		const wave = createSyncUploadWave();
 

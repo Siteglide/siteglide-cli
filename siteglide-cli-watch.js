@@ -278,12 +278,6 @@ const beforeSyncOpCheck = async (syncedFilePath) => {
 	if (!cachedSourceOfTruthMode) {
 		cachedSourceOfTruthMode = await readSourceOfTruthMode(process.cwd());
 	}
-	if (
-		isCdnAssetPath(syncedFilePath)
-		&& !isModule19CustomCss(syncedFilePath)
-	) {
-		await ensureAssetManifestSettled(gateway, syncedFilePath);
-	}
 	if (shouldSkipRemoteCheckForPath(physicalPath, cachedSourceOfTruthMode)) {
 		noteRemoteCheckPassed(syncedFilePath, physicalPath);
 		return { proceed: true, skipped: true, reason: 'module_private' };
@@ -619,10 +613,34 @@ const processSyncTask = async (task, callback) => {
 		}
 
 		syncWaveLog(`[Sync wave] task start ${displayPath(task.path)} op=${task.op}`);
+		if (
+			task.op === 'push'
+			&& isCdnAssetPath(task.path)
+			&& !isModule19CustomCss(task.path)
+		) {
+			await ensureAssetManifestSettled(gateway, task.path);
+		}
 		await syncUploadWave.joinWave();
 		const checkResult = await beforeSyncOpCheck(task.path);
-		syncUploadWave.reportCheck(task.path, task.op, checkResult);
+		const reported = syncUploadWave.reportCheck(task.path, task.op, checkResult);
+		if (reported === null) {
+			const phase = syncUploadWave.getCurrentWave() ? syncUploadWave.getCurrentWave().phase : 'none';
+			if (phase === 'closed' || phase === 'none') {
+				logger.Debug(
+					`[Sync] Dropped stale task for ${displayPath(task.path)} (upload wave already finished)`
+				);
+				callback();
+				return;
+			}
+		}
 		const decision = await syncUploadWave.awaitWaveDecision();
+		if (!decision) {
+			logger.Debug(
+				`[Sync] Dropped stale task for ${displayPath(task.path)} (upload wave already finished)`
+			);
+			callback();
+			return;
+		}
 		syncWaveLog(
 			`[Sync wave ${syncUploadWave.getCurrentWaveId()}] decision proceed=${decision.proceed} path=${displayPath(task.path)}`
 		);
