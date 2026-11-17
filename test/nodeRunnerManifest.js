@@ -4,6 +4,10 @@
  * `npm test` runs them via scripts/run-node-tests.js.
  */
 module.exports = [
+	'test/lib/assetManifestFloor.test.js',
+	'test/lib/assetManifestSend.test.js',
+	'test/lib/assetManifestSend.module.test.js',
+	'test/lib/directCdnAssetPath.test.js',
 	'test/lib/agentGitignore.test.js',
 	'test/lib/aiPrompts.test.js',
 	'test/lib/agentSkillsNamespaceLink.test.js',

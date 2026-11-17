@@ -165,6 +165,35 @@ describe('pullBaseline', () => {
 		});
 	});
 
+	it('replaceDeployManifest stores assetsDeployedAt', () => {
+		replaceDeployManifest('staging', {
+			cwd,
+			deployedAt: '2026-07-01T00:00:00.000Z',
+			assetsDeployedAt: '2026-07-01T00:05:00.001Z',
+			paths: ['assets/a.css']
+		});
+		assert.deepEqual(readPullBaseline('staging', cwd).lastDeploy, {
+			deployedAt: '2026-07-01T00:00:00.000Z',
+			assetsDeployedAt: '2026-07-01T00:05:00.001Z',
+			paths: ['assets/a.css']
+		});
+	});
+
+	it('effectiveBaseline uses assetsDeployedAt for asset paths', () => {
+		writePullBaseline('staging', { cwd, lastPulledAt: '2026-01-01T00:00:00.000Z' });
+		replaceDeployManifest('staging', {
+			cwd,
+			deployedAt: '2026-03-01T00:00:00.000Z',
+			assetsDeployedAt: '2026-03-01T12:00:00.001Z',
+			paths: ['assets/site.css']
+		});
+		const baseline = effectiveBaseline('staging', 'assets/site.css', cwd);
+		assert.deepEqual(baseline, {
+			at: '2026-03-01T12:00:00.001Z',
+			source: 'deploy'
+		});
+	});
+
 	it('replaceDeployManifest preserves lastSync paths', () => {
 		recordSyncPath('staging', 'views/pages/home.liquid', {
 			cwd,
