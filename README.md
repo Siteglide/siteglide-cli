@@ -14,6 +14,10 @@ Our changelog can be found [here](https://docs.siteglide.com/articles/4471977-cl
 
 ## Developer notes
 
+### MIME types (`mime` package)
+
+Direct CDN asset upload (sync, deploy assets zip) and `presign-url` send `Content-Type` derived from the local path using the npm **`mime`** package (`lib/assetContentType.js`, aligned with platformOS **pos-cli**). Extension databases go stale: **bump `mime` on a sensible cadence** (e.g. when touching dependencies or before major releases), check release notes, and smoke-test an asset sync plus a deploy-with-assets flow after upgrades. **`mime-types`** remains only for non-asset `/cli/sync` multipart in `lib/apiRequest.js`; do not assume one library subsumes the other without checking both call sites.
+
 ### Merge first: temp branch vs. git worktree (revisit if needed)
 
 Merge first (`lib/git/mergeFirst.js`, used by pull, deploy and sync) checks a temporary branch out **in place**, in the user's own folder. That is why every uncommitted change is committed first: checkout moves the files, the pull overwrites them, and the orphan path's `git clean -fd` removes anything untracked. The commit-everything step is required for correctness, not just tidiness, in both the normal and the experimental `-fast` mode.

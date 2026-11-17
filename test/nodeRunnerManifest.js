@@ -12,6 +12,7 @@ module.exports = [
 	'test/lib/commandLock.test.js',
 	'test/lib/fatalError.test.js',
 	'test/lib/sanitize.test.js',
+	'test/lib/s3UploadFile.test.js',
 	'test/lib/commitAllSafe.test.js',
 	'test/lib/commitPrompt.test.js',
 	'test/lib/deployManifestPaths.test.js',
