@@ -28,6 +28,10 @@ const program = require('commander'),
 	{ replaceDeployManifest, advancePullBaseline } = require('./lib/pullBaseline'),
 	{ collectDeployManifestPaths } = require('./lib/deployManifestPaths'),
 	{ tidyUpAfterDeploy } = require('./lib/deployTidyUp'),
+	{
+		readAssetsDeployedAtSidecar,
+		clearAssetsDeployedAtSidecar
+	} = require('./lib/assets/assetsDeployedAtSidecar'),
 	{ clearConflictLog, writeConflictLog } = require('./lib/remoteCheckConflictLog'),
 	{ getGitReadiness } = require('./lib/git/readiness'),
 	{ commitAllSafe, hasStagedOrUnstagedChanges } = require('./lib/git/commit'),
@@ -329,17 +333,25 @@ program
 			SITEGLIDE_EMAIL: authData.email,
 			SITEGLIDE_TOKEN: authData.token,
 			SITEGLIDE_URL: authData.url,
-			SITEGLIDE_ENV: environment
+			SITEGLIDE_ENV: environment,
+			SITEGLIDE_MERGE_FIRST_DEPLOY: mergedFirst ? '1' : ''
 		});
 
 		try {
+			clearAssetsDeployedAtSidecar();
 			await Promise.all([deploy(env, authData, params)]);
 			// The archive/push children leave .tmp/marketplace-release.zip (and assets.zip) behind;
 			// remove them on every path or the next `git add -A` snapshot commits them.
 			tidyUpAfterDeploy();
 			const deployedAt = new Date().toISOString();
-			const paths = collectDeployManifestPaths({ withAssets: params.withAssets });
-			replaceDeployManifest(environment, { deployedAt, paths });
+			const paths = collectDeployManifestPaths({ withAssets: params.withAssets, cwd: process.cwd() });
+			const assetsDeployedAt = mergedFirst ? undefined : readAssetsDeployedAtSidecar();
+			clearAssetsDeployedAtSidecar();
+			replaceDeployManifest(environment, {
+				deployedAt,
+				paths,
+				assetsDeployedAt: assetsDeployedAt || undefined
+			});
 			clearConflictLog(environment);
 
 			// Only a merge-first deploy has actually pulled the site, so only it moves the last-pull

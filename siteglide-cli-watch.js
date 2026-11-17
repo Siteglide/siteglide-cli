@@ -17,7 +17,6 @@ const program = require('commander'),
 	dir = require('./lib/directories'),
 	{ assertExclusiveSiteAppRoot } = require('./lib/migrateAppDirectory'),
 	presignDirectory = require('./lib/presignUrl').presignDirectory,
-	manifestGenerateForAssets = require('./lib/assets/generateManifest').manifestGenerateForAssets,
 	uploadFileFormData = require('./lib/s3UploadFile').uploadFileFormData,
 	{ claimSyncStatus, clearSyncStatus, registerSyncStatusCleanup } = require('./lib/syncStatus'),
 	{
@@ -27,7 +26,7 @@ const program = require('commander'),
 	} = require('./lib/syncUploadError'),
 	{ logCommandLockRefusal } = require('./lib/commandLock'),
 	version = require('./package.json').version,
-	{ cloneDeep, debounce } = require('lodash'),
+	{ cloneDeep } = require('lodash'),
 	{ checkFile, fetchRemoteFileMtime, toPhysicalApiPath } = require('./lib/remoteMtimeCheck'),
 	{ shouldSkipRemoteCheckForPath } = require('./lib/sync/skipRemoteCheckForPath'),
 	{ readSourceOfTruthMode } = require('./lib/sourceOfTruth'),
@@ -63,9 +62,14 @@ const program = require('commander'),
 	{ finalizePullBaseline } = require('./lib/git/finalizePullBaseline'),
 	{
 		recordSyncPath,
-		syncedAtFromAssetFileMtime,
 		floorFromRemoteUpdatedAt
-	} = require('./lib/pullBaseline');
+	} = require('./lib/pullBaseline'),
+	{
+		manifestQueueAsset,
+		scheduleManifestSend,
+		ensureAssetManifestSettled
+	} = require('./lib/sync/assetManifestSend'),
+	{ isDirectCdnAssetPath } = require('./lib/sync/directCdnAssetPath');
 
 const ext = filePath => filePath.split('.').pop();
 const filename = filePath => filePath.split(path.sep).pop();
@@ -84,18 +88,18 @@ let directUploadPresignFetchedAt = null;
  * Record per-path sync floor after upload (GraphQL updated_at + 1 ms when available).
  * @param {import('./lib/proxy')} gateway
  * @param {string} syncedFilePath
- * @param {{ syncedAt?: string }} [opts] fallback when GraphQL fetch fails (e.g. assets)
+ * Non-CDN sync paths only; CDN assets record floors via assets_manifest (assetManifestSend).
  */
-const noteSyncUploadSuccess = async (gateway, syncedFilePath, opts = {}) => {
+const noteSyncUploadSuccess = async (gateway, syncedFilePath) => {
 	if (!siteRoot || !process.env.SITEGLIDE_ENV) {
 		return;
 	}
 
 	const physicalPath = toPhysicalApiPath(syncedFilePath, siteRoot);
-	let syncedAt = opts.syncedAt;
+	let syncedAt = new Date().toISOString();
 
 	recordSyncPath(process.env.SITEGLIDE_ENV, physicalPath, {
-		syncedAt: syncedAt || new Date().toISOString()
+		syncedAt
 	});
 
 	if (gateway) {
@@ -107,10 +111,6 @@ const noteSyncUploadSuccess = async (gateway, syncedFilePath, opts = {}) => {
 		} catch (err) {
 			logger.Debug(`[sync-floor] could not fetch remote updated_at: ${err.message || err}`);
 		}
-	}
-
-	if (!syncedAt) {
-		syncedAt = new Date().toISOString();
 	}
 
 	recordSyncPath(process.env.SITEGLIDE_ENV, physicalPath, {
@@ -144,8 +144,9 @@ const isAssetsPath = (filePath) => {
 	const normalized = filePath.replace(/\\/g, '/');
 	return siteRoot && normalized.startsWith(`${siteRoot}/assets`);
 };
-let manifestFilesToAdd = [];
 
+/** @param {string} filePath */
+const isCdnAssetPath = (filePath) => isDirectCdnAssetPath(filePath, siteRoot);
 const displayPath = (filePath) => {
 	const normalized = filePath.replace(/\\/g, '/');
 	if (siteRoot && normalized.startsWith(`${siteRoot}/`)) {
@@ -612,10 +613,34 @@ const processSyncTask = async (task, callback) => {
 		}
 
 		syncWaveLog(`[Sync wave] task start ${displayPath(task.path)} op=${task.op}`);
+		if (
+			task.op === 'push'
+			&& isCdnAssetPath(task.path)
+			&& !isModule19CustomCss(task.path)
+		) {
+			await ensureAssetManifestSettled(gateway, task.path);
+		}
 		await syncUploadWave.joinWave();
 		const checkResult = await beforeSyncOpCheck(task.path);
-		syncUploadWave.reportCheck(task.path, task.op, checkResult);
+		const reported = syncUploadWave.reportCheck(task.path, task.op, checkResult);
+		if (reported === null) {
+			const phase = syncUploadWave.getCurrentWave() ? syncUploadWave.getCurrentWave().phase : 'none';
+			if (phase === 'closed' || phase === 'none') {
+				logger.Debug(
+					`[Sync] Dropped stale task for ${displayPath(task.path)} (upload wave already finished)`
+				);
+				callback();
+				return;
+			}
+		}
 		const decision = await syncUploadWave.awaitWaveDecision();
+		if (!decision) {
+			logger.Debug(
+				`[Sync] Dropped stale task for ${displayPath(task.path)} (upload wave already finished)`
+			);
+			callback();
+			return;
+		}
 		syncWaveLog(
 			`[Sync wave ${syncUploadWave.getCurrentWaveId()}] decision proceed=${decision.proceed} path=${displayPath(task.path)}`
 		);
@@ -800,9 +825,12 @@ const isModule19CustomCss = (syncedFilePath) => {
 	return legacyCustom || appCustom;
 };
 
+/**
+ * Site/module CDN assets use S3 + assets_manifest floors; other files use /cli/sync floors (noteSyncUploadSuccess).
+ */
 const pushFileDirectAssets = (gateway, syncedFilePath) => {
 	if(
-		isAssetsPath(syncedFilePath)
+		isCdnAssetPath(syncedFilePath)
 		&& !isModule19CustomCss(syncedFilePath)
 	){
 		if (!directAssetsUploadReady) {
@@ -815,19 +843,6 @@ const pushFileDirectAssets = (gateway, syncedFilePath) => {
 	}
 	return pushFile(gateway, syncedFilePath);
 };
-
-const manifestSend = debounce(
-	(gateway) => {
-		const manifest = manifestGenerateForAssets(manifestFilesToAdd.slice());
-		logger.Debug(manifest);
-		gateway.sendManifest(manifest);
-		manifestFilesToAdd = [];
-	},
-	1000,
-	{ maxWait: 1000 * 10 }
-);
-
-const manifestAddAsset = (path) => manifestFilesToAdd.push(path);
 
 const sendAsset = async (gateway, filePath) => {
 	try {
@@ -854,12 +869,9 @@ const sendAsset = async (gateway, filePath) => {
 		}
 		logger.Debug(data);
 		await uploadFileFormData(filePath, data);
-		manifestAddAsset(filePath);
-		manifestSend(gateway);
+		manifestQueueAsset(filePath);
+		scheduleManifestSend(gateway);
 		logger.Success(`[Sync] Uploaded: ${displayPath(filePath)}`);
-		await noteSyncUploadSuccess(gateway, filePath, {
-			syncedAt: syncedAtFromAssetFileMtime(filePath)
-		});
 		counter = 0;
 	} catch (e) {
 		logger.Debug(e);
